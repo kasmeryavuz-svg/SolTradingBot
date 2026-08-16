@@ -3,6 +3,8 @@ import {
   DEFAULT_DISCOVERY_MAX_CANDIDATES,
   DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_TIMEOUT_MS,
+  DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
+  DEFAULT_DATABASE_PATH,
   DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
   DEFAULT_MARKET_DATA_TIMEOUT_MS,
   DEFAULT_TRADING_ENABLED,
@@ -49,7 +51,52 @@ describe('loadConfig', () => {
         maxCandidates: DEFAULT_DISCOVERY_MAX_CANDIDATES,
         enrichMarketData: true,
       },
+      database: {
+        enabled: true,
+        path: DEFAULT_DATABASE_PATH,
+        busyTimeoutMs: DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
+      },
     });
+  });
+
+  it('loads database settings from the environment', () => {
+    const config = loadConfig({
+      DATABASE_ENABLED: 'true',
+      DATABASE_PATH: ':memory:',
+      DATABASE_BUSY_TIMEOUT_MS: '2500',
+    });
+
+    expect(config.database).toEqual({
+      enabled: true,
+      path: ':memory:',
+      busyTimeoutMs: 2500,
+    });
+  });
+
+  it('accepts an in-memory database path', () => {
+    expect(loadConfig({ DATABASE_PATH: ':memory:' }).database.path).toBe(':memory:');
+  });
+
+  it('rejects an empty DATABASE_PATH', () => {
+    expect(() => {
+      loadConfig({ DATABASE_PATH: '' });
+    }).toThrow(/Invalid DATABASE_PATH/);
+  });
+
+  it('rejects an invalid database busy timeout', () => {
+    expect(() => {
+      loadConfig({ DATABASE_BUSY_TIMEOUT_MS: '0' });
+    }).toThrow(/Invalid DATABASE_BUSY_TIMEOUT_MS/);
+  });
+
+  it('parses DATABASE_ENABLED=false without affecting trading', () => {
+    const config = loadConfig({
+      DATABASE_ENABLED: 'false',
+      TRADING_ENABLED: 'false',
+    });
+
+    expect(config.database.enabled).toBe(false);
+    expect(config.tradingEnabled).toBe(false);
   });
 
   it('loads market-data watchlist and polling settings', () => {
