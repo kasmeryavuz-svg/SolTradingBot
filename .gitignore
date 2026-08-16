@@ -43,3 +43,14 @@ desktop.ini
 # Cursor local debug output (keep project rules and skills)
 .cursor/*.log
 debug.log
+
+# Local SQLite runtime files — never commit live data
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

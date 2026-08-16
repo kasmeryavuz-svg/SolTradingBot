@@ -28,6 +28,12 @@ export type DiscoveryConfig = {
   enrichMarketData: boolean;
 };
 
+export type DatabaseConfig = {
+  enabled: boolean;
+  path: string;
+  busyTimeoutMs: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -35,6 +41,7 @@ export type AppConfig = {
   solana: SolanaConfig;
   marketData: MarketDataConfig;
   discovery: DiscoveryConfig;
+  database: DatabaseConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

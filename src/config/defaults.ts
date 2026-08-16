@@ -19,3 +19,10 @@ export const DEFAULT_DISCOVERY_POLL_INTERVAL_MS = 30_000;
 export const DEFAULT_DISCOVERY_MAX_CANDIDATES = 20;
 export const DEFAULT_DISCOVERY_ENRICH_MARKET_DATA = true;
 export const DISCOVERY_MAX_CANDIDATES_LIMIT = 100;
+
+export const DEFAULT_DATABASE_ENABLED = true;
+export const DEFAULT_DATABASE_PATH = './data/soltradingbot.sqlite';
+export const MEMORY_DATABASE_PATH = ':memory:';
+export const DEFAULT_DATABASE_BUSY_TIMEOUT_MS = 5_000;
+export const DEFAULT_HISTORY_LIMIT = 20;
+export const HISTORY_LIMIT_MAX = 100;

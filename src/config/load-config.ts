@@ -16,6 +16,9 @@ import {
   DEFAULT_DISCOVERY_MAX_CANDIDATES,
   DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
   DEFAULT_DISCOVERY_TIMEOUT_MS,
+  DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
+  DEFAULT_DATABASE_ENABLED,
+  DEFAULT_DATABASE_PATH,
   DEFAULT_LOG_LEVEL,
   DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
   DEFAULT_MARKET_DATA_TIMEOUT_MS,
@@ -90,6 +93,7 @@ export function loadConfig(source: EnvSource): AppConfig {
       ),
     },
     discovery: loadDiscoveryConfig(source),
+    database: loadDatabaseConfig(source),
   };
 }
 
@@ -140,4 +144,33 @@ function loadDiscoveryConfig(source: EnvSource): AppConfig['discovery'] {
   }
 
   return discovery;
+}
+
+function loadDatabaseConfig(source: EnvSource): AppConfig['database'] {
+  return {
+    enabled: parseBooleanFlag(
+      readOptionalEnv(source, 'DATABASE_ENABLED'),
+      DEFAULT_DATABASE_ENABLED,
+      'DATABASE_ENABLED',
+    ),
+    path: parseDatabasePath(source['DATABASE_PATH'], DEFAULT_DATABASE_PATH),
+    busyTimeoutMs: parsePositiveInteger(
+      readOptionalEnv(source, 'DATABASE_BUSY_TIMEOUT_MS'),
+      DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
+      'DATABASE_BUSY_TIMEOUT_MS',
+    ),
+  };
+}
+
+function parseDatabasePath(raw: string | undefined, fallback: string): string {
+  if (raw === undefined) {
+    return fallback;
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    throw new ConfigError('Invalid DATABASE_PATH. Expected a file path or :memory:.');
+  }
+
+  return trimmed;
 }

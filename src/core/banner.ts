@@ -11,6 +11,8 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 03');
-  console.log('Mode: READ ONLY');
+  console.log('Checkpoint: 04');
+  console.log('Blockchain capability: READ ONLY');
+  console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
+  console.log('Trading capability: disabled');
 }
