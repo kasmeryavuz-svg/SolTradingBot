@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TRADING_ENABLED, loadConfig } from '../src/config/index.js';
+import {
+  DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
+  DEFAULT_MARKET_DATA_TIMEOUT_MS,
+  DEFAULT_TRADING_ENABLED,
+  USDC_MINT,
+  WRAPPED_SOL_MINT,
+  loadConfig,
+} from '../src/config/index.js';
 
 describe('loadConfig', () => {
   it('defaults TRADING_ENABLED to false', () => {
@@ -25,7 +32,32 @@ describe('loadConfig', () => {
         rpcTimeoutMs: 10_000,
         rpcUrl: 'https://api.mainnet-beta.solana.com',
       },
+      marketData: {
+        tokenMints: [WRAPPED_SOL_MINT, USDC_MINT],
+        timeoutMs: DEFAULT_MARKET_DATA_TIMEOUT_MS,
+        pollIntervalMs: DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
+      },
     });
+  });
+
+  it('loads market-data watchlist and polling settings', () => {
+    const config = loadConfig({
+      MARKET_DATA_TOKEN_MINTS: `${WRAPPED_SOL_MINT},${WRAPPED_SOL_MINT},${USDC_MINT}`,
+      MARKET_DATA_TIMEOUT_MS: '8000',
+      MARKET_DATA_POLL_INTERVAL_MS: '20000',
+    });
+
+    expect(config.marketData).toEqual({
+      tokenMints: [WRAPPED_SOL_MINT, USDC_MINT],
+      timeoutMs: 8000,
+      pollIntervalMs: 20_000,
+    });
+  });
+
+  it('rejects an invalid market-data poll interval', () => {
+    expect(() => {
+      loadConfig({ MARKET_DATA_POLL_INTERVAL_MS: '0' });
+    }).toThrow(/Invalid MARKET_DATA_POLL_INTERVAL_MS/);
   });
 
   it('loads Solana RPC settings from the environment', () => {

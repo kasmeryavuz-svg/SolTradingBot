@@ -4,3 +4,9 @@ export const DEFAULT_TRADING_ENABLED = false;
 export const DEFAULT_SOLANA_NETWORK = 'mainnet-beta';
 export const DEFAULT_SOLANA_RPC_TIMEOUT_MS = 10_000;
 export const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
+
+export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const DEFAULT_MARKET_DATA_TOKEN_MINTS = [WRAPPED_SOL_MINT, USDC_MINT] as const;
+export const DEFAULT_MARKET_DATA_TIMEOUT_MS = 10_000;
+export const DEFAULT_MARKET_DATA_POLL_INTERVAL_MS = 15_000;
