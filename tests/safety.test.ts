@@ -26,9 +26,7 @@ describe('trading safety guard', () => {
     }).not.toThrow();
   });
 
-  it('prevents startApp from running when trading is enabled', () => {
-    expect(() => {
-      startApp({ TRADING_ENABLED: 'true' });
-    }).toThrow(TradingSafetyError);
+  it('prevents startApp from running when trading is enabled', async () => {
+    await expect(startApp({ TRADING_ENABLED: 'true' })).rejects.toThrow(TradingSafetyError);
   });
 });
