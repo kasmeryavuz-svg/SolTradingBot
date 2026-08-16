@@ -1,5 +1,16 @@
+import { parseTokenMintList } from '../market-data/watchlist.js';
+import {
+  parseBooleanFlag,
+  parseEnumValue,
+  parseHttpUrl,
+  parsePositiveInteger,
+  readOptionalEnv,
+} from '../utils/parse-env.js';
 import {
   DEFAULT_LOG_LEVEL,
+  DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
+  DEFAULT_MARKET_DATA_TIMEOUT_MS,
+  DEFAULT_MARKET_DATA_TOKEN_MINTS,
   DEFAULT_NODE_ENV,
   DEFAULT_SOLANA_NETWORK,
   DEFAULT_SOLANA_RPC_TIMEOUT_MS,
@@ -13,13 +24,6 @@ import {
   type AppConfig,
   type EnvSource,
 } from './types.js';
-import {
-  parseBooleanFlag,
-  parseEnumValue,
-  parseHttpUrl,
-  parsePositiveInteger,
-  readOptionalEnv,
-} from '../utils/parse-env.js';
 
 export function loadConfig(source: EnvSource): AppConfig {
   return {
@@ -56,6 +60,23 @@ export function loadConfig(source: EnvSource): AppConfig {
         readOptionalEnv(source, 'SOLANA_RPC_URL'),
         DEFAULT_SOLANA_RPC_URL,
         'SOLANA_RPC_URL',
+      ),
+    },
+    marketData: {
+      tokenMints: parseTokenMintList(
+        readOptionalEnv(source, 'MARKET_DATA_TOKEN_MINTS'),
+        DEFAULT_MARKET_DATA_TOKEN_MINTS,
+        'MARKET_DATA_TOKEN_MINTS',
+      ),
+      timeoutMs: parsePositiveInteger(
+        readOptionalEnv(source, 'MARKET_DATA_TIMEOUT_MS'),
+        DEFAULT_MARKET_DATA_TIMEOUT_MS,
+        'MARKET_DATA_TIMEOUT_MS',
+      ),
+      pollIntervalMs: parsePositiveInteger(
+        readOptionalEnv(source, 'MARKET_DATA_POLL_INTERVAL_MS'),
+        DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
+        'MARKET_DATA_POLL_INTERVAL_MS',
       ),
     },
   };

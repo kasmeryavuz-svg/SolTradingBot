@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 01 is a read-only Solana RPC connection — real trading is not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 02 is read-only live market data — real trading is not implemented.",
   "type": "module",
   "engines": {
     "node": ">=20.18.0"
@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "solana:check": "tsx src/solana/check.ts"
+    "solana:check": "tsx src/solana/check.ts",
+    "market:check": "tsx src/market-data/check.ts",
+    "market:watch": "tsx src/market-data/watch.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

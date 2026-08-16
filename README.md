@@ -4,32 +4,42 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 01
+## Current checkpoint: 02
 
 **Current capabilities:**
 
-- TypeScript foundation
+- TypeScript project foundation
 - configuration
-- safety guard
-- read-only Solana RPC connection
-- Solana health check
+- hard trading safety guard
+- read-only Solana RPC health
+- read-only DEX market-data retrieval
+- manual token watchlist
+- normalized `MarketSnapshot`
+- one-shot market check
+- low-frequency live market watch
 
 ### What this checkpoint is not
 
-- **NO wallet exists.**
-- **NO private key is used.**
-- **NO transactions can be sent.**
-- **NO trading exists.**
+- **NO wallet.**
+- **NO private key.**
+- **NO transaction signing.**
+- **NO transaction sending.**
+- **NO token discovery.**
+- **NO strategy.**
+- **NO paper trading.**
+- **NO real trading.**
+
+Market data is **information only**. A price, a volume spike, or a large market cap does not mean a token is a good investment.
 
 If `TRADING_ENABLED=true`, the app will refuse to start. That is intentional.
 
-## What is an RPC connection?
+## What is market data?
 
-RPC means Remote Procedure Call. In this project it is a way to ask a public Solana server a question and get an answer, similar to opening a webpage.
+Market data is a snapshot of what a token looks like on a DEX right now: price, liquidity, recent volume, and how many buys and sells happened. This bot reads that information. It does not trade on it yet.
 
-This checkpoint only asks read-only questions, such as “what is the current slot?” and “is this node healthy?” It cannot move money, sign anything, or change the blockchain.
+The watchlist uses **mint addresses**, not ticker symbols. Many tokens can share a name like “SOL” or “PEPE”. A mint address is the unique ID of the token on Solana.
 
-Public Solana RPC endpoints are acceptable for development and testing. They are **not** appropriate for a production trading bot because they can rate-limit you and are less reliable than a dedicated RPC provider.
+**Wrapped SOL** (`So1111...112`) is the tokenized form of SOL that Solana token programs and DEX pools commonly use. It represents SOL inside those pools.
 
 ## How to install dependencies
 
@@ -72,11 +82,11 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 01
+Checkpoint: 02
 Mode: READ ONLY
 ```
 
-The slot and version numbers come from the live Solana network, so they will change.
+`npm run dev` does **not** start an infinite market-data loop. Use the market commands below for that.
 
 ## How to check Solana connectivity
 
@@ -84,13 +94,31 @@ The slot and version numbers come from the live Solana network, so they will cha
 npm run solana:check
 ```
 
-This command only performs the read-only health check. It does not create a wallet or trade. It exits with code 0 when the check succeeds, and a non-zero code when it fails.
+## How to check market data
+
+```bash
+npm run market:check
+```
+
+This reads the manual watchlist once (Wrapped SOL and USDC by default), prints a snapshot for each token, and exits.
+
+To watch the same list at a low frequency (every 15 seconds by default):
+
+```bash
+npm run market:watch
+```
+
+Press `CTRL+C` to stop. The watcher does not save data to a database yet.
+
+Public DEX Screener and Solana RPC endpoints are acceptable for development. They are **not** appropriate for a production trading bot because of rate limits and reliability.
 
 ## How to run tests
 
 ```bash
 npm run test
 ```
+
+Automated tests do not call the live internet.
 
 Other useful commands:
 
@@ -104,16 +132,17 @@ npm run build
 ## Folder explanation
 
 ```text
-src/           Application source code
-  config/      Reads settings such as NODE_ENV, TRADING_ENABLED, and Solana RPC
-  core/        Startup, banner, and safety checks
-  solana/      Read-only Solana RPC client and health check
-  utils/       Small shared helpers
-  index.ts     The program entry point
-tests/         Automated tests (they do not require a live Solana connection)
-docs/          Project documents, including the roadmap
+src/             Application source code
+  config/        Reads settings such as NODE_ENV, TRADING_ENABLED, Solana RPC, and the watchlist
+  core/          Startup, banner, and safety checks
+  solana/        Read-only Solana RPC client and health check
+  market-data/   Read-only DEX market snapshots and watchlist
+  utils/         Small shared helpers
+  index.ts       The program entry point
+tests/           Automated tests (no live DEX Screener or Solana calls)
+docs/            Project documents, including the roadmap
 ```
 
-Later checkpoints will add market data, scanners, and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add token discovery, a database, and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
 
-See [docs/CHECKPOINT_01.md](docs/CHECKPOINT_01.md) for a short explanation of this checkpoint.
+See [docs/CHECKPOINT_02.md](docs/CHECKPOINT_02.md) for a beginner explanation of price, liquidity, volume, market cap, and FDV.

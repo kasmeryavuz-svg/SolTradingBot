@@ -12,11 +12,18 @@ export type SolanaConfig = {
   rpcUrl: string;
 };
 
+export type MarketDataConfig = {
+  tokenMints: string[];
+  timeoutMs: number;
+  pollIntervalMs: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
   tradingEnabled: boolean;
   solana: SolanaConfig;
+  marketData: MarketDataConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;
