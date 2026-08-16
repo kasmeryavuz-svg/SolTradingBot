@@ -4,42 +4,46 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 02
+## Current checkpoint: 03
 
 **Current capabilities:**
 
-- TypeScript project foundation
-- configuration
-- hard trading safety guard
-- read-only Solana RPC health
-- read-only DEX market-data retrieval
-- manual token watchlist
-- normalized `MarketSnapshot`
-- one-shot market check
-- low-frequency live market watch
+- TypeScript foundation
+- trading safety guard
+- read-only Solana RPC
+- read-only normalized market data
+- manual watchlist
+- automatic read-only candidate discovery
+- DEX Screener profile feed
+- DEX Screener boost feed
+- Solana-only filtering
+- mint deduplication
+- best-effort market enrichment
+- in-memory first-seen tracking
 
 ### What this checkpoint is not
 
 - **NO wallet.**
-- **NO private key.**
-- **NO transaction signing.**
-- **NO transaction sending.**
-- **NO token discovery.**
+- **NO signing.**
+- **NO transactions.**
+- **NO risk scanner.**
 - **NO strategy.**
 - **NO paper trading.**
 - **NO real trading.**
 
-Market data is **information only**. A price, a volume spike, or a large market cap does not mean a token is a good investment.
+A discovered token is a **candidate**: it appeared in a public feed. That is not a buy signal, a safety rating, or proof the token was newly minted.
 
-If `TRADING_ENABLED=true`, the app will refuse to start. That is intentional.
+If `TRADING_ENABLED=true`, the app will refuse to start. That is intentional. `DISCOVERY_ENABLED` does not turn trading on.
 
-## What is market data?
+## What is discovery?
 
-Market data is a snapshot of what a token looks like on a DEX right now: price, liquidity, recent volume, and how many buys and sells happened. This bot reads that information. It does not trade on it yet.
+Discovery means the bot reads official public DEX Screener feeds and lists Solana token mints that appeared there.
 
-The watchlist uses **mint addresses**, not ticker symbols. Many tokens can share a name like “SOL” or “PEPE”. A mint address is the unique ID of the token on Solana.
+- A **mint** is the unique token ID on Solana.
+- A **latest profile** is provider profile metadata, not an on-chain launch.
+- A **boost** is promotional provider metadata. It does not mean the token is good.
 
-**Wrapped SOL** (`So1111...112`) is the tokenized form of SOL that Solana token programs and DEX pools commonly use. It represents SOL inside those pools.
+See [docs/CHECKPOINT_03.md](docs/CHECKPOINT_03.md) for a beginner explanation.
 
 ## How to install dependencies
 
@@ -82,11 +86,11 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 02
+Checkpoint: 03
 Mode: READ ONLY
 ```
 
-`npm run dev` does **not** start an infinite market-data loop. Use the market commands below for that.
+`npm run dev` does **not** start `market:watch` or `discovery:watch`. Watchers are explicit commands only.
 
 ## How to check Solana connectivity
 
@@ -108,7 +112,23 @@ To watch the same list at a low frequency (every 15 seconds by default):
 npm run market:watch
 ```
 
-Press `CTRL+C` to stop. The watcher does not save data to a database yet.
+Press `CTRL+C` to stop.
+
+## How to discover token candidates
+
+```bash
+npm run discovery:check
+```
+
+This reads the official DEX Screener latest-profile and latest-boost feeds once, keeps Solana mints only, deduplicates them, optionally asks the existing market-data module for a snapshot, prints the candidates, and exits.
+
+To poll the same feeds about every 30 seconds:
+
+```bash
+npm run discovery:watch
+```
+
+Press `CTRL+C` to stop. `NEW` means “new to this running process,” not “newly minted on Solana.” The watcher does not save data to a database yet.
 
 Public DEX Screener and Solana RPC endpoints are acceptable for development. They are **not** appropriate for a production trading bot because of rate limits and reliability.
 
@@ -133,16 +153,15 @@ npm run build
 
 ```text
 src/             Application source code
-  config/        Reads settings such as NODE_ENV, TRADING_ENABLED, Solana RPC, and the watchlist
+  config/        Reads settings such as NODE_ENV, TRADING_ENABLED, Solana RPC, watchlist, and discovery
   core/          Startup, banner, and safety checks
   solana/        Read-only Solana RPC client and health check
   market-data/   Read-only DEX market snapshots and watchlist
+  discovery/     Read-only public-feed candidate discovery
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
 docs/            Project documents, including the roadmap
 ```
 
-Later checkpoints will add token discovery, a database, and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
-
-See [docs/CHECKPOINT_02.md](docs/CHECKPOINT_02.md) for a beginner explanation of price, liquidity, volume, market cap, and FDV.
+Later checkpoints will add a database, a risk scanner, and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

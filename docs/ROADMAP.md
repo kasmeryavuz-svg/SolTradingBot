@@ -9,7 +9,7 @@ Do not implement a later checkpoint until the current one is complete.
 | 00 | Project foundation | Complete |
 | 01 | Solana connection | Complete |
 | 02 | Live market data | Complete |
-| 03 | Meme-coin discovery | Not started |
+| 03 | Meme-coin discovery | Complete |
 | 04 | Database | Not started |
 | 05 | Token risk scanner | Not started |
 | 06 | Signal and feature engine | Not started |
@@ -30,6 +30,6 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 02 Live market data
-- **Implemented:** TypeScript foundation, configuration, a hard safety guard, read-only Solana RPC health, and read-only DEX market snapshots for a manual watchlist
-- **Not implemented:** everything from Checkpoint 03 onward
+- **Active checkpoint:** 03 Meme-coin discovery (complete)
+- **Implemented:** TypeScript foundation, configuration, a hard safety guard, read-only Solana RPC health, read-only DEX market snapshots for a manual watchlist, and read-only public-feed candidate discovery
+- **Not implemented:** everything from Checkpoint 04 onward

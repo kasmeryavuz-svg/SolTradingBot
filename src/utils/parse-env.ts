@@ -80,6 +80,20 @@ export function parsePositiveInteger(
   return parsed;
 }
 
+export function parseBoundedPositiveInteger(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+  maximum: number,
+): number {
+  const parsed = parsePositiveInteger(raw, fallback, name);
+  if (parsed > maximum) {
+    throw new ConfigError(`Invalid ${name}. Expected a positive integer up to ${String(maximum)}.`);
+  }
+
+  return parsed;
+}
+
 export function parseHttpUrl(raw: string | undefined, fallback: string, name: string): string {
   const value = raw ?? fallback;
 
