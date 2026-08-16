@@ -1,35 +1,35 @@
 # Roadmap
 
-This project is built one checkpoint at a time. Only Checkpoint 00 exists in the code today.
+This project is built one checkpoint at a time.
 
 Do not implement a later checkpoint until the current one is complete.
 
-| Checkpoint | Name |
-| --- | --- |
-| 00 | Project foundation |
-| 01 | Solana connection |
-| 02 | Live market data |
-| 03 | Meme-coin discovery |
-| 04 | Database |
-| 05 | Token risk scanner |
-| 06 | Signal and feature engine |
-| 07 | First strategy |
-| 08 | Backtester |
-| 09 | Paper trading |
-| 10 | Position management |
-| 11 | Exit engine |
-| 12 | Performance analytics |
-| 13 | Dashboard |
-| 14 | Real execution engine |
-| 15 | Wallet security |
-| 16 | Tiny live trading |
-| 17 | Strategy optimization |
-| 18 | Wallet intelligence |
-| 19 | Advanced models / ML |
-| 20 | Production deployment |
+| Checkpoint | Name | Status |
+| --- | --- | --- |
+| 00 | Project foundation | Complete |
+| 01 | Solana connection | Complete |
+| 02 | Live market data | Not started |
+| 03 | Meme-coin discovery | Not started |
+| 04 | Database | Not started |
+| 05 | Token risk scanner | Not started |
+| 06 | Signal and feature engine | Not started |
+| 07 | First strategy | Not started |
+| 08 | Backtester | Not started |
+| 09 | Paper trading | Not started |
+| 10 | Position management | Not started |
+| 11 | Exit engine | Not started |
+| 12 | Performance analytics | Not started |
+| 13 | Dashboard | Not started |
+| 14 | Real execution engine | Not started |
+| 15 | Wallet security | Not started |
+| 16 | Tiny live trading | Not started |
+| 17 | Strategy optimization | Not started |
+| 18 | Wallet intelligence | Not started |
+| 19 | Advanced models / ML | Not started |
+| 20 | Production deployment | Not started |
 
 ## Current status
 
-- **Active checkpoint:** 00 Project foundation
-- **Implemented:** TypeScript project setup, configuration, and a hard safety guard that blocks live trading
-- **Not implemented:** everything from Checkpoint 01 onward
+- **Active checkpoint:** 01 Solana connection
+- **Implemented:** TypeScript project setup, configuration, a hard safety guard that blocks live trading, and a read-only Solana RPC health check
+- **Not implemented:** everything from Checkpoint 02 onward
