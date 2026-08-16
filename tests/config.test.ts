@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_DISCOVERY_MAX_CANDIDATES,
+  DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
+  DEFAULT_DISCOVERY_TIMEOUT_MS,
   DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
   DEFAULT_MARKET_DATA_TIMEOUT_MS,
   DEFAULT_TRADING_ENABLED,
@@ -36,6 +39,15 @@ describe('loadConfig', () => {
         tokenMints: [WRAPPED_SOL_MINT, USDC_MINT],
         timeoutMs: DEFAULT_MARKET_DATA_TIMEOUT_MS,
         pollIntervalMs: DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
+      },
+      discovery: {
+        enabled: true,
+        includeProfiles: true,
+        includeBoosts: true,
+        timeoutMs: DEFAULT_DISCOVERY_TIMEOUT_MS,
+        pollIntervalMs: DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
+        maxCandidates: DEFAULT_DISCOVERY_MAX_CANDIDATES,
+        enrichMarketData: true,
       },
     });
   });
@@ -86,6 +98,72 @@ describe('loadConfig', () => {
       expect(error).toBeInstanceOf(Error);
       expect(String(error)).not.toContain('supersecret');
     }
+  });
+
+  it('loads discovery settings from the environment', () => {
+    const config = loadConfig({
+      DISCOVERY_ENABLED: 'true',
+      DISCOVERY_INCLUDE_PROFILES: 'false',
+      DISCOVERY_INCLUDE_BOOSTS: 'true',
+      DISCOVERY_TIMEOUT_MS: '8000',
+      DISCOVERY_POLL_INTERVAL_MS: '45000',
+      DISCOVERY_MAX_CANDIDATES: '12',
+      DISCOVERY_ENRICH_MARKET_DATA: 'false',
+    });
+
+    expect(config.discovery).toEqual({
+      enabled: true,
+      includeProfiles: false,
+      includeBoosts: true,
+      timeoutMs: 8000,
+      pollIntervalMs: 45_000,
+      maxCandidates: 12,
+      enrichMarketData: false,
+    });
+  });
+
+  it('rejects discovery with no enabled sources', () => {
+    expect(() => {
+      loadConfig({
+        DISCOVERY_ENABLED: 'true',
+        DISCOVERY_INCLUDE_PROFILES: 'false',
+        DISCOVERY_INCLUDE_BOOSTS: 'false',
+      });
+    }).toThrow(/at least one discovery source/i);
+  });
+
+  it('allows both discovery sources to be off when discovery is disabled', () => {
+    const config = loadConfig({
+      DISCOVERY_ENABLED: 'false',
+      DISCOVERY_INCLUDE_PROFILES: 'false',
+      DISCOVERY_INCLUDE_BOOSTS: 'false',
+    });
+
+    expect(config.discovery.enabled).toBe(false);
+  });
+
+  it('rejects an invalid discovery timeout', () => {
+    expect(() => {
+      loadConfig({ DISCOVERY_TIMEOUT_MS: '0' });
+    }).toThrow(/Invalid DISCOVERY_TIMEOUT_MS/);
+  });
+
+  it('rejects an invalid discovery poll interval', () => {
+    expect(() => {
+      loadConfig({ DISCOVERY_POLL_INTERVAL_MS: '-1' });
+    }).toThrow(/Invalid DISCOVERY_POLL_INTERVAL_MS/);
+  });
+
+  it('rejects DISCOVERY_MAX_CANDIDATES that is not a positive integer', () => {
+    expect(() => {
+      loadConfig({ DISCOVERY_MAX_CANDIDATES: '0' });
+    }).toThrow(/Invalid DISCOVERY_MAX_CANDIDATES/);
+  });
+
+  it('rejects DISCOVERY_MAX_CANDIDATES above the operational upper bound', () => {
+    expect(() => {
+      loadConfig({ DISCOVERY_MAX_CANDIDATES: '101' });
+    }).toThrow(/Invalid DISCOVERY_MAX_CANDIDATES/);
   });
 
   it('does not read the process environment', () => {

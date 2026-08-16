@@ -18,12 +18,23 @@ export type MarketDataConfig = {
   pollIntervalMs: number;
 };
 
+export type DiscoveryConfig = {
+  enabled: boolean;
+  includeProfiles: boolean;
+  includeBoosts: boolean;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  maxCandidates: number;
+  enrichMarketData: boolean;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
   tradingEnabled: boolean;
   solana: SolanaConfig;
   marketData: MarketDataConfig;
+  discovery: DiscoveryConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

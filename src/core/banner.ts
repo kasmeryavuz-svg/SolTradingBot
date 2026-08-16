@@ -11,6 +11,6 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 02');
+  console.log('Checkpoint: 03');
   console.log('Mode: READ ONLY');
 }

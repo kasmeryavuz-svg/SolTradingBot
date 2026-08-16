@@ -1,6 +1,5 @@
 import { ConfigError } from '../utils/parse-env.js';
-
-const SOLANA_MINT_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
 
 export function parseTokenMintList(
   raw: string | undefined,
@@ -20,7 +19,7 @@ export function parseTokenMintList(
   const mints: string[] = [];
 
   for (const mint of parts) {
-    if (!SOLANA_MINT_PATTERN.test(mint)) {
+    if (!isPlausibleSolanaMint(mint)) {
       throw new ConfigError(`Invalid ${name}. Each value must be a Solana token mint address.`);
     }
 

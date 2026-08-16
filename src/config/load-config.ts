@@ -1,12 +1,21 @@
 import { parseTokenMintList } from '../market-data/watchlist.js';
 import {
+  ConfigError,
   parseBooleanFlag,
+  parseBoundedPositiveInteger,
   parseEnumValue,
   parseHttpUrl,
   parsePositiveInteger,
   readOptionalEnv,
 } from '../utils/parse-env.js';
 import {
+  DEFAULT_DISCOVERY_ENABLED,
+  DEFAULT_DISCOVERY_ENRICH_MARKET_DATA,
+  DEFAULT_DISCOVERY_INCLUDE_BOOSTS,
+  DEFAULT_DISCOVERY_INCLUDE_PROFILES,
+  DEFAULT_DISCOVERY_MAX_CANDIDATES,
+  DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
+  DEFAULT_DISCOVERY_TIMEOUT_MS,
   DEFAULT_LOG_LEVEL,
   DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
   DEFAULT_MARKET_DATA_TIMEOUT_MS,
@@ -16,6 +25,7 @@ import {
   DEFAULT_SOLANA_RPC_TIMEOUT_MS,
   DEFAULT_SOLANA_RPC_URL,
   DEFAULT_TRADING_ENABLED,
+  DISCOVERY_MAX_CANDIDATES_LIMIT,
 } from './defaults.js';
 import {
   LOG_LEVEL_VALUES,
@@ -79,5 +89,55 @@ export function loadConfig(source: EnvSource): AppConfig {
         'MARKET_DATA_POLL_INTERVAL_MS',
       ),
     },
+    discovery: loadDiscoveryConfig(source),
   };
+}
+
+function loadDiscoveryConfig(source: EnvSource): AppConfig['discovery'] {
+  const discovery = {
+    enabled: parseBooleanFlag(
+      readOptionalEnv(source, 'DISCOVERY_ENABLED'),
+      DEFAULT_DISCOVERY_ENABLED,
+      'DISCOVERY_ENABLED',
+    ),
+    includeProfiles: parseBooleanFlag(
+      readOptionalEnv(source, 'DISCOVERY_INCLUDE_PROFILES'),
+      DEFAULT_DISCOVERY_INCLUDE_PROFILES,
+      'DISCOVERY_INCLUDE_PROFILES',
+    ),
+    includeBoosts: parseBooleanFlag(
+      readOptionalEnv(source, 'DISCOVERY_INCLUDE_BOOSTS'),
+      DEFAULT_DISCOVERY_INCLUDE_BOOSTS,
+      'DISCOVERY_INCLUDE_BOOSTS',
+    ),
+    timeoutMs: parsePositiveInteger(
+      readOptionalEnv(source, 'DISCOVERY_TIMEOUT_MS'),
+      DEFAULT_DISCOVERY_TIMEOUT_MS,
+      'DISCOVERY_TIMEOUT_MS',
+    ),
+    pollIntervalMs: parsePositiveInteger(
+      readOptionalEnv(source, 'DISCOVERY_POLL_INTERVAL_MS'),
+      DEFAULT_DISCOVERY_POLL_INTERVAL_MS,
+      'DISCOVERY_POLL_INTERVAL_MS',
+    ),
+    maxCandidates: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'DISCOVERY_MAX_CANDIDATES'),
+      DEFAULT_DISCOVERY_MAX_CANDIDATES,
+      'DISCOVERY_MAX_CANDIDATES',
+      DISCOVERY_MAX_CANDIDATES_LIMIT,
+    ),
+    enrichMarketData: parseBooleanFlag(
+      readOptionalEnv(source, 'DISCOVERY_ENRICH_MARKET_DATA'),
+      DEFAULT_DISCOVERY_ENRICH_MARKET_DATA,
+      'DISCOVERY_ENRICH_MARKET_DATA',
+    ),
+  };
+
+  if (discovery.enabled && !discovery.includeProfiles && !discovery.includeBoosts) {
+    throw new ConfigError(
+      'Invalid discovery configuration. Enable at least one discovery source when DISCOVERY_ENABLED=true.',
+    );
+  }
+
+  return discovery;
 }
