@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 13
+## Current checkpoint: 14
 
 **Current capabilities:**
 
@@ -24,10 +24,11 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - a12_v1 GROSS paper performance analytics
 - r125_v1 strategy research / benchmark lab
 - d13_v1 local read-only observability dashboard
+- e14_v1 Jupiter V2 unsigned swap preflight engine
 
 ### What this checkpoint is not
 
-- **Blockchain capability: READ ONLY**
+- **Blockchain capability: READ ONLY by default**
 - **Local SQLite persistence: YES**
 - **Backtester: YES**
 - **Paper trading: YES**
@@ -35,7 +36,8 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Exit engine: YES**
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
-- **Dashboard: YES (local, read-only)**
+- **Dashboard: YES (local, read-only, frozen d13)**
+- **Execution preflight: YES (terminal-only, unsigned)**
 - **Wallet: NO**
 - **Signer: NO**
 - **Transaction sending: NO**
@@ -53,7 +55,9 @@ a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated
 
 r125_v1 may then **compare five fixed entry hypotheses** against the same historical SQLite dataset. Those comparisons reuse frozen c06 features, frozen x11 exits, and a12-compatible GROSS math. They do **not** prove a live edge, pick a winner, or optimize thresholds.
 
-Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener.
+Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener. That dashboard stays frozen in Checkpoint 14. It has no BUILD / SIMULATE / SIGN / SEND buttons.
+
+Checkpoint 14 adds an **unsigned Jupiter Swap API V2 preflight engine**. `execution:build` requests a real `/swap/v2/build` route and compiles a real unsigned v0 message. `execution:simulate` then estimates compute units on Solana RPC and requires a second simulation against an explicit CU limit. That is **not** a send. Quoted output is not guaranteed execution output. Simulation passed is not a guarantee of landing and not a profit result.
 
 Features describe observations. They do **not** decide trades.
 
@@ -114,8 +118,8 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 13
-Blockchain capability: READ ONLY
+Checkpoint: 14
+Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
 Feature engine: available
@@ -127,11 +131,14 @@ Exit engine: available
 Performance analytics: available
 Strategy benchmark lab: available
 Dashboard: available
-Real execution engine: unavailable
+Execution preflight engine: available
+Wallet: unavailable
+Signing: unavailable
+Transaction broadcast: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, or dashboard servers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, or `dashboard:start`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, or execution commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, or `execution:simulate`.
 
 ## How to check Solana, market data, and discovery
 
@@ -397,6 +404,43 @@ Press `CTRL+C` to stop. `npm run dev` does **not** start the dashboard.
 
 See [docs/CHECKPOINT_13.md](docs/CHECKPOINT_13.md).
 
+## How to run unsigned execution preflight
+
+Checkpoint 14 compiles a real Jupiter Swap API V2 route into an unsigned Solana v0 message and can simulate it. Spec `e14_v1`. It does **not** sign, send, or touch paper/research state.
+
+```bash
+npm run execution:status
+npm run execution:build
+npm run execution:simulate
+```
+
+`execution:status` is local only: no network, no database writes. It shows the e14 spec, whether public config is present, and that signing / wallet / broadcast / Jito send are unavailable.
+
+`execution:build` and `execution:simulate` require all four public fields. There is no default wallet, token, or amount:
+
+```text
+EXECUTION_TAKER_PUBKEY=
+EXECUTION_INPUT_MINT=
+EXECUTION_OUTPUT_MINT=
+EXECUTION_AMOUNT_RAW=
+```
+
+`amountRaw` is the input token’s **smallest native units**, not a USD size. Example: `1000000`.
+
+`execution:simulate` does **not** send funds. Jupiter `/build` is real provider data. Solana simulation is real RPC preflight. The first CU estimate may replace the recent blockhash. The second simulation uses the exact Jupiter blockhash (`replaceRecentBlockhash: false`). 100 bps slippage is a frozen e14 test contract, not a “safe” or “optimal” setting.
+
+The CLI reports a **calculated priority-fee component** and a separate **RPC transaction-fee estimate** from `getFeeForMessage` on the final message. Those two numbers are not added together. `getFeeForMessage` is the cluster charge for that message and may already include a priority component.
+
+`execution:simulate` also checks `getGenesisHash` against the official mainnet-beta genesis. Setting `SOLANA_NETWORK=mainnet-beta` while pointing `SOLANA_RPC_URL` at another cluster is refused.
+
+These commands refuse if `TRADING_ENABLED=true` and refuse `execution:build` / `execution:simulate` unless `SOLANA_NETWORK=mainnet-beta`.
+
+Do **not** paste a private key into this project. Wallet security is Checkpoint 15. Tiny live broadcast is Checkpoint 16.
+
+There is no `execution:watch`, `execution:send`, or `execution:jito`.
+
+See [docs/CHECKPOINT_14.md](docs/CHECKPOINT_14.md) and [docs/EXECUTION_SOURCES.md](docs/EXECUTION_SOURCES.md).
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -473,11 +517,12 @@ src/             Application source code
   performance/   a12_v1 read-only GROSS closed-paper-trade analytics (no stored metric tables)
   research/      r125_v1 read-only strategy research / benchmark lab (no stored research tables)
   dashboard/     d13_v1 local loopback-only read-only observability dashboard (no stored dashboard tables)
+  execution/     e14_v1 Jupiter V2 unsigned swap preflight engine (no wallet, no sign, no send)
   utils/         Small shared helpers
   index.ts       The program entry point
-tests/           Automated tests (no live DEX Screener or Solana calls)
+tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
 docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a real execution engine, then wallet security. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Checkpoint 14+ is **not** implemented yet.
+Checkpoint 15 will add wallet security. Checkpoint 16 will add tiny live trading. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md) and are **not** implemented yet.

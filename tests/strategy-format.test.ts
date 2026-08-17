@@ -21,7 +21,7 @@ describe('strategy formatter', () => {
       'ENTRY_CANDIDATE is a strategy classification only. No order or trade is created.',
     );
     expect(lines).toContain('Context — NOT s07_v1 decision rules');
-    expect(lines).toContain('Checkpoint: 13');
+    expect(lines).toContain('Checkpoint: 14');
     expect(lines).not.toMatch(
       /profitable strategy|winning strategy|high-win-rate|optimized|validated edge|proven alpha/i,
     );
