@@ -30,6 +30,7 @@ import {
   DEFAULT_FEATURE_HISTORY_LIMIT,
   DEFAULT_STRATEGY_HISTORY_LIMIT,
   DEFAULT_PAPER_HISTORY_LIMIT,
+  DEFAULT_POSITION_HISTORY_LIMIT,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -106,6 +107,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     features: loadFeatureConfig(source),
     strategy: loadStrategyConfig(source),
     paper: loadPaperConfig(source),
+    position: loadPositionConfig(source),
   };
 }
 
@@ -224,6 +226,17 @@ function loadPaperConfig(source: EnvSource): AppConfig['paper'] {
       readOptionalEnv(source, 'PAPER_HISTORY_LIMIT'),
       DEFAULT_PAPER_HISTORY_LIMIT,
       'PAPER_HISTORY_LIMIT',
+      HISTORY_LIMIT_MAX,
+    ),
+  };
+}
+
+function loadPositionConfig(source: EnvSource): AppConfig['position'] {
+  return {
+    historyLimit: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'POSITION_HISTORY_LIMIT'),
+      DEFAULT_POSITION_HISTORY_LIMIT,
+      'POSITION_HISTORY_LIMIT',
       HISTORY_LIMIT_MAX,
     ),
   };

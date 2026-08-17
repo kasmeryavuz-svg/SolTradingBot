@@ -12,6 +12,26 @@ import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '.
 import { PAPER_SPEC_VERSION } from '../../paper/constants.js';
 import { PAPER_DEFINITION_FINGERPRINT, paperSourceIdentity } from '../../paper/identity.js';
 import type { PaperEvaluation } from '../../paper/types.js';
+import {
+  POSITION_ENTRY_NOTIONAL_USD,
+  POSITION_MAX_OPEN_PER_TOKEN,
+  POSITION_QUANTITY_FORMULA,
+  POSITION_SPEC_NAME,
+  POSITION_SPEC_VERSION,
+} from '../../position/constants.js';
+import {
+  POSITION_DEFINITION_FINGERPRINT,
+  positionEntrySourceIdentity,
+  positionEvaluationSourceIdentity,
+} from '../../position/identity.js';
+import {
+  derivePaperQuantityTokens,
+  openPaperPositionFromEvaluation,
+  openPaperPositionsSemanticallyEqual,
+  positionEvaluationsSemanticallyEqual,
+} from '../../position/invariants.js';
+import { evaluatePositionAction } from '../../position/evaluator.js';
+import type { PositionEvaluation } from '../../position/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -37,6 +57,8 @@ import type {
   RecordedStrategyBundle,
   PaperBundle,
   RecordedPaperBundle,
+  PositionBundle,
+  RecordedPositionBundle,
   StoredFeatureVectorSummary,
   StoredObservation,
   StoredRiskScanSummary,
@@ -50,6 +72,9 @@ import type {
   TokenStrategyHistory,
   TokenPaperHistory,
   StoredPaperEvaluationSummary,
+  StoredOpenPaperPosition,
+  StoredPositionEvaluationSummary,
+  TokenPositionHistory,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
 import {
@@ -59,6 +84,7 @@ import {
   assertPersistableSnapshot,
   assertPersistableStrategyEvaluation,
   assertPersistablePaperEvaluation,
+  assertPersistablePositionEvaluation,
 } from '../validate.js';
 import { openSqliteDatabase, readPragmaValue } from './database.js';
 import { applyMigrations, currentSchemaVersion } from './migrations.js';
@@ -143,6 +169,22 @@ type Statements = {
   getStrategyById: StatementSync;
   countPaperDefinitions: StatementSync;
   countPaperEvaluations: StatementSync;
+  getPositionDefinition: StatementSync;
+  insertPositionDefinition: StatementSync;
+  getPositionByPaperEvaluationId: StatementSync;
+  getPositionByIdentity: StatementSync;
+  insertPositionEvaluation: StatementSync;
+  positionHistory: StatementSync;
+  insertPaperPosition: StatementSync;
+  insertOpenPaperPosition: StatementSync;
+  getOpenPositionIndex: StatementSync;
+  getOpenPaperPosition: StatementSync;
+  getPaperPositionById: StatementSync;
+  getPaperById: StatementSync;
+  countPositionDefinitions: StatementSync;
+  countPositionEvaluations: StatementSync;
+  countPaperPositions: StatementSync;
+  countOpenPaperPositions: StatementSync;
 };
 
 type FeaturePersistAbort =
@@ -160,6 +202,13 @@ type StrategyPersistAbort =
   | 'strategyRules';
 
 type PaperPersistAbort = StrategyPersistAbort | 'paperDefinition' | 'paperEvaluation';
+
+type PositionPersistAbort =
+  | PaperPersistAbort
+  | 'positionDefinition'
+  | 'positionEvaluation'
+  | 'paperPosition'
+  | 'openPositionState';
 
 const FEATURE_PERSIST_ABORTS = new Set<FeaturePersistAbort>([
   'token',
@@ -182,12 +231,30 @@ const STRATEGY_PERSIST_ABORTS = new Set<StrategyPersistAbort>([
   'strategyRules',
 ]);
 
+const PAPER_PERSIST_ABORTS = new Set<PaperPersistAbort>([
+  'token',
+  'market',
+  'riskParent',
+  'riskChildren',
+  'featureVector',
+  'featureValues',
+  'strategyDefinition',
+  'strategyEvaluation',
+  'strategyRules',
+  'paperDefinition',
+  'paperEvaluation',
+]);
+
 function isFeaturePersistAbort(value: string): value is FeaturePersistAbort {
   return FEATURE_PERSIST_ABORTS.has(value as FeaturePersistAbort);
 }
 
 function isStrategyPersistAbort(value: string): value is StrategyPersistAbort {
   return STRATEGY_PERSIST_ABORTS.has(value as StrategyPersistAbort);
+}
+
+function isPaperPersistAbort(value: string): value is PaperPersistAbort {
+  return PAPER_PERSIST_ABORTS.has(value as PaperPersistAbort);
 }
 
 export class SqlitePersistenceRepository implements PersistenceRepository {
@@ -353,6 +420,16 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordPositionBundle(bundle: PositionBundle): RecordedPositionBundle {
+    return this.transact(() => this.persistPositionBundle(bundle));
+  }
+
+  recordPositionBundleAndAbortAfter(bundle: PositionBundle, abortAfter: PositionPersistAbort): void {
+    this.transact(() => {
+      this.persistPositionBundle(bundle, { abortAfter });
+    });
+  }
+
   getPreviousMarketSnapshot(
     tokenMint: string,
     pairAddress: string,
@@ -416,6 +493,28 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  getOpenPaperPosition(tokenMint: string): StoredOpenPaperPosition | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    return this.readOpenPaperPosition(token.id, token.mint);
+  }
+
+  getPositionHistory(tokenMint: string, limit: number): TokenPositionHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const rows = this.requireStatements().positionHistory.all(token.id, clampHistoryLimit(limit));
+    return {
+      token,
+      evaluations: rows.map((row) => this.mapPositionEvaluationSummary(row)),
+    };
+  }
+
   getTableCounts(): {
     tokens: number;
     discoveryRuns: number;
@@ -436,6 +535,10 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     strategyRuleResults: number;
     paperDefinitions: number;
     paperEvaluations: number;
+    positionDefinitions: number;
+    positionEvaluations: number;
+    paperPositions: number;
+    openPaperPositions: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -459,6 +562,10 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       strategyRuleResults: asNumber(statements.countStrategyRuleResults.get()?.['count']),
       paperDefinitions: asNumber(statements.countPaperDefinitions.get()?.['count']),
       paperEvaluations: asNumber(statements.countPaperEvaluations.get()?.['count']),
+      positionDefinitions: asNumber(statements.countPositionDefinitions.get()?.['count']),
+      positionEvaluations: asNumber(statements.countPositionEvaluations.get()?.['count']),
+      paperPositions: asNumber(statements.countPaperPositions.get()?.['count']),
+      openPaperPositions: asNumber(statements.countOpenPaperPositions.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -494,6 +601,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       featureVectorCount: asNumber(statements.countFeatureVectors.get()?.['count']),
       strategyEvaluationCount: asNumber(statements.countStrategyEvaluations.get()?.['count']),
       paperEvaluationCount: asNumber(statements.countPaperEvaluations.get()?.['count']),
+      positionEvaluationCount: asNumber(statements.countPositionEvaluations.get()?.['count']),
+      paperPositionCount: asNumber(statements.countPaperPositions.get()?.['count']),
+      openPaperPositionCount: asNumber(statements.countOpenPaperPositions.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -1012,6 +1122,196 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private persistPositionBundle(
+    bundle: PositionBundle,
+    options: { abortAfter?: PositionPersistAbort } = {},
+  ): RecordedPositionBundle {
+    assertPersistablePositionEvaluation(bundle.positionEvaluation, {
+      marketSnapshot: bundle.marketSnapshot,
+      featureVector: bundle.featureVector,
+      strategyEvaluation: bundle.strategyEvaluation,
+      paperEvaluation: bundle.paperEvaluation,
+      priorOpenPosition: bundle.priorOpenPosition,
+    });
+
+    const paperAbort =
+      options.abortAfter !== undefined && isPaperPersistAbort(options.abortAfter)
+        ? options.abortAfter
+        : undefined;
+    const paperRecorded =
+      paperAbort === undefined
+        ? this.persistPaperBundle(bundle)
+        : this.persistPaperBundle(bundle, { abortAfter: paperAbort });
+
+    const expectedPaperIdentity = paperSourceIdentity({
+      paperSpecVersion: PAPER_SPEC_VERSION,
+      paperDefinitionFingerprint: PAPER_DEFINITION_FINGERPRINT,
+      strategySourceIdentity: bundle.paperEvaluation.strategySourceIdentity,
+    });
+    this.assertExactPaperEvaluationLinkage(paperRecorded.paperEvaluationId, expectedPaperIdentity, bundle);
+
+    if (options.abortAfter !== undefined && isPaperPersistAbort(options.abortAfter)) {
+      throw new PersistenceError(`Test-forced write failure after ${options.abortAfter} insert.`);
+    }
+
+    const evaluation = evaluatePositionAction({
+      paperEvaluation: bundle.paperEvaluation,
+      currentOpenPosition: bundle.priorOpenPosition,
+    });
+    if (!positionEvaluationsSemanticallyEqual(evaluation, bundle.positionEvaluation)) {
+      throw new PersistenceError(
+        'Position evaluation does not match a fresh pm10_v1 evaluation of the supplied paper bundle.',
+      );
+    }
+
+    const definitionInserted = this.ensurePositionDefinition(evaluation);
+    if (options.abortAfter === 'positionDefinition') {
+      throw new PersistenceError('Test-forced write failure after position definition insert.');
+    }
+
+    const existing = this.requireStatements().getPositionByPaperEvaluationId.get(paperRecorded.paperEvaluationId);
+    if (existing !== undefined) {
+      const stored = this.mapPositionEvaluationSummary(existing);
+      if (!storedPositionMatchesEvaluation(stored, evaluation)) {
+        throw new PersistenceError(
+          'This paper evaluation was already position-processed with different position semantics.',
+        );
+      }
+      return {
+        positionEvaluationId: stored.id,
+        paperEvaluationId: paperRecorded.paperEvaluationId,
+        strategyEvaluationId: paperRecorded.strategyEvaluationId,
+        vectorId: paperRecorded.vectorId,
+        paperPositionId: this.paperPositionIdForEvaluation(stored.id),
+        openPositionCreated: false,
+        tokenMint: evaluation.tokenMint,
+        sourceIdentity: evaluation.sourceIdentity,
+        inserted: false,
+        paperInserted: paperRecorded.inserted,
+        strategyInserted: paperRecorded.strategyInserted,
+        featureInserted: paperRecorded.featureInserted,
+        marketInserted: paperRecorded.marketInserted,
+        riskInserted: paperRecorded.riskInserted,
+        tokenInserted: paperRecorded.tokenInserted,
+        paperDefinitionInserted: paperRecorded.paperDefinitionInserted,
+        positionDefinitionInserted: definitionInserted,
+      };
+    }
+
+    const dbOpen = this.reloadOpenPaperPosition(evaluation.tokenMint);
+    this.assertOpenPositionStateMatchesCaller(bundle.priorOpenPosition, dbOpen);
+
+    const token = this.getToken(evaluation.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Position evaluation token is missing after paper persistence.');
+    }
+
+    const inserted = this.requireStatements().insertPositionEvaluation.run(
+      token.id,
+      paperRecorded.paperEvaluationId,
+      evaluation.positionSpecVersion,
+      evaluation.positionDefinitionFingerprint,
+      evaluation.paperDefinitionFingerprint,
+      evaluation.asOf,
+      evaluation.evaluatedAt,
+      evaluation.paperAction,
+      evaluation.paperNoActionReason,
+      dbOpen?.id ?? null,
+      dbOpen?.positionSourceIdentity ?? null,
+      evaluation.positionAction,
+      evaluation.positionReason,
+      evaluation.entryPriceUsd,
+      evaluation.entryNotionalUsd,
+      evaluation.quantityTokens,
+      evaluation.positionSourceIdentity,
+      evaluation.sourceIdentity,
+    );
+    if (options.abortAfter === 'positionEvaluation') {
+      throw new PersistenceError('Test-forced write failure after position evaluation insert.');
+    }
+
+    const positionEvaluationId = Number(inserted.lastInsertRowid);
+    let paperPositionId: number | null = null;
+    let openPositionCreated = false;
+
+    if (evaluation.positionAction === 'open_position') {
+      if (typeof bundle.paperEvaluation.simulatedEntryPriceUsd !== 'number') {
+        throw new PersistenceError('OPEN_POSITION requires the exact p09 simulatedEntryPriceUsd.');
+      }
+      const entryPriceUsd = bundle.paperEvaluation.simulatedEntryPriceUsd;
+      const quantityTokens = derivePaperQuantityTokens(entryPriceUsd);
+      if (!Object.is(evaluation.entryPriceUsd, entryPriceUsd) || !Object.is(evaluation.quantityTokens, quantityTokens)) {
+        throw new PersistenceError('OPEN_POSITION quantity or price does not match 100 / entryPriceUsd.');
+      }
+      if (!Object.is(evaluation.entryNotionalUsd, POSITION_ENTRY_NOTIONAL_USD)) {
+        throw new PersistenceError('OPEN_POSITION entryNotionalUsd must be 100.');
+      }
+
+      const opened = openPaperPositionFromEvaluation(evaluation, bundle.paperEvaluation);
+      const positionSourceIdentity = positionEntrySourceIdentity({
+        positionSpecVersion: POSITION_SPEC_VERSION,
+        positionDefinitionFingerprint: POSITION_DEFINITION_FINGERPRINT,
+        openingPaperSourceIdentity: evaluation.paperSourceIdentity,
+      });
+      if (opened.positionSourceIdentity !== positionSourceIdentity) {
+        throw new PersistenceError('OPEN_POSITION source identity does not match the opening paper identity.');
+      }
+
+      const positionInserted = this.requireStatements().insertPaperPosition.run(
+        token.id,
+        positionEvaluationId,
+        paperRecorded.paperEvaluationId,
+        POSITION_SPEC_VERSION,
+        POSITION_DEFINITION_FINGERPRINT,
+        opened.pairAddress,
+        opened.openedAt,
+        opened.entryMarketCollectedAt,
+        entryPriceUsd,
+        POSITION_ENTRY_NOTIONAL_USD,
+        quantityTokens,
+        evaluation.paperSourceIdentity,
+        positionSourceIdentity,
+      );
+      if (options.abortAfter === 'paperPosition') {
+        throw new PersistenceError('Test-forced write failure after paper position insert.');
+      }
+
+      paperPositionId = Number(positionInserted.lastInsertRowid);
+      this.requireStatements().insertOpenPaperPosition.run(token.id, paperPositionId);
+      openPositionCreated = true;
+      if (options.abortAfter === 'openPositionState') {
+        throw new PersistenceError('Test-forced write failure after open position state insert.');
+      }
+    } else if (options.abortAfter === 'paperPosition' || options.abortAfter === 'openPositionState') {
+      throw new PersistenceError(
+        options.abortAfter === 'paperPosition'
+          ? 'Test-forced write failure after paper position insert.'
+          : 'Test-forced write failure after open position state insert.',
+      );
+    }
+
+    this.assertExactPaperEvaluationLinkage(paperRecorded.paperEvaluationId, expectedPaperIdentity, bundle);
+    return {
+      positionEvaluationId,
+      paperEvaluationId: paperRecorded.paperEvaluationId,
+      strategyEvaluationId: paperRecorded.strategyEvaluationId,
+      vectorId: paperRecorded.vectorId,
+      paperPositionId,
+      openPositionCreated,
+      tokenMint: evaluation.tokenMint,
+      sourceIdentity: evaluation.sourceIdentity,
+      inserted: true,
+      paperInserted: paperRecorded.inserted,
+      strategyInserted: paperRecorded.strategyInserted,
+      featureInserted: paperRecorded.featureInserted,
+      marketInserted: paperRecorded.marketInserted,
+      riskInserted: paperRecorded.riskInserted,
+      tokenInserted: paperRecorded.tokenInserted,
+      paperDefinitionInserted: paperRecorded.paperDefinitionInserted,
+      positionDefinitionInserted: definitionInserted,
+    };
+  }
+
   private ensurePaperDefinition(evaluation: PaperEvaluation): boolean {
     const existing = this.requireStatements().getPaperDefinition.get(evaluation.paperSpecVersion);
     if (existing === undefined) {
@@ -1040,6 +1340,123 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     }
 
     return false;
+  }
+
+  private ensurePositionDefinition(evaluation: PositionEvaluation): boolean {
+    const existing = this.requireStatements().getPositionDefinition.get(evaluation.positionSpecVersion);
+    if (existing === undefined) {
+      this.requireStatements().insertPositionDefinition.run(
+        evaluation.positionSpecVersion,
+        evaluation.positionSpecName,
+        evaluation.paperSpecVersion,
+        evaluation.paperDefinitionFingerprint,
+        POSITION_ENTRY_NOTIONAL_USD,
+        POSITION_QUANTITY_FORMULA,
+        POSITION_MAX_OPEN_PER_TOKEN,
+        evaluation.positionDefinitionFingerprint,
+        evaluation.evaluatedAt,
+      );
+      return true;
+    }
+
+    if (
+      asString(existing['position_spec_name']) !== evaluation.positionSpecName ||
+      asString(existing['position_spec_name']) !== POSITION_SPEC_NAME ||
+      asString(existing['paper_spec_version']) !== evaluation.paperSpecVersion ||
+      asString(existing['paper_definition_fingerprint']) !== evaluation.paperDefinitionFingerprint ||
+      !Object.is(asNumber(existing['entry_notional_usd']), POSITION_ENTRY_NOTIONAL_USD) ||
+      asString(existing['quantity_formula']) !== POSITION_QUANTITY_FORMULA ||
+      asNumber(existing['max_open_positions_per_token']) !== POSITION_MAX_OPEN_PER_TOKEN ||
+      asString(existing['definition_fingerprint']) !== evaluation.positionDefinitionFingerprint
+    ) {
+      throw new PersistenceError(
+        'Stored position definition for pm10_v1 does not match the current code fingerprint. Create a new position spec version instead of mutating pm10_v1.',
+      );
+    }
+
+    return false;
+  }
+
+  private assertExactPaperEvaluationLinkage(
+    paperEvaluationId: number,
+    expectedPaperIdentity: string,
+    bundle: PositionBundle,
+  ): void {
+    const byIdentity = this.requireStatements().getPaperByIdentity.get(expectedPaperIdentity);
+    if (byIdentity === undefined) {
+      throw new PersistenceError('Position evaluation does not reference an exact stored paper evaluation.');
+    }
+    if (asNumber(byIdentity['id']) !== paperEvaluationId) {
+      throw new PersistenceError(
+        'Position evaluation paper_evaluation_id does not match the exact paper evaluation source identity.',
+      );
+    }
+
+    const byId = this.requireStatements().getPaperById.get(paperEvaluationId);
+    if (byId === undefined) {
+      throw new PersistenceError('Position evaluation paper_evaluation_id does not match a stored paper evaluation.');
+    }
+    const stored = this.mapPaperEvaluationSummary(byId);
+    if (!storedPaperMatchesEvaluation(stored, bundle.paperEvaluation)) {
+      throw new PersistenceError('Stored paper evaluation does not match the position bundle paper evaluation.');
+    }
+  }
+
+  private reloadOpenPaperPosition(tokenMint: string): StoredOpenPaperPosition | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+    return this.readOpenPaperPosition(token.id, token.mint);
+  }
+
+  private readOpenPaperPosition(tokenId: number, tokenMint: string): StoredOpenPaperPosition | null {
+    const index = this.requireStatements().getOpenPositionIndex.get(tokenId);
+    if (index === undefined) {
+      return null;
+    }
+    const row = this.requireStatements().getOpenPaperPosition.get(tokenId);
+    if (row === undefined) {
+      throw new PersistenceError('Current open-position row references a missing paper position entry.');
+    }
+    if (
+      asNumber(index['token_id']) !== tokenId ||
+      asNumber(index['position_id']) !== asNumber(row['id']) ||
+      asNumber(row['position_token_id']) !== tokenId ||
+      asNumber(row['open_token_id']) !== tokenId
+    ) {
+      throw new PersistenceError('Current open-position row does not belong to the requested token.');
+    }
+    return this.mapStoredOpenPaperPosition(row, tokenMint);
+  }
+
+  private assertOpenPositionStateMatchesCaller(
+    caller: StoredOpenPaperPosition | null,
+    dbOpen: StoredOpenPaperPosition | null,
+  ): void {
+    if (caller === null && dbOpen === null) {
+      return;
+    }
+    if (caller === null || dbOpen === null) {
+      throw new PersistenceError(
+        'Current open-position state changed since evaluation. Retry the command.',
+      );
+    }
+    if (
+      caller.id !== dbOpen.id ||
+      caller.positionEvaluationId !== dbOpen.positionEvaluationId ||
+      caller.openingPaperEvaluationId !== dbOpen.openingPaperEvaluationId ||
+      !openPaperPositionsSemanticallyEqual(caller, dbOpen)
+    ) {
+      throw new PersistenceError(
+        'Current open-position state changed since evaluation. Retry the command.',
+      );
+    }
+  }
+
+  private paperPositionIdForEvaluation(positionEvaluationId: number): number | null {
+    const row = this.requireStatements().getPaperPositionById.get(positionEvaluationId);
+    return row === undefined ? null : asNumber(row['id']);
   }
 
   private assertExactStrategyEvaluationLinkage(
@@ -1647,6 +2064,94 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private mapPositionEvaluationSummary(
+    row: Record<string, SQLOutputValue>,
+  ): StoredPositionEvaluationSummary {
+    return {
+      id: asNumber(row['id']),
+      paperEvaluationId: asNumber(row['paper_evaluation_id']),
+      tokenMint: asString(row['token_mint']),
+      positionSpecVersion: asString(row['position_spec_version']),
+      positionSpecName: asString(row['position_spec_name']),
+      positionDefinitionFingerprint: asString(row['position_definition_fingerprint']),
+      paperSpecVersion: asString(row['paper_spec_version']),
+      paperDefinitionFingerprint: asString(row['paper_definition_fingerprint']),
+      paperSourceIdentity: asString(row['paper_source_identity']),
+      asOf: asString(row['as_of']),
+      evaluatedAt: asString(row['evaluated_at']),
+      paperAction: asString(row['paper_action']) as PositionEvaluation['paperAction'],
+      paperNoActionReason: asNullableString(row['paper_no_action_reason']) as PositionEvaluation['paperNoActionReason'],
+      priorOpenPositionId: asNullableNumber(row['prior_open_position_id']),
+      priorOpenPositionSourceIdentity: asNullableString(row['prior_open_position_source_identity']),
+      positionAction: asString(row['position_action']) as PositionEvaluation['positionAction'],
+      positionReason: asNullableString(row['position_reason']) as PositionEvaluation['positionReason'],
+      entryPriceUsd: asNullableNumber(row['entry_price_usd']),
+      entryNotionalUsd: asNullableNumber(row['entry_notional_usd']),
+      quantityTokens: asNullableNumber(row['quantity_tokens']),
+      positionSourceIdentity: asNullableString(row['position_source_identity']),
+      sourceIdentity: asString(row['source_identity']),
+    };
+  }
+
+  private mapStoredOpenPaperPosition(
+    row: Record<string, SQLOutputValue>,
+    tokenMint: string,
+  ): StoredOpenPaperPosition {
+    const entryPriceUsd = asNumber(row['entry_price_usd']);
+    const entryNotionalUsd = asNumber(row['entry_notional_usd']);
+    const quantityTokens = asNumber(row['quantity_tokens']);
+    if (!Number.isFinite(entryPriceUsd) || entryPriceUsd <= 0) {
+      throw new PersistenceError('Stored open paper position has an invalid entry price.');
+    }
+    if (!Object.is(entryNotionalUsd, POSITION_ENTRY_NOTIONAL_USD)) {
+      throw new PersistenceError('Stored open paper position has an invalid entry notional.');
+    }
+    const expectedQuantity = derivePaperQuantityTokens(entryPriceUsd);
+    if (!Object.is(quantityTokens, expectedQuantity)) {
+      throw new PersistenceError('Stored open paper position quantity does not match 100 / entryPriceUsd.');
+    }
+
+    const storedMint = asString(row['token_mint']);
+    if (storedMint !== tokenMint) {
+      throw new PersistenceError('Stored open paper position token mint does not match the open-state index.');
+    }
+    if (asString(row['position_spec_version']) !== POSITION_SPEC_VERSION) {
+      throw new PersistenceError('Stored open paper position must use spec pm10_v1.');
+    }
+    if (asString(row['position_definition_fingerprint']) !== POSITION_DEFINITION_FINGERPRINT) {
+      throw new PersistenceError('Stored open paper position definition fingerprint does not match pm10_v1.');
+    }
+
+    const openingPaperSourceIdentity = asString(row['opening_paper_source_identity']);
+    const positionSourceIdentity = asString(row['source_identity']);
+    const expectedIdentity = positionEntrySourceIdentity({
+      positionSpecVersion: POSITION_SPEC_VERSION,
+      positionDefinitionFingerprint: POSITION_DEFINITION_FINGERPRINT,
+      openingPaperSourceIdentity,
+    });
+    if (positionSourceIdentity !== expectedIdentity) {
+      throw new PersistenceError('Stored open paper position source identity is malformed.');
+    }
+
+    return {
+      id: asNumber(row['id']),
+      positionEvaluationId: asNumber(row['position_evaluation_id']),
+      openingPaperEvaluationId: asNumber(row['opening_paper_evaluation_id']),
+      chain: 'solana',
+      tokenMint: storedMint,
+      pairAddress: asString(row['pair_address']),
+      positionSpecVersion: asString(row['position_spec_version']),
+      positionDefinitionFingerprint: asString(row['position_definition_fingerprint']),
+      openedAt: asString(row['opened_at']),
+      entryMarketCollectedAt: asString(row['entry_market_collected_at']),
+      entryPriceUsd,
+      entryNotionalUsd,
+      quantityTokens,
+      openingPaperSourceIdentity,
+      positionSourceIdentity,
+    };
+  }
+
   private readStrategyRuleResults(evaluationId: number): StrategyRuleResult[] {
     return this.requireStatements()
       .strategyRuleResults.all(evaluationId)
@@ -1717,6 +2222,28 @@ export function createSqlitePersistenceRepository(
 ): SqlitePersistenceRepository {
   return new SqlitePersistenceRepository(config);
 }
+
+const PAPER_EVALUATION_SELECT = `SELECT p.id, p.strategy_evaluation_id, t.mint AS token_mint, p.paper_spec_version, d.paper_spec_name,
+              p.paper_definition_fingerprint, d.strategy_version, p.strategy_definition_fingerprint,
+              p.strategy_decision, p.feature_set_version, p.as_of, p.evaluated_at, p.pair_address,
+              p.market_collected_at, p.paper_action, p.no_action_reason, p.reference_price_usd,
+              p.simulated_entry_price_usd, p.execution_model, p.cost_model, p.quantity_model,
+              p.position_model, p.exit_model, p.source_identity
+       FROM paper_evaluations p
+       JOIN paper_definitions d ON d.paper_spec_version = p.paper_spec_version
+       JOIN tokens t ON t.id = p.token_id`;
+
+const POSITION_EVALUATION_SELECT = `SELECT e.id, e.paper_evaluation_id, t.mint AS token_mint, e.position_spec_version,
+              d.position_spec_name, e.position_definition_fingerprint, d.paper_spec_version,
+              e.paper_definition_fingerprint, p.source_identity AS paper_source_identity,
+              e.as_of, e.evaluated_at, e.paper_action, e.paper_no_action_reason,
+              e.prior_open_position_id, e.prior_open_position_source_identity, e.position_action,
+              e.position_reason, e.entry_price_usd, e.entry_notional_usd, e.quantity_tokens,
+              e.position_source_identity, e.source_identity
+       FROM position_evaluations e
+       JOIN position_definitions d ON d.position_spec_version = e.position_spec_version
+       JOIN tokens t ON t.id = e.token_id
+       JOIN paper_evaluations p ON p.id = e.paper_evaluation_id`;
 
 function prepareStatements(database: DatabaseSync): Statements {
   return {
@@ -2011,18 +2538,7 @@ function prepareStatements(database: DatabaseSync): Statements {
         strategy_definition_fingerprint, definition_fingerprint, first_recorded_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ),
-    getPaperByIdentity: database.prepare(
-      `SELECT p.id, p.strategy_evaluation_id, t.mint AS token_mint, p.paper_spec_version, d.paper_spec_name,
-              p.paper_definition_fingerprint, d.strategy_version, p.strategy_definition_fingerprint,
-              p.strategy_decision, p.feature_set_version, p.as_of, p.evaluated_at, p.pair_address,
-              p.market_collected_at, p.paper_action, p.no_action_reason, p.reference_price_usd,
-              p.simulated_entry_price_usd, p.execution_model, p.cost_model, p.quantity_model,
-              p.position_model, p.exit_model, p.source_identity
-       FROM paper_evaluations p
-       JOIN paper_definitions d ON d.paper_spec_version = p.paper_spec_version
-       JOIN tokens t ON t.id = p.token_id
-       WHERE p.source_identity = ?`,
-    ),
+    getPaperByIdentity: database.prepare(`${PAPER_EVALUATION_SELECT} WHERE p.source_identity = ?`),
     insertPaperEvaluation: database.prepare(
       `INSERT INTO paper_evaluations (
         token_id, strategy_evaluation_id, paper_spec_version, paper_definition_fingerprint,
@@ -2033,15 +2549,7 @@ function prepareStatements(database: DatabaseSync): Statements {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     paperHistory: database.prepare(
-      `SELECT p.id, p.strategy_evaluation_id, t.mint AS token_mint, p.paper_spec_version, d.paper_spec_name,
-              p.paper_definition_fingerprint, d.strategy_version, p.strategy_definition_fingerprint,
-              p.strategy_decision, p.feature_set_version, p.as_of, p.evaluated_at, p.pair_address,
-              p.market_collected_at, p.paper_action, p.no_action_reason, p.reference_price_usd,
-              p.simulated_entry_price_usd, p.execution_model, p.cost_model, p.quantity_model,
-              p.position_model, p.exit_model, p.source_identity
-       FROM paper_evaluations p
-       JOIN paper_definitions d ON d.paper_spec_version = p.paper_spec_version
-       JOIN tokens t ON t.id = p.token_id
+      `${PAPER_EVALUATION_SELECT}
        WHERE p.token_id = ?
        ORDER BY p.as_of DESC, p.id DESC
        LIMIT ?`,
@@ -2059,6 +2567,70 @@ function prepareStatements(database: DatabaseSync): Statements {
     ),
     countPaperDefinitions: database.prepare('SELECT COUNT(*) AS count FROM paper_definitions'),
     countPaperEvaluations: database.prepare('SELECT COUNT(*) AS count FROM paper_evaluations'),
+    getPositionDefinition: database.prepare(
+      `SELECT position_spec_version, position_spec_name, paper_spec_version, paper_definition_fingerprint,
+              entry_notional_usd, quantity_formula, max_open_positions_per_token, definition_fingerprint,
+              first_recorded_at
+       FROM position_definitions
+       WHERE position_spec_version = ?`,
+    ),
+    insertPositionDefinition: database.prepare(
+      `INSERT INTO position_definitions (
+        position_spec_version, position_spec_name, paper_spec_version, paper_definition_fingerprint,
+        entry_notional_usd, quantity_formula, max_open_positions_per_token, definition_fingerprint,
+        first_recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    getPositionByPaperEvaluationId: database.prepare(
+      `${POSITION_EVALUATION_SELECT} WHERE e.paper_evaluation_id = ?`,
+    ),
+    getPositionByIdentity: database.prepare(`${POSITION_EVALUATION_SELECT} WHERE e.source_identity = ?`),
+    insertPositionEvaluation: database.prepare(
+      `INSERT INTO position_evaluations (
+        token_id, paper_evaluation_id, position_spec_version, position_definition_fingerprint,
+        paper_definition_fingerprint, as_of, evaluated_at, paper_action, paper_no_action_reason,
+        prior_open_position_id, prior_open_position_source_identity, position_action, position_reason,
+        entry_price_usd, entry_notional_usd, quantity_tokens, position_source_identity, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    positionHistory: database.prepare(
+      `${POSITION_EVALUATION_SELECT}
+       WHERE e.token_id = ?
+       ORDER BY e.as_of DESC, e.id DESC
+       LIMIT ?`,
+    ),
+    insertPaperPosition: database.prepare(
+      `INSERT INTO paper_positions (
+        token_id, position_evaluation_id, opening_paper_evaluation_id, position_spec_version,
+        position_definition_fingerprint, pair_address, opened_at, entry_market_collected_at,
+        entry_price_usd, entry_notional_usd, quantity_tokens, opening_paper_source_identity, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    insertOpenPaperPosition: database.prepare(
+      'INSERT INTO paper_open_positions (token_id, position_id) VALUES (?, ?)',
+    ),
+    getOpenPositionIndex: database.prepare(
+      'SELECT token_id, position_id FROM paper_open_positions WHERE token_id = ?',
+    ),
+    getOpenPaperPosition: database.prepare(
+      `SELECT pp.id, pp.position_evaluation_id, pp.opening_paper_evaluation_id, pp.pair_address,
+              pp.position_spec_version, pp.position_definition_fingerprint, pp.opened_at,
+              pp.entry_market_collected_at, pp.entry_price_usd, pp.entry_notional_usd, pp.quantity_tokens,
+              pp.opening_paper_source_identity, pp.source_identity, t.mint AS token_mint,
+              pp.token_id AS position_token_id, op.token_id AS open_token_id
+       FROM paper_open_positions op
+       JOIN paper_positions pp ON pp.id = op.position_id AND pp.token_id = op.token_id
+       JOIN tokens t ON t.id = pp.token_id
+       WHERE op.token_id = ?`,
+    ),
+    getPaperPositionById: database.prepare(
+      'SELECT id FROM paper_positions WHERE position_evaluation_id = ?',
+    ),
+    getPaperById: database.prepare(`${PAPER_EVALUATION_SELECT} WHERE p.id = ?`),
+    countPositionDefinitions: database.prepare('SELECT COUNT(*) AS count FROM position_definitions'),
+    countPositionEvaluations: database.prepare('SELECT COUNT(*) AS count FROM position_evaluations'),
+    countPaperPositions: database.prepare('SELECT COUNT(*) AS count FROM paper_positions'),
+    countOpenPaperPositions: database.prepare('SELECT COUNT(*) AS count FROM paper_open_positions'),
   };
 }
 
@@ -2093,6 +2665,39 @@ function storedPaperMatchesEvaluation(
         paperSpecVersion: paper.paperSpecVersion,
         paperDefinitionFingerprint: paper.paperDefinitionFingerprint,
         strategySourceIdentity: paper.strategySourceIdentity,
+      })
+  );
+}
+
+function storedPositionMatchesEvaluation(
+  stored: StoredPositionEvaluationSummary,
+  evaluation: PositionEvaluation,
+): boolean {
+  return (
+    stored.tokenMint === evaluation.tokenMint &&
+    stored.positionSpecVersion === evaluation.positionSpecVersion &&
+    stored.positionSpecName === evaluation.positionSpecName &&
+    stored.positionDefinitionFingerprint === evaluation.positionDefinitionFingerprint &&
+    stored.paperSpecVersion === evaluation.paperSpecVersion &&
+    stored.paperDefinitionFingerprint === evaluation.paperDefinitionFingerprint &&
+    stored.paperSourceIdentity === evaluation.paperSourceIdentity &&
+    stored.asOf === evaluation.asOf &&
+    stored.evaluatedAt === evaluation.evaluatedAt &&
+    stored.paperAction === evaluation.paperAction &&
+    stored.paperNoActionReason === evaluation.paperNoActionReason &&
+    stored.priorOpenPositionSourceIdentity === evaluation.priorOpenPositionSourceIdentity &&
+    stored.positionAction === evaluation.positionAction &&
+    stored.positionReason === evaluation.positionReason &&
+    Object.is(stored.entryPriceUsd, evaluation.entryPriceUsd) &&
+    Object.is(stored.entryNotionalUsd, evaluation.entryNotionalUsd) &&
+    Object.is(stored.quantityTokens, evaluation.quantityTokens) &&
+    stored.positionSourceIdentity === evaluation.positionSourceIdentity &&
+    stored.sourceIdentity ===
+      positionEvaluationSourceIdentity({
+        positionSpecVersion: evaluation.positionSpecVersion,
+        positionDefinitionFingerprint: evaluation.positionDefinitionFingerprint,
+        paperSourceIdentity: evaluation.paperSourceIdentity,
+        priorOpenPositionSourceIdentity: evaluation.priorOpenPositionSourceIdentity,
       })
   );
 }

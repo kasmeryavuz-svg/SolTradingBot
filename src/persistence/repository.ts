@@ -11,6 +11,8 @@ import type {
   RecordedStrategyBundle,
   RecordedPaperBundle,
   PaperBundle,
+  PositionBundle,
+  RecordedPositionBundle,
   StoredObservation,
   StoredRiskScanSummary,
   StoredSourceResult,
@@ -21,6 +23,8 @@ import type {
   TokenRiskHistory,
   TokenStrategyHistory,
   TokenPaperHistory,
+  TokenPositionHistory,
+  StoredOpenPaperPosition,
 } from './types.js';
 
 export type PersistenceRepository = {
@@ -31,6 +35,7 @@ export type PersistenceRepository = {
   recordFeatureBundle(bundle: FeatureBundle): RecordedFeatureBundle;
   recordStrategyBundle(bundle: StrategyBundle): RecordedStrategyBundle;
   recordPaperBundle(bundle: PaperBundle): RecordedPaperBundle;
+  recordPositionBundle(bundle: PositionBundle): RecordedPositionBundle;
   getPreviousMarketSnapshot(
     tokenMint: string,
     pairAddress: string,
@@ -40,6 +45,8 @@ export type PersistenceRepository = {
   getFeatureHistory(tokenMint: string, limit: number): TokenFeatureHistory | null;
   getStrategyHistory(tokenMint: string, limit: number): TokenStrategyHistory | null;
   getPaperHistory(tokenMint: string, limit: number): TokenPaperHistory | null;
+  getOpenPaperPosition(tokenMint: string): StoredOpenPaperPosition | null;
+  getPositionHistory(tokenMint: string, limit: number): TokenPositionHistory | null;
   getStats(): PersistenceStats;
   getToken(tokenMint: string): StoredToken | null;
   getRecentDiscoveryObservations(limit: number): StoredObservation[];

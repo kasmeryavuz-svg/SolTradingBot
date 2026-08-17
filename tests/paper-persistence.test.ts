@@ -17,6 +17,7 @@ import {
   INITIAL_MIGRATION_NAME,
   PAPER_MIGRATION_NAME,
   PAPER_MIGRATION_VERSION,
+  migrationSql,
   migrationSqlDigest,
 } from '../src/persistence/sqlite/migrations.js';
 import { FEATURE_NAMES, FEATURE_SET_VERSION } from '../src/features/definitions.js';
@@ -62,12 +63,12 @@ describe('paper persistence migration', () => {
     expect(migrationSqlDigest(5)).toMatch(/^[a-f0-9]{64}$/);
     expect(migrationSqlDigest(5)).toBe(migrationSqlDigest(5));
 
-    const source = readFileSync(new URL('../src/persistence/sqlite/migrations.ts', import.meta.url), 'utf8');
-    expect(source).toContain('CREATE TABLE paper_definitions');
-    expect(source).toContain('CREATE TABLE paper_evaluations');
-    expect(source).toContain('paper_evaluations_token_as_of_id');
-    expect(source).not.toMatch(/paper_positions|paper_orders|paper_balances|paper_portfolios|paper_exits/);
-    expect(source).not.toMatch(/notional|virtual_cash|realized_pnl|unrealized_pnl|stop_loss|take_profit|equity_curve/);
+    const sql005 = migrationSql(5);
+    expect(sql005).toContain('CREATE TABLE paper_definitions');
+    expect(sql005).toContain('CREATE TABLE paper_evaluations');
+    expect(sql005).toContain('paper_evaluations_token_as_of_id');
+    expect(sql005).not.toMatch(/paper_positions|paper_orders|paper_balances|paper_portfolios|paper_exits/);
+    expect(sql005).not.toMatch(/notional|virtual_cash|realized_pnl|unrealized_pnl|stop_loss|take_profit|equity_curve/);
   });
 
   it('upgrades a populated v4 database to v5 without deleting older rows', () => {
@@ -180,8 +181,8 @@ describe('paper persistence migration', () => {
         repository.initialize();
         repository.initialize();
         const stats = repository.getStats();
-        expect(stats.schemaVersion).toBe(5);
-        expect(repository.getTableCounts().schemaMigrations).toBe(5);
+        expect(stats.schemaVersion).toBe(6);
+        expect(repository.getTableCounts().schemaMigrations).toBe(6);
         expect(stats.tokenCount).toBe(1);
         expect(stats.discoveryRunCount).toBe(1);
         expect(stats.marketSnapshotCount).toBe(1);
@@ -203,6 +204,7 @@ describe('paper persistence migration', () => {
           expect(dumpTables(after, v4Tables)).toEqual(before);
           expect(after.prepare('SELECT COUNT(*) AS count FROM paper_definitions').get()?.['count']).toBe(0);
           expect(after.prepare('SELECT COUNT(*) AS count FROM paper_evaluations').get()?.['count']).toBe(0);
+          expect(after.prepare('SELECT COUNT(*) AS count FROM position_evaluations').get()?.['count']).toBe(0);
           expect(after.prepare('PRAGMA foreign_keys').get()?.['foreign_keys']).toBe(1);
           expect(String(Object.values(after.prepare('PRAGMA quick_check').get() ?? {})[0] ?? '')).toBe('ok');
         } finally {

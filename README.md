@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 09
+## Current checkpoint: 10
 
 **Current capabilities:**
 
@@ -19,15 +19,17 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - s07_v1 strategy
 - b08_v1 historical backtester
 - p09_v1 live paper-entry observation
+- pm10_v1 simulated position management
 
 ### What this checkpoint is not
 
 - **Blockchain capability: READ ONLY**
 - **Local SQLite persistence: YES**
 - **Backtester: YES**
-- **Paper trading foundation: YES**
-- **Position management: NO**
+- **Paper trading: YES**
+- **Position management: YES**
 - **Exit engine: NO**
+- **Performance analytics: NO**
 - **Wallet: NO**
 - **Signer: NO**
 - **Transaction sending: NO**
@@ -35,7 +37,9 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 
 `ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or blockchain trade.
 
-A p09_v1 **paper entry observation** records that frozen `s07_v1` classified a live snapshot as an entry candidate, using that snapshot’s exact `priceUsd` as a reference price. It is **not** an executable quote, fill, or position. It does not model slippage, fees, DEX execution, latency, MEV, size, or liquidity impact. There is no quantity or virtual balance yet.
+A p09_v1 **paper entry observation** records that frozen `s07_v1` classified a live snapshot as an entry candidate, using that snapshot’s exact `priceUsd` as a reference price. It is **not** an executable quote, fill, or position.
+
+pm10_v1 may open a **simulated paper position** from that observation: one current open position per token mint, a fixed **$100** reference notional, and `quantity = 100 / entry price`. That $100 figure is a modeling reference, not real funds, not a bankroll, and not a recommendation for future live size. There is no cash balance, no exit, and no PnL in this checkpoint.
 
 Features describe observations. They do **not** decide trades.
 
@@ -96,7 +100,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 09
+Checkpoint: 10
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
@@ -104,11 +108,12 @@ Feature engine: available
 Strategy evaluator: available
 Backtester: available
 Paper trading: available
-Position management: unavailable
+Position management: available
+Exit engine: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, or paper watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, or position watchers, and it does **not** write database rows. It does **not** automatically run `paper:step` or `position:step`.
 
 ## How to check Solana, market data, and discovery
 
@@ -249,6 +254,30 @@ A live result of `NO_ENTRY` / `NO_ACTION` is acceptable. Do not weaken `s07_v1` 
 
 See [docs/CHECKPOINT_09.md](docs/CHECKPOINT_09.md) for the difference between strategy classification, paper observation, position, and a real trade.
 
+## How to run simulated position management
+
+Checkpoint 10 may open a simulated paper position from a p09_v1 entry observation. Spec `pm10_v1` uses a fixed $100 reference notional and `quantity = 100 / entry price`. It does **not** send a transaction or close a position.
+
+```bash
+npm run position:step -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show the current open paper position for one mint (`DATABASE_ENABLED=true`, no network, no current price or PnL):
+
+```bash
+npm run position:status -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show stored position evaluations for one mint:
+
+```bash
+npm run position:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+`paper:step` remains p09_v1 only. It does **not** create a position. A live result of `NO_ENTRY` / `NO_ACTION` / `NO_CHANGE` is acceptable. Do not weaken `s07_v1` to force an open. There is no `position:watch`.
+
+See [docs/CHECKPOINT_10.md](docs/CHECKPOINT_10.md) for token-wide one-open-position rules, the $100 modeling limitation, and why entry rows are separate from current-open state.
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -320,6 +349,7 @@ src/             Application source code
   strategy/      Experimental s07_v1 entry-candidate classifier and strategy commands
   backtest/      Read-only historical b08_v1 event study for frozen s07_v1
   paper/         p09_v1 live paper-entry observation (no quantity or positions)
+  position/      pm10_v1 simulated single-open-position management (no exits or PnL)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -327,4 +357,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add position management and an exit engine. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add an exit engine and performance analytics. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

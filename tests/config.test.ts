@@ -70,6 +70,9 @@ describe('loadConfig', () => {
       paper: {
         historyLimit: 20,
       },
+      position: {
+        historyLimit: 20,
+      },
     });
   });
 
@@ -288,6 +291,17 @@ describe('loadConfig', () => {
   it('loads paper history settings from the environment', () => {
     const config = loadConfig({ PAPER_HISTORY_LIMIT: '12' });
     expect(config.paper).toEqual({ historyLimit: 12 });
+  });
+
+  it('loads position history settings from the environment', () => {
+    const config = loadConfig({ POSITION_HISTORY_LIMIT: '12' });
+    expect(config.position).toEqual({ historyLimit: 12 });
+  });
+
+  it('rejects a position history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ POSITION_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid POSITION_HISTORY_LIMIT/);
   });
 
   it('rejects a paper history limit above the bound', () => {

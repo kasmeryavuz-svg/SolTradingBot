@@ -12,7 +12,9 @@ export const STRATEGY_MIGRATION_VERSION = 4;
 export const STRATEGY_MIGRATION_NAME = '004_strategy_evaluations';
 export const PAPER_MIGRATION_VERSION = 5;
 export const PAPER_MIGRATION_NAME = '005_paper_evaluations';
-export const LATEST_SCHEMA_VERSION = PAPER_MIGRATION_VERSION;
+export const POSITION_MIGRATION_VERSION = 6;
+export const POSITION_MIGRATION_NAME = '006_position_management';
+export const LATEST_SCHEMA_VERSION = POSITION_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -410,15 +412,179 @@ CREATE INDEX paper_evaluations_token_as_of_id
   ON paper_evaluations (token_id, as_of DESC, id DESC);
 `,
   },
+  {
+    version: POSITION_MIGRATION_VERSION,
+    name: POSITION_MIGRATION_NAME,
+    sql: `
+CREATE UNIQUE INDEX paper_evaluations_id_token_id
+  ON paper_evaluations (id, token_id);
+
+CREATE TABLE position_definitions (
+  position_spec_version TEXT PRIMARY KEY,
+  position_spec_name TEXT NOT NULL,
+  paper_spec_version TEXT NOT NULL,
+  paper_definition_fingerprint TEXT NOT NULL,
+  entry_notional_usd REAL NOT NULL,
+  quantity_formula TEXT NOT NULL,
+  max_open_positions_per_token INTEGER NOT NULL,
+  definition_fingerprint TEXT NOT NULL,
+  first_recorded_at TEXT NOT NULL,
+  CHECK (entry_notional_usd = 100),
+  CHECK (max_open_positions_per_token = 1)
+) STRICT;
+
+CREATE TABLE position_evaluations (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  paper_evaluation_id INTEGER NOT NULL UNIQUE,
+  position_spec_version TEXT NOT NULL,
+  position_definition_fingerprint TEXT NOT NULL,
+  paper_definition_fingerprint TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  paper_action TEXT NOT NULL CHECK (paper_action IN ('entry_observation', 'no_action')),
+  paper_no_action_reason TEXT CHECK (
+    paper_no_action_reason IS NULL
+    OR paper_no_action_reason IN ('strategy_no_entry', 'strategy_insufficient_data')
+  ),
+  prior_open_position_id INTEGER,
+  prior_open_position_source_identity TEXT,
+  position_action TEXT NOT NULL CHECK (position_action IN ('open_position', 'no_change')),
+  position_reason TEXT CHECK (
+    position_reason IS NULL
+    OR position_reason IN (
+      'paper_strategy_no_entry',
+      'paper_strategy_insufficient_data',
+      'position_already_open'
+    )
+  ),
+  entry_price_usd REAL,
+  entry_notional_usd REAL,
+  quantity_tokens REAL,
+  position_source_identity TEXT,
+  source_identity TEXT NOT NULL UNIQUE,
+  UNIQUE (id, token_id),
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (paper_evaluation_id) REFERENCES paper_evaluations(id),
+  FOREIGN KEY (paper_evaluation_id, token_id) REFERENCES paper_evaluations(id, token_id),
+  FOREIGN KEY (position_spec_version) REFERENCES position_definitions(position_spec_version),
+  FOREIGN KEY (prior_open_position_id) REFERENCES paper_positions(id),
+  FOREIGN KEY (prior_open_position_id, token_id) REFERENCES paper_positions(id, token_id),
+  FOREIGN KEY (prior_open_position_id, prior_open_position_source_identity)
+    REFERENCES paper_positions(id, source_identity),
+  CHECK (
+    (
+      prior_open_position_id IS NULL
+      AND prior_open_position_source_identity IS NULL
+    )
+    OR (
+      prior_open_position_id IS NOT NULL
+      AND prior_open_position_source_identity IS NOT NULL
+    )
+  ),
+  CHECK (
+    (
+      paper_action = 'entry_observation'
+      AND paper_no_action_reason IS NULL
+      AND prior_open_position_id IS NULL
+      AND prior_open_position_source_identity IS NULL
+      AND position_action = 'open_position'
+      AND position_reason IS NULL
+      AND entry_price_usd IS NOT NULL
+      AND entry_price_usd > 0
+      AND entry_notional_usd = 100
+      AND quantity_tokens IS NOT NULL
+      AND quantity_tokens > 0
+      AND position_source_identity IS NOT NULL
+    )
+    OR (
+      paper_action = 'entry_observation'
+      AND paper_no_action_reason IS NULL
+      AND prior_open_position_id IS NOT NULL
+      AND prior_open_position_source_identity IS NOT NULL
+      AND position_action = 'no_change'
+      AND position_reason = 'position_already_open'
+      AND entry_price_usd IS NULL
+      AND entry_notional_usd IS NULL
+      AND quantity_tokens IS NULL
+      AND position_source_identity IS NULL
+    )
+    OR (
+      paper_action = 'no_action'
+      AND paper_no_action_reason = 'strategy_no_entry'
+      AND position_action = 'no_change'
+      AND position_reason = 'paper_strategy_no_entry'
+      AND entry_price_usd IS NULL
+      AND entry_notional_usd IS NULL
+      AND quantity_tokens IS NULL
+      AND position_source_identity IS NULL
+    )
+    OR (
+      paper_action = 'no_action'
+      AND paper_no_action_reason = 'strategy_insufficient_data'
+      AND position_action = 'no_change'
+      AND position_reason = 'paper_strategy_insufficient_data'
+      AND entry_price_usd IS NULL
+      AND entry_notional_usd IS NULL
+      AND quantity_tokens IS NULL
+      AND position_source_identity IS NULL
+    )
+  )
+) STRICT;
+
+CREATE TABLE paper_positions (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  position_evaluation_id INTEGER NOT NULL UNIQUE,
+  opening_paper_evaluation_id INTEGER NOT NULL UNIQUE,
+  position_spec_version TEXT NOT NULL,
+  position_definition_fingerprint TEXT NOT NULL,
+  pair_address TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  entry_market_collected_at TEXT NOT NULL,
+  entry_price_usd REAL NOT NULL,
+  entry_notional_usd REAL NOT NULL,
+  quantity_tokens REAL NOT NULL,
+  opening_paper_source_identity TEXT NOT NULL,
+  source_identity TEXT NOT NULL UNIQUE,
+  UNIQUE (id, token_id),
+  UNIQUE (id, source_identity),
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (position_evaluation_id) REFERENCES position_evaluations(id),
+  FOREIGN KEY (position_evaluation_id, token_id) REFERENCES position_evaluations(id, token_id),
+  FOREIGN KEY (opening_paper_evaluation_id) REFERENCES paper_evaluations(id),
+  FOREIGN KEY (opening_paper_evaluation_id, token_id) REFERENCES paper_evaluations(id, token_id),
+  FOREIGN KEY (position_spec_version) REFERENCES position_definitions(position_spec_version),
+  CHECK (entry_price_usd > 0),
+  CHECK (entry_notional_usd = 100),
+  CHECK (quantity_tokens > 0)
+) STRICT;
+
+CREATE TABLE paper_open_positions (
+  token_id INTEGER PRIMARY KEY,
+  position_id INTEGER NOT NULL UNIQUE,
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (position_id) REFERENCES paper_positions(id),
+  FOREIGN KEY (position_id, token_id) REFERENCES paper_positions(id, token_id)
+) STRICT;
+
+CREATE INDEX position_evaluations_token_as_of_id
+  ON position_evaluations (token_id, as_of DESC, id DESC);
+`,
+  },
 ];
 
-export function migrationSqlDigest(version: number): string {
+export function migrationSql(version: number): string {
   const migration = MIGRATIONS.find((item) => item.version === version);
   if (migration === undefined) {
     throw new PersistenceError(`Unknown migration version: ${String(version)}.`);
   }
 
-  return createHash('sha256').update(migration.sql, 'utf8').digest('hex');
+  return migration.sql;
+}
+
+export function migrationSqlDigest(version: number): string {
+  return createHash('sha256').update(migrationSql(version), 'utf8').digest('hex');
 }
 
 export function applyMigrations(
