@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { PersistenceError } from '../types.js';
 
 export const INITIAL_MIGRATION_VERSION = 1;
@@ -7,7 +8,9 @@ export const RISK_MIGRATION_VERSION = 2;
 export const RISK_MIGRATION_NAME = '002_token_risk_scans';
 export const FEATURE_MIGRATION_VERSION = 3;
 export const FEATURE_MIGRATION_NAME = '003_feature_vectors';
-export const LATEST_SCHEMA_VERSION = FEATURE_MIGRATION_VERSION;
+export const STRATEGY_MIGRATION_VERSION = 4;
+export const STRATEGY_MIGRATION_NAME = '004_strategy_evaluations';
+export const LATEST_SCHEMA_VERSION = STRATEGY_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -271,7 +274,73 @@ CREATE TABLE feature_values (
 ) STRICT;
 `,
   },
+  {
+    version: STRATEGY_MIGRATION_VERSION,
+    name: STRATEGY_MIGRATION_NAME,
+    sql: `
+CREATE TABLE strategy_definitions (
+  strategy_version TEXT PRIMARY KEY,
+  strategy_name TEXT NOT NULL,
+  feature_set_version TEXT NOT NULL,
+  definition_fingerprint TEXT NOT NULL,
+  first_recorded_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE strategy_evaluations (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  feature_vector_id INTEGER NOT NULL,
+  strategy_version TEXT NOT NULL,
+  strategy_definition_fingerprint TEXT NOT NULL,
+  feature_set_version TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('entry_candidate', 'no_entry', 'insufficient_data')),
+  passed_rule_count INTEGER NOT NULL CHECK (passed_rule_count >= 0),
+  failed_rule_count INTEGER NOT NULL CHECK (failed_rule_count >= 0),
+  unavailable_rule_count INTEGER NOT NULL CHECK (unavailable_rule_count >= 0),
+  source_identity TEXT NOT NULL UNIQUE,
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (feature_vector_id) REFERENCES feature_vectors(id),
+  FOREIGN KEY (strategy_version) REFERENCES strategy_definitions(strategy_version)
+) STRICT;
+
+CREATE INDEX strategy_evaluations_token_as_of_id
+  ON strategy_evaluations (token_id, as_of DESC, id DESC);
+
+CREATE TABLE strategy_rule_results (
+  evaluation_id INTEGER NOT NULL,
+  ordinal INTEGER NOT NULL,
+  rule_code TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN (
+    'data_quality',
+    'market_quality',
+    'activity',
+    'flow',
+    'momentum',
+    'risk'
+  )),
+  status TEXT NOT NULL CHECK (status IN ('pass', 'fail', 'unavailable')),
+  description TEXT NOT NULL,
+  criterion TEXT NOT NULL,
+  observed TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (evaluation_id, rule_code),
+  UNIQUE (evaluation_id, ordinal),
+  FOREIGN KEY (evaluation_id) REFERENCES strategy_evaluations(id)
+) STRICT;
+`,
+  },
 ];
+
+export function migrationSqlDigest(version: number): string {
+  const migration = MIGRATIONS.find((item) => item.version === version);
+  if (migration === undefined) {
+    throw new PersistenceError(`Unknown migration version: ${String(version)}.`);
+  }
+
+  return createHash('sha256').update(migration.sql, 'utf8').digest('hex');
+}
 
 export function applyMigrations(
   database: DatabaseSync,

@@ -9,8 +9,10 @@ export function formatCapabilityFooter(): string[] {
     'Local persistence: ENABLED',
     'Token risk scanner: available',
     'Feature engine: available',
+    'Strategy evaluator: available',
+    'Backtester: unavailable',
     'Trading capability: DISABLED',
-    'Checkpoint: 06',
+    'Checkpoint: 07',
   ];
 }
 
@@ -46,6 +48,7 @@ export function formatStatusLines(path: string, stats: PersistenceStats): string
     `Market snapshots: ${String(stats.marketSnapshotCount)}`,
     `Risk scans: ${String(stats.riskScanCount)}`,
     `Feature vectors: ${String(stats.featureVectorCount)}`,
+    `Strategy evaluations: ${String(stats.strategyEvaluationCount)}`,
     '',
     `Earliest observation: ${stats.earliestObservationAt ?? 'n/a'}`,
     `Latest observation: ${stats.latestObservationAt ?? 'n/a'}`,

@@ -4,7 +4,11 @@ import type { DiscoveryCandidate, DiscoveryRunResult, DiscoverySource } from '..
 import { FEATURE_SET_VERSION } from '../../features/definitions.js';
 import { featureValuesEqual } from '../../features/invariants.js';
 import { featureSourceIdentity } from '../../features/numbers.js';
-import type { FeatureValue, FeatureValueKind, FeatureValueStatus } from '../../features/types.js';
+import type { FeatureValue, FeatureValueKind, FeatureValueStatus, FeatureVector } from '../../features/types.js';
+import { STRATEGY_NAME, STRATEGY_VERSION } from '../../strategy/constants.js';
+import { STRATEGY_DEFINITION_FINGERPRINT, strategySourceIdentity } from '../../strategy/identity.js';
+import { strategyEvaluationsSemanticallyEqual } from '../../strategy/invariants.js';
+import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../../strategy/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -27,14 +31,18 @@ import type {
   RecordedFeatureBundle,
   RecordedRiskScan,
   RecordedRun,
+  RecordedStrategyBundle,
   StoredFeatureVectorSummary,
   StoredObservation,
   StoredRiskScanSummary,
   StoredSourceResult,
+  StoredStrategyEvaluationSummary,
   StoredToken,
+  StrategyBundle,
   TokenFeatureHistory,
   TokenHistory,
   TokenRiskHistory,
+  TokenStrategyHistory,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
 import {
@@ -42,6 +50,7 @@ import {
   assertPersistableFeatureVector,
   assertPersistableRiskReport,
   assertPersistableSnapshot,
+  assertPersistableStrategyEvaluation,
 } from '../validate.js';
 import { openSqliteDatabase, readPragmaValue } from './database.js';
 import { applyMigrations, currentSchemaVersion } from './migrations.js';
@@ -94,6 +103,7 @@ type Statements = {
   riskHistory: StatementSync;
   riskChecks: StatementSync;
   riskExtensions: StatementSync;
+  riskAccounts: StatementSync;
   riskFindings: StatementSync;
   previousSnapshot: StatementSync;
   snapshotByIdentity: StatementSync;
@@ -102,10 +112,21 @@ type Statements = {
   insertFeatureVector: StatementSync;
   insertFeatureValue: StatementSync;
   getFeatureByIdentity: StatementSync;
+  getFeatureById: StatementSync;
   featureHistory: StatementSync;
   featureValues: StatementSync;
   countFeatureVectors: StatementSync;
   countFeatureValues: StatementSync;
+  getStrategyDefinition: StatementSync;
+  insertStrategyDefinition: StatementSync;
+  getStrategyByIdentity: StatementSync;
+  insertStrategyEvaluation: StatementSync;
+  insertStrategyRuleResult: StatementSync;
+  strategyHistory: StatementSync;
+  strategyRuleResults: StatementSync;
+  countStrategyEvaluations: StatementSync;
+  countStrategyDefinitions: StatementSync;
+  countStrategyRuleResults: StatementSync;
 };
 
 export class SqlitePersistenceRepository implements PersistenceRepository {
@@ -217,6 +238,16 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordStrategyBundle(bundle: StrategyBundle): RecordedStrategyBundle {
+    return this.transact(() => this.persistStrategyBundle(bundle));
+  }
+
+  recordStrategyBundleAndAbortAfterChild(bundle: StrategyBundle): void {
+    this.transact(() => {
+      this.persistStrategyBundle(bundle, { abortAfterFirstRule: true });
+    });
+  }
+
   getPreviousMarketSnapshot(
     tokenMint: string,
     pairAddress: string,
@@ -254,6 +285,19 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  getStrategyHistory(tokenMint: string, limit: number): TokenStrategyHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const rows = this.requireStatements().strategyHistory.all(token.id, clampHistoryLimit(limit));
+    return {
+      token,
+      evaluations: rows.map((row) => this.mapStrategyEvaluationSummary(row)),
+    };
+  }
+
   getTableCounts(): {
     tokens: number;
     discoveryRuns: number;
@@ -269,6 +313,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     riskFindings: number;
     featureVectors: number;
     featureValues: number;
+    strategyDefinitions: number;
+    strategyEvaluations: number;
+    strategyRuleResults: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -287,6 +334,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       riskFindings: asNumber(statements.countRiskFindings.get()?.['count']),
       featureVectors: asNumber(statements.countFeatureVectors.get()?.['count']),
       featureValues: asNumber(statements.countFeatureValues.get()?.['count']),
+      strategyDefinitions: asNumber(statements.countStrategyDefinitions.get()?.['count']),
+      strategyEvaluations: asNumber(statements.countStrategyEvaluations.get()?.['count']),
+      strategyRuleResults: asNumber(statements.countStrategyRuleResults.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -320,6 +370,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       marketSnapshotCount: asNumber(statements.countSnapshots.get()?.['count']),
       riskScanCount: asNumber(statements.countRiskScans.get()?.['count']),
       featureVectorCount: asNumber(statements.countFeatureVectors.get()?.['count']),
+      strategyEvaluationCount: asNumber(statements.countStrategyEvaluations.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -486,6 +537,15 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         );
       }
 
+      const token = this.getToken(vector.tokenMint);
+      if (token === null) {
+        throw new PersistenceError('Feature vector token is missing after source identity reuse.');
+      }
+      this.persistMarketSnapshotIfAbsent(token.id, bundle.marketSnapshot);
+      if (bundle.riskReport !== null) {
+        this.persistRiskReportIfAbsent(bundle.riskReport);
+      }
+
       return {
         vectorId: asNumber(existing['id']),
         tokenMint: vector.tokenMint,
@@ -540,6 +600,164 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private persistStrategyBundle(
+    bundle: StrategyBundle,
+    options: { abortAfterFirstRule?: boolean } = {},
+  ): RecordedStrategyBundle {
+    assertPersistableStrategyEvaluation(bundle.strategyEvaluation, bundle.featureVector);
+    this.assertBundleConsistency(bundle);
+    this.assertStrategyBundleConsistency(bundle);
+
+    const evaluation = bundle.strategyEvaluation;
+    const expectedFeatureIdentity = featureSourceIdentity(bundle.featureVector);
+    const sourceIdentity = strategySourceIdentity({
+      strategyVersion: STRATEGY_VERSION,
+      strategyDefinitionFingerprint: STRATEGY_DEFINITION_FINGERPRINT,
+      featureSourceIdentity: expectedFeatureIdentity,
+    });
+
+    const featureRecorded = this.persistFeatureBundle({
+      marketSnapshot: bundle.marketSnapshot,
+      riskReport: bundle.riskReport,
+      featureVector: bundle.featureVector,
+    });
+    this.assertExactFeatureVectorLinkage(
+      featureRecorded.vectorId,
+      evaluation,
+      bundle.featureVector,
+      expectedFeatureIdentity,
+    );
+
+    const definitionInserted = this.ensureStrategyDefinition(evaluation);
+    const existing = this.requireStatements().getStrategyByIdentity.get(sourceIdentity);
+    if (existing !== undefined) {
+      const existingEvaluation = this.mapStrategyEvaluationSummary(existing);
+      if (!strategyEvaluationsSemanticallyEqual(existingEvaluation, evaluation)) {
+        throw new PersistenceError(
+          'Source identity already exists with a different strategy evaluation. This indicates non-determinism or semantic drift.',
+        );
+      }
+      if (asNumber(existing['feature_vector_id']) !== featureRecorded.vectorId) {
+        throw new PersistenceError(
+          'Existing strategy evaluation does not reference the exact feature vector used for this evaluation.',
+        );
+      }
+
+      return {
+        evaluationId: existingEvaluation.id,
+        vectorId: featureRecorded.vectorId,
+        tokenMint: evaluation.tokenMint,
+        sourceIdentity,
+        inserted: false,
+        featureInserted: featureRecorded.inserted,
+        tokenInserted: featureRecorded.tokenInserted,
+        marketInserted: featureRecorded.marketInserted,
+        riskInserted: featureRecorded.riskInserted,
+        definitionInserted,
+      };
+    }
+
+    const token = this.getToken(evaluation.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Strategy evaluation token is missing after feature persistence.');
+    }
+
+    const inserted = this.requireStatements().insertStrategyEvaluation.run(
+      token.id,
+      featureRecorded.vectorId,
+      evaluation.strategyVersion,
+      evaluation.strategyDefinitionFingerprint,
+      evaluation.featureSetVersion,
+      evaluation.evaluatedAt,
+      evaluation.asOf,
+      evaluation.decision,
+      evaluation.passedRuleCount,
+      evaluation.failedRuleCount,
+      evaluation.unavailableRuleCount,
+      sourceIdentity,
+    );
+    const evaluationId = Number(inserted.lastInsertRowid);
+
+    for (const rule of evaluation.rules) {
+      this.requireStatements().insertStrategyRuleResult.run(
+        evaluationId,
+        rule.ordinal,
+        rule.ruleCode,
+        rule.category,
+        rule.status,
+        rule.description,
+        rule.criterion,
+        rule.observed,
+        rule.reason,
+      );
+      if (options.abortAfterFirstRule === true) {
+        throw new PersistenceError('Test-forced write failure after child insert.');
+      }
+    }
+
+    return {
+      evaluationId,
+      vectorId: featureRecorded.vectorId,
+      tokenMint: evaluation.tokenMint,
+      sourceIdentity,
+      inserted: true,
+      featureInserted: featureRecorded.inserted,
+      tokenInserted: featureRecorded.tokenInserted,
+      marketInserted: featureRecorded.marketInserted,
+      riskInserted: featureRecorded.riskInserted,
+      definitionInserted,
+    };
+  }
+
+  private ensureStrategyDefinition(evaluation: StrategyEvaluation): boolean {
+    const existing = this.requireStatements().getStrategyDefinition.get(evaluation.strategyVersion);
+    if (existing === undefined) {
+      this.requireStatements().insertStrategyDefinition.run(
+        evaluation.strategyVersion,
+        evaluation.strategyName,
+        evaluation.featureSetVersion,
+        evaluation.strategyDefinitionFingerprint,
+        evaluation.evaluatedAt,
+      );
+      return true;
+    }
+
+    if (
+      asString(existing['strategy_name']) !== evaluation.strategyName ||
+      asString(existing['feature_set_version']) !== evaluation.featureSetVersion ||
+      asString(existing['definition_fingerprint']) !== evaluation.strategyDefinitionFingerprint
+    ) {
+      throw new PersistenceError(
+        'Stored strategy definition for s07_v1 does not match the current code fingerprint. Create a new strategy version instead of mutating s07_v1.',
+      );
+    }
+
+    return false;
+  }
+
+  private assertStrategyBundleConsistency(bundle: StrategyBundle): void {
+    const evaluation = bundle.strategyEvaluation;
+    const vector = bundle.featureVector;
+    if (evaluation.tokenMint !== vector.tokenMint) {
+      throw new PersistenceError('Strategy evaluation token mint does not match the feature vector.');
+    }
+    if (evaluation.asOf !== vector.asOf) {
+      throw new PersistenceError('Strategy evaluation asOf must equal the feature vector asOf.');
+    }
+    if (evaluation.strategyVersion !== STRATEGY_VERSION) {
+      throw new PersistenceError(`Unknown strategy version: ${evaluation.strategyVersion}.`);
+    }
+    if (evaluation.strategyName !== STRATEGY_NAME) {
+      throw new PersistenceError('Strategy name does not match conservative_flow_momentum_baseline.');
+    }
+    if (evaluation.strategyDefinitionFingerprint !== STRATEGY_DEFINITION_FINGERPRINT) {
+      throw new PersistenceError('Strategy definition fingerprint does not match the current s07_v1 definition.');
+    }
+    if (evaluation.featureSetVersion !== FEATURE_SET_VERSION) {
+      throw new PersistenceError(`Unknown feature-set version: ${evaluation.featureSetVersion}.`);
+    }
+  }
+
   private persistMarketSnapshotIfAbsent(tokenId: number, snapshot: MarketSnapshot): boolean {
     const existingRow = this.requireStatements().snapshotByIdentity.get(
       tokenId,
@@ -559,15 +777,60 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     return this.insertSnapshot(tokenId, null, snapshot) === 1;
   }
 
+  private assertExactFeatureVectorLinkage(
+    vectorId: number,
+    evaluation: StrategyEvaluation,
+    vector: FeatureVector,
+    expectedFeatureIdentity: string,
+  ): void {
+    const featureRow = this.requireStatements().getFeatureById.get(vectorId);
+    if (featureRow === undefined) {
+      throw new PersistenceError('Strategy evaluation does not reference an exact stored feature vector.');
+    }
+
+    const token = this.getToken(evaluation.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Strategy evaluation token is missing after feature persistence.');
+    }
+
+    if (asNumber(featureRow['id']) !== vectorId) {
+      throw new PersistenceError('Strategy evaluation feature_vector_id does not match the exact stored feature vector.');
+    }
+    if (asNumber(featureRow['token_id']) !== token.id) {
+      throw new PersistenceError('Stored feature vector token_id does not match the strategy evaluation token.');
+    }
+    if (
+      asString(featureRow['feature_set_version']) !== evaluation.featureSetVersion ||
+      asString(featureRow['feature_set_version']) !== vector.featureSetVersion
+    ) {
+      throw new PersistenceError('Stored feature vector feature_set_version does not match the strategy evaluation.');
+    }
+    if (asString(featureRow['as_of']) !== evaluation.asOf || asString(featureRow['as_of']) !== vector.asOf) {
+      throw new PersistenceError('Stored feature vector asOf does not match the strategy evaluation.');
+    }
+    if (asString(featureRow['source_identity']) !== expectedFeatureIdentity) {
+      throw new PersistenceError(
+        'Stored feature vector source identity does not match the recomputed Checkpoint 06 identity.',
+      );
+    }
+  }
+
   private persistRiskReportIfAbsent(report: TokenRiskReport): boolean {
     const token = this.getToken(report.tokenMint);
     if (token !== null) {
       const existing = this.requireStatements().getRiskByScannedAt.get(token.id, report.scannedAt);
       if (existing !== undefined) {
-        const findings = this.readRiskFindings(asNumber(existing['id']));
-        if (riskFeatureFingerprintFromRow(existing, findings) !== riskFeatureFingerprintFromReport(report)) {
+        const scanId = asNumber(existing['id']);
+        const stored = persistedRiskFactsFromStored({
+          row: existing,
+          checks: this.readRiskChecks(scanId),
+          extensions: this.readRiskExtensionFacts(scanId),
+          accounts: this.readRiskAccounts(scanId),
+          findings: this.readRiskFindings(scanId),
+        });
+        if (JSON.stringify(stored) !== JSON.stringify(persistedRiskFactsFromReport(report))) {
           throw new PersistenceError(
-            'An existing risk scan with the same token and scannedAt has different feature-relevant values.',
+            'An existing risk scan with the same token and scannedAt has different persisted values.',
           );
         }
         return false;
@@ -827,6 +1090,32 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       }));
   }
 
+  private readRiskExtensionFacts(scanId: number): PersistedRiskExtensionFact[] {
+    return this.requireStatements()
+      .riskExtensions.all(scanId)
+      .map((row) => ({
+        ordinal: asNumber(row['ordinal']),
+        name: asString(row['extension_name']),
+        authority: asNullableString(row['authority']),
+        programId: asNullableString(row['program_id']),
+        state: asNullableString(row['state']),
+        transferFeeBasisPoints: asNullableNumber(row['transfer_fee_basis_points']),
+        maximumFeeRaw: asNullableString(row['maximum_fee_raw']),
+        parsed: asNumber(row['parsed']) === 1,
+      }));
+  }
+
+  private readRiskAccounts(scanId: number): PersistedRiskAccountFact[] {
+    return this.requireStatements()
+      .riskAccounts.all(scanId)
+      .map((row) => ({
+        rank: asNumber(row['rank']),
+        tokenAccount: asString(row['token_account']),
+        amountRaw: asString(row['amount_raw']),
+        shareBps: asNullableNumber(row['share_bps']),
+      }));
+  }
+
   private readRiskExtensions(scanId: number): TokenExtensionObservation[] {
     return this.requireStatements()
       .riskExtensions.all(scanId)
@@ -899,6 +1188,44 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       sourceIdentity: asString(row['source_identity']),
       values: this.readFeatureValues(vectorId),
     };
+  }
+
+  private mapStrategyEvaluationSummary(
+    row: Record<string, SQLOutputValue>,
+  ): StoredStrategyEvaluationSummary {
+    const evaluationId = asNumber(row['id']);
+    return {
+      id: evaluationId,
+      tokenMint: asString(row['token_mint']),
+      strategyVersion: asString(row['strategy_version']),
+      strategyName: asString(row['strategy_name']),
+      strategyDefinitionFingerprint: asString(row['strategy_definition_fingerprint']),
+      featureSetVersion: asString(row['feature_set_version']),
+      evaluatedAt: asString(row['evaluated_at']),
+      asOf: asString(row['as_of']),
+      decision: asString(row['decision']) as StrategyDecision,
+      passedRuleCount: asNumber(row['passed_rule_count']),
+      failedRuleCount: asNumber(row['failed_rule_count']),
+      unavailableRuleCount: asNumber(row['unavailable_rule_count']),
+      sourceIdentity: asString(row['source_identity']),
+      featureSourceIdentity: asString(row['feature_source_identity']),
+      rules: this.readStrategyRuleResults(evaluationId),
+    };
+  }
+
+  private readStrategyRuleResults(evaluationId: number): StrategyRuleResult[] {
+    return this.requireStatements()
+      .strategyRuleResults.all(evaluationId)
+      .map((row) => ({
+        ordinal: asNumber(row['ordinal']),
+        ruleCode: asString(row['rule_code']) as StrategyRuleResult['ruleCode'],
+        category: asString(row['category']) as StrategyRuleResult['category'],
+        status: asString(row['status']) as StrategyRuleResult['status'],
+        description: asString(row['description']),
+        criterion: asString(row['criterion']),
+        observed: asString(row['observed']),
+        reason: asString(row['reason']),
+      }));
   }
 
   private readFeatureValues(vectorId: number): FeatureValue[] {
@@ -1060,11 +1387,17 @@ function prepareStatements(database: DatabaseSync): Statements {
        END`,
     ),
     riskExtensions: database.prepare(
-      `SELECT extension_name, authority, program_id, state, transfer_fee_basis_points,
+      `SELECT ordinal, extension_name, authority, program_id, state, transfer_fee_basis_points,
               maximum_fee_raw, parsed
        FROM risk_scan_extensions
        WHERE scan_id = ?
        ORDER BY ordinal ASC`,
+    ),
+    riskAccounts: database.prepare(
+      `SELECT rank, token_account, amount_raw, share_bps
+       FROM risk_top_token_accounts
+       WHERE scan_id = ?
+       ORDER BY rank ASC`,
     ),
     riskFindings: database.prepare(
       `SELECT code, category, severity, confidence, title, description
@@ -1132,7 +1465,10 @@ function prepareStatements(database: DatabaseSync): Statements {
        LIMIT 1`,
     ),
     getRiskByScannedAt: database.prepare(
-      `SELECT id, token_program, data_completeness, top1_bps, top5_bps, top10_bps, top20_bps
+      `SELECT id, scanned_at, commitment, token_program, program_owner, mint_context_slot,
+              supply_context_slot, largest_accounts_context_slot, decimals, supply_raw,
+              mint_authority, freeze_authority, top1_bps, top5_bps, top10_bps, top20_bps,
+              largest_accounts_count, data_completeness, highest_finding_severity
        FROM risk_scans
        WHERE token_id = ? AND scanned_at = ?`,
     ),
@@ -1152,6 +1488,11 @@ function prepareStatements(database: DatabaseSync): Statements {
     getFeatureByIdentity: database.prepare(
       'SELECT id FROM feature_vectors WHERE source_identity = ?',
     ),
+    getFeatureById: database.prepare(
+      `SELECT id, token_id, feature_set_version, as_of, source_identity
+       FROM feature_vectors
+       WHERE id = ?`,
+    ),
     featureHistory: database.prepare(
       `SELECT id, feature_set_version, generated_at, as_of, market_collected_at, market_pair_address,
               previous_market_collected_at, risk_scanned_at, feature_completeness,
@@ -1169,6 +1510,61 @@ function prepareStatements(database: DatabaseSync): Statements {
     ),
     countFeatureVectors: database.prepare('SELECT COUNT(*) AS count FROM feature_vectors'),
     countFeatureValues: database.prepare('SELECT COUNT(*) AS count FROM feature_values'),
+    getStrategyDefinition: database.prepare(
+      `SELECT strategy_version, strategy_name, feature_set_version, definition_fingerprint, first_recorded_at
+       FROM strategy_definitions
+       WHERE strategy_version = ?`,
+    ),
+    insertStrategyDefinition: database.prepare(
+      `INSERT INTO strategy_definitions (
+        strategy_version, strategy_name, feature_set_version, definition_fingerprint, first_recorded_at
+      ) VALUES (?, ?, ?, ?, ?)`,
+    ),
+    getStrategyByIdentity: database.prepare(
+      `SELECT e.id, e.feature_vector_id, t.mint AS token_mint, e.strategy_version, d.strategy_name,
+              e.strategy_definition_fingerprint, e.feature_set_version, e.evaluated_at, e.as_of,
+              e.decision, e.passed_rule_count, e.failed_rule_count, e.unavailable_rule_count,
+              e.source_identity, f.source_identity AS feature_source_identity
+       FROM strategy_evaluations e
+       JOIN strategy_definitions d ON d.strategy_version = e.strategy_version
+       JOIN feature_vectors f ON f.id = e.feature_vector_id
+       JOIN tokens t ON t.id = e.token_id
+       WHERE e.source_identity = ?`,
+    ),
+    insertStrategyEvaluation: database.prepare(
+      `INSERT INTO strategy_evaluations (
+        token_id, feature_vector_id, strategy_version, strategy_definition_fingerprint, feature_set_version,
+        evaluated_at, as_of, decision, passed_rule_count, failed_rule_count, unavailable_rule_count,
+        source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    insertStrategyRuleResult: database.prepare(
+      `INSERT INTO strategy_rule_results (
+        evaluation_id, ordinal, rule_code, category, status, description, criterion, observed, reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    strategyHistory: database.prepare(
+      `SELECT e.id, e.feature_vector_id, t.mint AS token_mint, e.strategy_version, d.strategy_name,
+              e.strategy_definition_fingerprint, e.feature_set_version, e.evaluated_at, e.as_of,
+              e.decision, e.passed_rule_count, e.failed_rule_count, e.unavailable_rule_count,
+              e.source_identity, f.source_identity AS feature_source_identity
+       FROM strategy_evaluations e
+       JOIN strategy_definitions d ON d.strategy_version = e.strategy_version
+       JOIN feature_vectors f ON f.id = e.feature_vector_id
+       JOIN tokens t ON t.id = e.token_id
+       WHERE e.token_id = ?
+       ORDER BY e.as_of DESC, e.id DESC
+       LIMIT ?`,
+    ),
+    strategyRuleResults: database.prepare(
+      `SELECT ordinal, rule_code, category, status, description, criterion, observed, reason
+       FROM strategy_rule_results
+       WHERE evaluation_id = ?
+       ORDER BY ordinal ASC`,
+    ),
+    countStrategyEvaluations: database.prepare('SELECT COUNT(*) AS count FROM strategy_evaluations'),
+    countStrategyDefinitions: database.prepare('SELECT COUNT(*) AS count FROM strategy_definitions'),
+    countStrategyRuleResults: database.prepare('SELECT COUNT(*) AS count FROM strategy_rule_results'),
   };
 }
 
@@ -1241,52 +1637,206 @@ function marketSnapshotsEquivalent(left: MarketSnapshot, right: MarketSnapshot):
   );
 }
 
-function riskFeatureFingerprintFromReport(report: TokenRiskReport): string {
-  return riskFeatureFingerprint({
+function persistedRiskFactsFromReport(report: TokenRiskReport): PersistedRiskFacts {
+  return {
+    scannedAt: report.scannedAt,
+    commitment: report.commitment,
     tokenProgram: report.tokenProgram,
-    dataCompleteness: report.dataCompleteness,
-    findings: report.findings,
+    programOwner: report.programOwner,
+    mintContextSlot: report.mintContextSlot,
+    supplyContextSlot: report.supplyContextSlot,
+    largestAccountsContextSlot: report.largestAccountsContextSlot,
+    decimals: report.decimals,
+    supplyRaw: report.supplyRaw,
+    mintAuthority: report.mintAuthority,
+    freezeAuthority: report.freezeAuthority,
     top1Bps: report.concentration?.top1Bps ?? null,
     top5Bps: report.concentration?.top5Bps ?? null,
     top10Bps: report.concentration?.top10Bps ?? null,
     top20Bps: report.concentration?.top20Bps ?? null,
-  });
+    largestAccountsCount: report.largestTokenAccounts.length,
+    dataCompleteness: report.dataCompleteness,
+    highestFindingSeverity: report.highestFindingSeverity,
+    checks: canonicalizeRiskChecks(report.checks),
+    extensions: canonicalizeRiskExtensions(
+      report.extensions.map((extension, ordinal) => ({
+        ordinal,
+        name: extension.name,
+        authority: extension.authority,
+        programId: extension.programId,
+        state: extension.state,
+        transferFeeBasisPoints: extension.transferFeeBasisPoints,
+        maximumFeeRaw: extension.maximumFeeRaw,
+        parsed: extension.parsed,
+      })),
+    ),
+    accounts: canonicalizeRiskAccounts(report.largestTokenAccounts),
+    findings: canonicalizeRiskFindings(report.findings),
+  };
 }
 
-function riskFeatureFingerprintFromRow(
-  row: Record<string, SQLOutputValue>,
-  findings: readonly RiskFinding[],
-): string {
-  return riskFeatureFingerprint({
-    tokenProgram: asString(row['token_program']),
-    dataCompleteness: asString(row['data_completeness']),
-    findings,
-    top1Bps: asNullableNumber(row['top1_bps']),
-    top5Bps: asNullableNumber(row['top5_bps']),
-    top10Bps: asNullableNumber(row['top10_bps']),
-    top20Bps: asNullableNumber(row['top20_bps']),
-  });
+function persistedRiskFactsFromStored(input: {
+  row: Record<string, SQLOutputValue>;
+  checks: readonly RiskCheckResult[];
+  extensions: readonly PersistedRiskExtensionFact[];
+  accounts: readonly PersistedRiskAccountFact[];
+  findings: readonly RiskFinding[];
+}): PersistedRiskFacts {
+  return {
+    scannedAt: asString(input.row['scanned_at']),
+    commitment: asString(input.row['commitment']),
+    tokenProgram: asString(input.row['token_program']),
+    programOwner: asString(input.row['program_owner']),
+    mintContextSlot: asNumber(input.row['mint_context_slot']),
+    supplyContextSlot: asNullableNumber(input.row['supply_context_slot']),
+    largestAccountsContextSlot: asNullableNumber(input.row['largest_accounts_context_slot']),
+    decimals: asNumber(input.row['decimals']),
+    supplyRaw: asNullableString(input.row['supply_raw']),
+    mintAuthority: asNullableString(input.row['mint_authority']),
+    freezeAuthority: asNullableString(input.row['freeze_authority']),
+    top1Bps: asNullableNumber(input.row['top1_bps']),
+    top5Bps: asNullableNumber(input.row['top5_bps']),
+    top10Bps: asNullableNumber(input.row['top10_bps']),
+    top20Bps: asNullableNumber(input.row['top20_bps']),
+    largestAccountsCount: asNumber(input.row['largest_accounts_count']),
+    dataCompleteness: asString(input.row['data_completeness']),
+    highestFindingSeverity: asString(input.row['highest_finding_severity']),
+    checks: canonicalizeRiskChecks(input.checks),
+    extensions: canonicalizeRiskExtensions(input.extensions),
+    accounts: canonicalizeRiskAccounts(input.accounts),
+    findings: canonicalizeRiskFindings(input.findings),
+  };
 }
 
-function riskFeatureFingerprint(input: {
+function canonicalizeRiskChecks(checks: readonly RiskCheckResult[]): PersistedRiskCheckFact[] {
+  return [...checks]
+    .map((check) => ({
+      check: check.check,
+      ok: check.ok,
+      contextSlot: check.contextSlot,
+      error: check.error,
+    }))
+    .sort((left, right) => compareAscii(left.check, right.check));
+}
+
+function canonicalizeRiskExtensions(
+  extensions: readonly PersistedRiskExtensionFact[],
+): PersistedRiskExtensionFact[] {
+  return [...extensions]
+    .map((extension) => ({
+      ordinal: extension.ordinal,
+      name: extension.name,
+      authority: extension.authority,
+      programId: extension.programId,
+      state: extension.state,
+      transferFeeBasisPoints: extension.transferFeeBasisPoints,
+      maximumFeeRaw: extension.maximumFeeRaw,
+      parsed: extension.parsed,
+    }))
+    .sort((left, right) => left.ordinal - right.ordinal);
+}
+
+function canonicalizeRiskAccounts(
+  accounts: readonly PersistedRiskAccountFact[],
+): PersistedRiskAccountFact[] {
+  return [...accounts]
+    .map((account) => ({
+      rank: account.rank,
+      tokenAccount: account.tokenAccount,
+      amountRaw: account.amountRaw,
+      shareBps: account.shareBps,
+    }))
+    .sort((left, right) => left.rank - right.rank);
+}
+
+function canonicalizeRiskFindings(findings: readonly RiskFinding[]): PersistedRiskFindingFact[] {
+  return [...findings]
+    .map((finding) => ({
+      code: finding.code,
+      category: finding.category,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      title: finding.title,
+      description: finding.description,
+    }))
+    .sort((left, right) => {
+      const code = compareAscii(left.code, right.code);
+      if (code !== 0) {
+        return code;
+      }
+      const title = compareAscii(left.title, right.title);
+      if (title !== 0) {
+        return title;
+      }
+      return compareAscii(left.description, right.description);
+    });
+}
+
+type PersistedRiskFacts = {
+  scannedAt: string;
+  commitment: string;
   tokenProgram: string;
-  dataCompleteness: string;
-  findings: readonly Pick<RiskFinding, 'code' | 'severity'>[];
+  programOwner: string;
+  mintContextSlot: number;
+  supplyContextSlot: number | null;
+  largestAccountsContextSlot: number | null;
+  decimals: number;
+  supplyRaw: string | null;
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
   top1Bps: number | null;
   top5Bps: number | null;
   top10Bps: number | null;
   top20Bps: number | null;
-}): string {
-  const findings = [...input.findings]
-    .map((finding) => ({ code: finding.code, severity: finding.severity }))
-    .sort((left, right) => left.code.localeCompare(right.code));
-  return JSON.stringify({
-    tokenProgram: input.tokenProgram,
-    dataCompleteness: input.dataCompleteness,
-    findings,
-    top1Bps: input.top1Bps,
-    top5Bps: input.top5Bps,
-    top10Bps: input.top10Bps,
-    top20Bps: input.top20Bps,
-  });
+  largestAccountsCount: number;
+  dataCompleteness: string;
+  highestFindingSeverity: string;
+  checks: PersistedRiskCheckFact[];
+  extensions: PersistedRiskExtensionFact[];
+  accounts: PersistedRiskAccountFact[];
+  findings: PersistedRiskFindingFact[];
+};
+
+type PersistedRiskCheckFact = {
+  check: string;
+  ok: boolean;
+  contextSlot: number | null;
+  error: string | null;
+};
+
+type PersistedRiskExtensionFact = {
+  ordinal: number;
+  name: string;
+  authority: string | null;
+  programId: string | null;
+  state: string | null;
+  transferFeeBasisPoints: number | null;
+  maximumFeeRaw: string | null;
+  parsed: boolean;
+};
+
+type PersistedRiskAccountFact = {
+  rank: number;
+  tokenAccount: string;
+  amountRaw: string;
+  shareBps: number | null;
+};
+
+type PersistedRiskFindingFact = {
+  code: string;
+  category: string;
+  severity: string;
+  confidence: string;
+  title: string;
+  description: string;
+};
+
+function compareAscii(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
 }

@@ -9,6 +9,7 @@ import type {
   TokenProgramKind,
   TokenRiskReport,
 } from '../risk/types.js';
+import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../strategy/types.js';
 
 export class PersistenceError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -44,6 +45,7 @@ export type PersistenceStats = {
   marketSnapshotCount: number;
   riskScanCount: number;
   featureVectorCount: number;
+  strategyEvaluationCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -151,4 +153,44 @@ export type StoredFeatureVectorSummary = {
 export type TokenFeatureHistory = {
   token: StoredToken;
   vectors: StoredFeatureVectorSummary[];
+};
+
+export type StrategyBundle = FeatureBundle & {
+  strategyEvaluation: StrategyEvaluation;
+};
+
+export type RecordedStrategyBundle = {
+  evaluationId: number;
+  vectorId: number;
+  tokenMint: string;
+  sourceIdentity: string;
+  inserted: boolean;
+  featureInserted: boolean;
+  tokenInserted: boolean;
+  marketInserted: boolean;
+  riskInserted: boolean;
+  definitionInserted: boolean;
+};
+
+export type StoredStrategyEvaluationSummary = {
+  id: number;
+  tokenMint: string;
+  strategyVersion: string;
+  strategyName: string;
+  strategyDefinitionFingerprint: string;
+  featureSetVersion: string;
+  evaluatedAt: string;
+  asOf: string;
+  decision: StrategyDecision;
+  passedRuleCount: number;
+  failedRuleCount: number;
+  unavailableRuleCount: number;
+  sourceIdentity: string;
+  featureSourceIdentity: string;
+  rules: StrategyRuleResult[];
+};
+
+export type TokenStrategyHistory = {
+  token: StoredToken;
+  evaluations: StoredStrategyEvaluationSummary[];
 };
