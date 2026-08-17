@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 06
+## Current checkpoint: 07
 
 **Current capabilities:**
 
@@ -20,25 +20,26 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - explicit persistent collector
 - technical token risk scanning
 - deterministic feature engine
-- feature-set versioning (`c06_v1`)
-- market and flow features
-- point-in-time historical features
-- risk-derived features
-- persisted feature vectors
+- first deterministic strategy
+- strategy rule explanations
+- historical strategy evaluations
 
 ### What this checkpoint is not
 
 - **Blockchain capability: READ ONLY**
-- **Local SQLite writes: YES**
+- **SQLite writes: YES**
 - **Risk scanner: YES**
 - **Feature engine: YES**
+- **Strategy evaluator: YES**
+- **Backtester: NO**
+- **Paper trading: NO**
 - **Wallet: NO**
 - **Transaction signing: NO**
 - **Blockchain transaction sending: NO**
-- **Trading strategy: NO**
-- **Buy/sell signals: NO**
-- **Paper trading: NO**
+- **Position management: NO**
 - **Real trading: NO**
+
+`ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or paper trade.
 
 Features describe observations. They do **not** decide trades.
 
@@ -99,16 +100,17 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 06
+Checkpoint: 07
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
 Feature engine: available
-Trading strategy: unavailable
+Strategy evaluator: available
+Backtester: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, or feature watchers, and it does **not** write database rows.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, or strategy watchers, and it does **not** write database rows.
 
 ## How to check Solana, market data, and discovery
 
@@ -167,6 +169,32 @@ npm run feature:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 `collect:once`, `collect:watch`, and `risk:record` do **not** generate feature vectors automatically.
 
 See [docs/CHECKPOINT_06.md](docs/CHECKPOINT_06.md) for a beginner explanation of features, point-in-time rules, and lookahead bias.
+
+## How to evaluate the first strategy
+
+`s07_v1` is an experimental baseline classifier. It interprets a `c06_v1` feature vector and returns `ENTRY_CANDIDATE`, `NO_ENTRY`, or `INSUFFICIENT_DATA`. None of those create an order.
+
+Read-only strategy check (no database required):
+
+```bash
+npm run strategy:check -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Collect live features, evaluate `s07_v1`, and persist the bundle (`DATABASE_ENABLED=true`):
+
+```bash
+npm run strategy:record -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show stored strategy evaluations for one mint:
+
+```bash
+npm run strategy:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+`collect:once`, `collect:watch`, `risk:record`, and `feature:record` do **not** run the strategy automatically. There is no `strategy:watch` and no backtester in this checkpoint.
+
+See [docs/CHECKPOINT_07.md](docs/CHECKPOINT_07.md) for a beginner explanation of rules, classifications, and why thresholds are frozen.
 
 ## How to use the local database
 
@@ -236,6 +264,7 @@ src/             Application source code
   collector/     Discover + persist orchestration (no SQL)
   risk/          Read-only token risk scan, evaluator, and risk commands
   features/      Deterministic feature engine and feature commands
+  strategy/      Experimental s07_v1 entry-candidate classifier and strategy commands
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -243,4 +272,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a first strategy and a backtester. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add a backtester and paper trading. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

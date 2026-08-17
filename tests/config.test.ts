@@ -64,6 +64,9 @@ describe('loadConfig', () => {
       features: {
         historyLimit: 20,
       },
+      strategy: {
+        historyLimit: 20,
+      },
     });
   });
 
@@ -266,6 +269,17 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ FEATURE_HISTORY_LIMIT: '101' });
     }).toThrow(/Invalid FEATURE_HISTORY_LIMIT/);
+  });
+
+  it('loads strategy history settings from the environment', () => {
+    const config = loadConfig({ STRATEGY_HISTORY_LIMIT: '12' });
+    expect(config.strategy).toEqual({ historyLimit: 12 });
+  });
+
+  it('rejects a strategy history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ STRATEGY_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid STRATEGY_HISTORY_LIMIT/);
   });
 
   it('rejects a risk history limit above the bound', () => {

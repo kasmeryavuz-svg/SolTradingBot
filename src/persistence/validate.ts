@@ -6,6 +6,18 @@ import type { MarketSnapshot } from '../market-data/types.js';
 import { assertRiskReportInvariants } from '../risk/invariants.js';
 import { RAW_AMOUNT_PATTERN } from '../risk/numbers.js';
 import { RiskScanError, type TokenRiskReport } from '../risk/types.js';
+import { evaluateStrategy } from '../strategy/evaluator.js';
+import { STRATEGY_VERSION } from '../strategy/constants.js';
+import {
+  STRATEGY_DEFINITION_FINGERPRINT,
+  strategySourceIdentity,
+} from '../strategy/identity.js';
+import {
+  assertStrategyEvaluationInvariants,
+  assertStrategySourceIdentity,
+  strategyEvaluationsSemanticallyEqual,
+} from '../strategy/invariants.js';
+import { StrategyError, type StrategyEvaluation } from '../strategy/types.js';
 import { PersistenceError } from './types.js';
 
 export function requireFiniteOrNull(value: number | null, field: string): number | null {
@@ -95,6 +107,50 @@ export function assertPersistableFeatureVector(vector: FeatureVector): void {
     }
 
     throw error;
+  }
+}
+
+export function assertPersistableStrategyEvaluation(
+  evaluation: StrategyEvaluation,
+  vector: FeatureVector,
+): void {
+  try {
+    assertPersistableFeatureVector(vector);
+    assertStrategyEvaluationInvariants(evaluation, vector);
+  } catch (error: unknown) {
+    if (error instanceof FeatureEngineError || error instanceof StrategyError) {
+      throw new PersistenceError(error.message, { cause: error });
+    }
+
+    throw error;
+  }
+
+  if (evaluation.strategyDefinitionFingerprint !== STRATEGY_DEFINITION_FINGERPRINT) {
+    throw new PersistenceError('Strategy definition fingerprint does not match the current s07_v1 definition.');
+  }
+
+  const expectedFeatureIdentity = featureSourceIdentity(vector);
+  if (evaluation.featureSourceIdentity !== expectedFeatureIdentity) {
+    throw new PersistenceError('Strategy evaluation featureSourceIdentity does not match the feature vector.');
+  }
+
+  const expectedSourceIdentity = strategySourceIdentity({
+    strategyVersion: STRATEGY_VERSION,
+    strategyDefinitionFingerprint: STRATEGY_DEFINITION_FINGERPRINT,
+    featureSourceIdentity: expectedFeatureIdentity,
+  });
+  if (assertStrategySourceIdentity(evaluation) !== expectedSourceIdentity) {
+    throw new PersistenceError('Strategy source identity does not match the canonical evaluation identity.');
+  }
+
+  const recomputed = evaluateStrategy(vector, { evaluatedAt: evaluation.evaluatedAt });
+  if (
+    !strategyEvaluationsSemanticallyEqual(evaluation, recomputed) ||
+    evaluation.evaluatedAt !== recomputed.evaluatedAt
+  ) {
+    throw new PersistenceError(
+      'Strategy evaluation does not match a fresh s07_v1 evaluation of the supplied feature vector.',
+    );
   }
 }
 

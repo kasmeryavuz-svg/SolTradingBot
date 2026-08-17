@@ -1,0 +1,36 @@
+import { loadConfig } from '../config/load-config.js';
+import type { AppConfig, EnvSource } from '../config/types.js';
+import { assertTradingDisabled } from '../core/safety.js';
+import { preparePersistenceCommand } from '../persistence/command.js';
+import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
+import { StrategyError } from './types.js';
+
+export function prepareStrategyCheckCommand(source: EnvSource): AppConfig {
+  const config = loadConfig(source);
+  assertTradingDisabled(config);
+  return config;
+}
+
+export function prepareStrategyRecordCommand(source: EnvSource): AppConfig {
+  return preparePersistenceCommand(source);
+}
+
+export function prepareStrategyHistoryCommand(source: EnvSource): AppConfig {
+  return preparePersistenceCommand(source);
+}
+
+export function requireStrategyMintArgument(argv: readonly string[], command: string): string {
+  const mint = argv[2];
+  if (mint === undefined || mint.trim() === '') {
+    throw new StrategyError(`Usage: npm run ${command} -- <TOKEN_MINT>`);
+  }
+
+  const trimmed = mint.trim();
+  if (!isPlausibleSolanaMint(trimmed)) {
+    throw new StrategyError(
+      'Invalid token mint. Provide a syntactically plausible Solana mint address.',
+    );
+  }
+
+  return trimmed;
+}

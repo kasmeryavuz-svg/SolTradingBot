@@ -114,7 +114,7 @@ If a report exists but Checkpoint 05 concentration is null, concentration featur
 
 Checkpoint 04 still skips an exact market snapshot identity with `ON CONFLICT DO NOTHING`. Inside a feature bundle, if that identity already exists and the stored values disagree, persistence fails instead of hiding the mismatch.
 
-Checkpoint 05 still rejects a duplicate standalone risk scan. Inside a feature bundle, an existing `(token, scannedAt)` is reused only when feature-relevant values match. A mismatch is a `PersistenceError`. Historical scans are never overwritten.
+Checkpoint 05 still rejects a duplicate standalone risk scan. Inside a feature bundle, an existing `(token, scannedAt)` is reused only when the full persisted Checkpoint 05 risk facts match. A mismatch is a `PersistenceError`. Historical scans are never overwritten. Reuse is not limited to the seven booleans `s07_v1` currently reads.
 
 ## Integer seconds and buy-share rounding
 

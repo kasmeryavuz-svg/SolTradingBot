@@ -71,8 +71,8 @@ describe('feature persistence migration', () => {
       try {
         repository.initialize();
         repository.initialize();
-        expect(repository.getStats().schemaVersion).toBe(3);
-        expect(repository.getTableCounts().schemaMigrations).toBe(3);
+        expect(repository.getStats().schemaVersion).toBe(4);
+        expect(repository.getTableCounts().schemaMigrations).toBe(4);
         expect(repository.getToken(WRAPPED_SOL_MINT)?.mint).toBe(WRAPPED_SOL_MINT);
         expect(repository.getStats().discoveryRunCount).toBe(1);
 
@@ -253,6 +253,36 @@ describe('feature persistence', () => {
           risk: conflictingRisk,
           asOf: T_10_05,
         }),
+      });
+    }).toThrow(/existing risk scan/);
+    expect(repository.getStats().riskScanCount).toBe(1);
+    expect(repository.getStats().featureVectorCount).toBe(1);
+  });
+
+  it('rejects an existing risk identity when persisted historical facts differ', () => {
+    const repository = openMemoryRepo();
+    const original = sampleRisk();
+    repository.recordFeatureBundle({
+      marketSnapshot: sampleSnapshot(),
+      riskReport: original,
+      featureVector: sampleVector({ previousMarket: null, risk: original }),
+    });
+
+    const supplyChanged = sampleRisk({ supplyRaw: '99999' });
+    expect(() => {
+      repository.recordFeatureBundle({
+        marketSnapshot: sampleSnapshot(),
+        riskReport: supplyChanged,
+        featureVector: sampleVector({ previousMarket: null, risk: supplyChanged }),
+      });
+    }).toThrow(/existing risk scan/);
+
+    const decimalsChanged = sampleRisk({ decimals: 9 });
+    expect(() => {
+      repository.recordFeatureBundle({
+        marketSnapshot: sampleSnapshot(),
+        riskReport: decimalsChanged,
+        featureVector: sampleVector({ previousMarket: null, risk: decimalsChanged }),
       });
     }).toThrow(/existing risk scan/);
     expect(repository.getStats().riskScanCount).toBe(1);
