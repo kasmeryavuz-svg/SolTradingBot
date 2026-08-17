@@ -28,6 +28,8 @@ import {
   PAPER_MIGRATION_VERSION,
   POSITION_MIGRATION_NAME,
   POSITION_MIGRATION_VERSION,
+  EXIT_MIGRATION_NAME,
+  EXIT_MIGRATION_VERSION,
 } from '../src/persistence/sqlite/migrations.js';
 import {
   createSqlitePersistenceRepository,
@@ -146,6 +148,8 @@ describe('SQLite persistence', () => {
     expect(PAPER_MIGRATION_VERSION).toBe(5);
     expect(POSITION_MIGRATION_NAME).toBe('006_position_management');
     expect(POSITION_MIGRATION_VERSION).toBe(6);
+    expect(EXIT_MIGRATION_NAME).toBe('007_exit_engine');
+    expect(EXIT_MIGRATION_VERSION).toBe(7);
     expect(first.foreignKeysEnabled).toBe(true);
     expect(first.integrity.ok).toBe(true);
     expect(first.riskScanCount).toBe(0);
@@ -155,6 +159,8 @@ describe('SQLite persistence', () => {
     expect(first.positionEvaluationCount).toBe(0);
     expect(first.paperPositionCount).toBe(0);
     expect(first.openPaperPositionCount).toBe(0);
+    expect(first.exitEvaluationCount).toBe(0);
+    expect(first.paperPositionExitCount).toBe(0);
     expect(repository.getTableCounts().schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
   });
 

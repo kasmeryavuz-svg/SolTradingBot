@@ -14,7 +14,9 @@ export const PAPER_MIGRATION_VERSION = 5;
 export const PAPER_MIGRATION_NAME = '005_paper_evaluations';
 export const POSITION_MIGRATION_VERSION = 6;
 export const POSITION_MIGRATION_NAME = '006_position_management';
-export const LATEST_SCHEMA_VERSION = POSITION_MIGRATION_VERSION;
+export const EXIT_MIGRATION_VERSION = 7;
+export const EXIT_MIGRATION_NAME = '007_exit_engine';
+export const LATEST_SCHEMA_VERSION = EXIT_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -570,6 +572,139 @@ CREATE TABLE paper_open_positions (
 
 CREATE INDEX position_evaluations_token_as_of_id
   ON position_evaluations (token_id, as_of DESC, id DESC);
+`,
+  },
+  {
+    version: EXIT_MIGRATION_VERSION,
+    name: EXIT_MIGRATION_NAME,
+    sql: `
+CREATE UNIQUE INDEX market_snapshots_id_token_id
+  ON market_snapshots (id, token_id);
+
+CREATE TABLE exit_definitions (
+  exit_spec_version TEXT PRIMARY KEY,
+  exit_spec_name TEXT NOT NULL,
+  position_spec_version TEXT NOT NULL,
+  position_definition_fingerprint TEXT NOT NULL,
+  stop_loss_bps INTEGER NOT NULL,
+  take_profit_bps INTEGER NOT NULL,
+  max_holding_ms INTEGER NOT NULL,
+  close_fraction_bps INTEGER NOT NULL,
+  definition_fingerprint TEXT NOT NULL,
+  first_recorded_at TEXT NOT NULL,
+  CHECK (stop_loss_bps = 1000),
+  CHECK (take_profit_bps = 2000),
+  CHECK (max_holding_ms = 21600000),
+  CHECK (close_fraction_bps = 10000)
+) STRICT;
+
+CREATE TABLE exit_evaluations (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  position_id INTEGER NOT NULL,
+  market_snapshot_id INTEGER NOT NULL,
+  exit_spec_version TEXT NOT NULL,
+  exit_definition_fingerprint TEXT NOT NULL,
+  position_definition_fingerprint TEXT NOT NULL,
+  position_source_identity TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  pair_address TEXT NOT NULL,
+  market_collected_at TEXT NOT NULL,
+  observed_price_usd REAL,
+  entry_price_usd REAL NOT NULL,
+  stop_trigger_price_usd REAL NOT NULL,
+  take_profit_trigger_price_usd REAL NOT NULL,
+  holding_age_ms INTEGER NOT NULL,
+  max_holding_ms INTEGER NOT NULL,
+  exit_action TEXT NOT NULL,
+  exit_reason TEXT NOT NULL,
+  simulated_exit_price_usd REAL,
+  closed_quantity_tokens REAL,
+  source_identity TEXT NOT NULL UNIQUE,
+  UNIQUE (id, token_id),
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (position_id) REFERENCES paper_positions(id),
+  FOREIGN KEY (position_id, token_id) REFERENCES paper_positions(id, token_id),
+  FOREIGN KEY (market_snapshot_id) REFERENCES market_snapshots(id),
+  FOREIGN KEY (market_snapshot_id, token_id) REFERENCES market_snapshots(id, token_id),
+  FOREIGN KEY (exit_spec_version) REFERENCES exit_definitions(exit_spec_version),
+  CHECK (holding_age_ms >= 0),
+  CHECK (max_holding_ms = 21600000),
+  CHECK (entry_price_usd > 0),
+  CHECK (stop_trigger_price_usd >= 0),
+  CHECK (take_profit_trigger_price_usd > 0),
+  CHECK (observed_price_usd IS NULL OR observed_price_usd >= 0),
+  CHECK (exit_action IN ('close_position', 'no_change')),
+  CHECK (
+    exit_reason IN (
+      'stop_loss_threshold',
+      'take_profit_threshold',
+      'max_holding_time',
+      'market_price_unavailable',
+      'exit_conditions_not_met'
+    )
+  ),
+  CHECK (as_of = evaluated_at AND evaluated_at = market_collected_at),
+  CHECK (
+    (
+      exit_action = 'close_position'
+      AND exit_reason IN ('stop_loss_threshold', 'take_profit_threshold', 'max_holding_time')
+      AND observed_price_usd IS NOT NULL
+      AND observed_price_usd >= 0
+      AND simulated_exit_price_usd IS NOT NULL
+      AND simulated_exit_price_usd = observed_price_usd
+      AND closed_quantity_tokens IS NOT NULL
+      AND closed_quantity_tokens > 0
+    )
+    OR (
+      exit_action = 'no_change'
+      AND exit_reason = 'market_price_unavailable'
+      AND observed_price_usd IS NULL
+      AND simulated_exit_price_usd IS NULL
+      AND closed_quantity_tokens IS NULL
+    )
+    OR (
+      exit_action = 'no_change'
+      AND exit_reason = 'exit_conditions_not_met'
+      AND observed_price_usd IS NOT NULL
+      AND observed_price_usd >= 0
+      AND simulated_exit_price_usd IS NULL
+      AND closed_quantity_tokens IS NULL
+    )
+  )
+) STRICT;
+
+CREATE TABLE paper_position_exits (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  position_id INTEGER NOT NULL UNIQUE,
+  exit_evaluation_id INTEGER NOT NULL UNIQUE,
+  exit_spec_version TEXT NOT NULL,
+  exit_definition_fingerprint TEXT NOT NULL,
+  position_definition_fingerprint TEXT NOT NULL,
+  pair_address TEXT NOT NULL,
+  exited_at TEXT NOT NULL,
+  exit_market_collected_at TEXT NOT NULL,
+  exit_price_usd REAL NOT NULL,
+  quantity_tokens REAL NOT NULL,
+  closing_position_source_identity TEXT NOT NULL,
+  source_identity TEXT NOT NULL UNIQUE,
+  UNIQUE (id, token_id),
+  UNIQUE (position_id, token_id),
+  UNIQUE (exit_evaluation_id, token_id),
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (position_id) REFERENCES paper_positions(id),
+  FOREIGN KEY (position_id, token_id) REFERENCES paper_positions(id, token_id),
+  FOREIGN KEY (exit_evaluation_id) REFERENCES exit_evaluations(id),
+  FOREIGN KEY (exit_evaluation_id, token_id) REFERENCES exit_evaluations(id, token_id),
+  FOREIGN KEY (exit_spec_version) REFERENCES exit_definitions(exit_spec_version),
+  CHECK (exit_price_usd >= 0),
+  CHECK (quantity_tokens > 0)
+) STRICT;
+
+CREATE INDEX exit_evaluations_token_as_of_id
+  ON exit_evaluations (token_id, as_of DESC, id DESC);
 `,
   },
 ];

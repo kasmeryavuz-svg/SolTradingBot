@@ -73,6 +73,9 @@ describe('loadConfig', () => {
       position: {
         historyLimit: 20,
       },
+      exit: {
+        historyLimit: 20,
+      },
     });
   });
 
@@ -298,10 +301,21 @@ describe('loadConfig', () => {
     expect(config.position).toEqual({ historyLimit: 12 });
   });
 
+  it('loads exit history settings from the environment', () => {
+    const config = loadConfig({ EXIT_HISTORY_LIMIT: '12' });
+    expect(config.exit).toEqual({ historyLimit: 12 });
+  });
+
   it('rejects a position history limit above the bound', () => {
     expect(() => {
       loadConfig({ POSITION_HISTORY_LIMIT: '101' });
     }).toThrow(/Invalid POSITION_HISTORY_LIMIT/);
+  });
+
+  it('rejects an exit history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ EXIT_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid EXIT_HISTORY_LIMIT/);
   });
 
   it('rejects a paper history limit above the bound', () => {

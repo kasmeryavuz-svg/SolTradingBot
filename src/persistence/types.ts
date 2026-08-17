@@ -12,6 +12,7 @@ import type {
 import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../strategy/types.js';
 import type { PaperEvaluation } from '../paper/types.js';
 import type { OpenPaperPosition, PositionEvaluation } from '../position/types.js';
+import type { ExitEvaluation } from '../exit/types.js';
 
 export class PersistenceError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -52,6 +53,8 @@ export type PersistenceStats = {
   positionEvaluationCount: number;
   paperPositionCount: number;
   openPaperPositionCount: number;
+  exitEvaluationCount: number;
+  paperPositionExitCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -311,4 +314,54 @@ export type StoredPositionEvaluationSummary = {
 export type TokenPositionHistory = {
   token: StoredToken;
   evaluations: StoredPositionEvaluationSummary[];
+};
+
+export type ExitBundle = {
+  openPosition: StoredOpenPaperPosition;
+  marketSnapshot: MarketSnapshot;
+  exitEvaluation: ExitEvaluation;
+};
+
+export type RecordedExitBundle = {
+  exitEvaluationId: number;
+  marketSnapshotId: number;
+  paperPositionExitId: number | null;
+  openPositionRemoved: boolean;
+  tokenMint: string;
+  sourceIdentity: string;
+  inserted: boolean;
+  marketInserted: boolean;
+  exitDefinitionInserted: boolean;
+};
+
+export type StoredExitEvaluationSummary = {
+  id: number;
+  tokenMint: string;
+  positionId: number;
+  marketSnapshotId: number;
+  exitSpecVersion: string;
+  exitSpecName: string;
+  exitDefinitionFingerprint: string;
+  positionDefinitionFingerprint: string;
+  positionSourceIdentity: string;
+  pairAddress: string;
+  asOf: string;
+  evaluatedAt: string;
+  marketCollectedAt: string;
+  observedPriceUsd: number | null;
+  entryPriceUsd: number;
+  stopTriggerPriceUsd: number;
+  takeProfitTriggerPriceUsd: number;
+  holdingAgeMs: number;
+  maxHoldingMs: number;
+  exitAction: ExitEvaluation['exitAction'];
+  exitReason: ExitEvaluation['exitReason'];
+  simulatedExitPriceUsd: number | null;
+  closedQuantityTokens: number | null;
+  sourceIdentity: string;
+};
+
+export type TokenExitHistory = {
+  token: StoredToken;
+  evaluations: StoredExitEvaluationSummary[];
 };

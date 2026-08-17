@@ -16,6 +16,8 @@ export {
   PAPER_MIGRATION_VERSION,
   POSITION_MIGRATION_NAME,
   POSITION_MIGRATION_VERSION,
+  EXIT_MIGRATION_NAME,
+  EXIT_MIGRATION_VERSION,
   migrationSql,
 } from './migrations.js';
 export { createSqlitePersistenceRepository, SqlitePersistenceRepository } from './repository.js';

@@ -58,6 +58,10 @@ export type PositionConfig = {
   historyLimit: number;
 };
 
+export type ExitConfig = {
+  historyLimit: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -71,6 +75,7 @@ export type AppConfig = {
   strategy: StrategyConfig;
   paper: PaperConfig;
   position: PositionConfig;
+  exit: ExitConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

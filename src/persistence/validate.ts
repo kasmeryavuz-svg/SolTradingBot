@@ -40,6 +40,22 @@ import {
 } from '../position/invariants.js';
 import { PositionError, type PositionEvaluation } from '../position/types.js';
 import { POSITION_SPEC_NAME, POSITION_SPEC_VERSION } from '../position/constants.js';
+import { evaluateExitAction } from '../exit/evaluator.js';
+import {
+  EXIT_MAX_HOLDING_MS,
+  EXIT_SPEC_NAME,
+  EXIT_SPEC_VERSION,
+} from '../exit/constants.js';
+import {
+  EXIT_DEFINITION_FINGERPRINT,
+  exitEvaluationSourceIdentity,
+  marketSourceIdentity,
+} from '../exit/identity.js';
+import {
+  assertExitEvaluationInvariants,
+  exitEvaluationsSemanticallyEqual,
+} from '../exit/invariants.js';
+import { ExitError, type ExitEvaluation } from '../exit/types.js';
 import { PersistenceError } from './types.js';
 import type { StoredOpenPaperPosition } from './types.js';
 
@@ -287,6 +303,61 @@ export function assertPersistablePositionEvaluation(
   });
   if (evaluation.sourceIdentity !== expectedIdentity) {
     throw new PersistenceError('Position source identity does not match the canonical evaluation identity.');
+  }
+}
+
+export function assertPersistableExitEvaluation(
+  evaluation: ExitEvaluation,
+  sources: {
+    openPosition: StoredOpenPaperPosition;
+    marketSnapshot: MarketSnapshot;
+  },
+): void {
+  try {
+    assertPersistableSnapshot(sources.marketSnapshot);
+    assertExitEvaluationInvariants(evaluation, sources);
+  } catch (error: unknown) {
+    if (error instanceof ExitError || error instanceof PositionError) {
+      throw new PersistenceError(error.message, { cause: error });
+    }
+    throw error;
+  }
+
+  if (evaluation.exitSpecVersion !== EXIT_SPEC_VERSION || evaluation.exitSpecName !== EXIT_SPEC_NAME) {
+    throw new PersistenceError('Exit evaluation spec does not match x11_v1.');
+  }
+  if (evaluation.exitDefinitionFingerprint !== EXIT_DEFINITION_FINGERPRINT) {
+    throw new PersistenceError('Exit definition fingerprint does not match the current x11_v1 definition.');
+  }
+  if (evaluation.maxHoldingMs !== EXIT_MAX_HOLDING_MS) {
+    throw new PersistenceError('Exit evaluation maxHoldingMs must be 21600000.');
+  }
+
+  const recomputed = evaluateExitAction({
+    openPosition: sources.openPosition,
+    marketSnapshot: sources.marketSnapshot,
+  });
+  if (
+    !exitEvaluationsSemanticallyEqual(evaluation, recomputed) ||
+    evaluation.evaluatedAt !== recomputed.evaluatedAt
+  ) {
+    throw new PersistenceError(
+      'Exit evaluation does not match a fresh x11_v1 evaluation of the supplied open position and market snapshot.',
+    );
+  }
+
+  const expectedIdentity = exitEvaluationSourceIdentity({
+    exitSpecVersion: EXIT_SPEC_VERSION,
+    exitDefinitionFingerprint: EXIT_DEFINITION_FINGERPRINT,
+    positionSourceIdentity: sources.openPosition.positionSourceIdentity,
+    marketSourceIdentity: marketSourceIdentity({
+      tokenMint: sources.marketSnapshot.tokenMint,
+      pairAddress: sources.marketSnapshot.pairAddress,
+      collectedAt: sources.marketSnapshot.collectedAt,
+    }),
+  });
+  if (evaluation.sourceIdentity !== expectedIdentity) {
+    throw new PersistenceError('Exit source identity does not match the canonical evaluation identity.');
   }
 }
 
