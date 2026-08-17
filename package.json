@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 14 adds a Jupiter Swap API V2 unsigned swap preflight engine — signing, broadcast, and live trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 15 adds an interactive in-memory signer security boundary — broadcast and live trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -49,7 +49,11 @@
     "dashboard:start": "tsx src/dashboard/run.ts",
     "execution:status": "tsx src/execution/status.ts",
     "execution:build": "tsx src/execution/build.ts",
-    "execution:simulate": "tsx src/execution/simulate.ts"
+    "execution:simulate": "tsx src/execution/simulate.ts",
+    "wallet:status": "tsx src/wallet/status.ts",
+    "wallet:verify": "tsx src/wallet/verify-command.ts",
+    "wallet:sign-test": "tsx src/wallet/sign-test.ts",
+    "wallet:sign-preflight": "tsx src/wallet/sign-preflight.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

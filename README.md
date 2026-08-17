@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 14
+## Current checkpoint: 15
 
 **Current capabilities:**
 
@@ -25,6 +25,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - r125_v1 strategy research / benchmark lab
 - d13_v1 local read-only observability dashboard
 - e14_v1 Jupiter V2 unsigned swap preflight engine
+- w15_v1 interactive in-memory signer security boundary
 
 ### What this checkpoint is not
 
@@ -37,9 +38,9 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
 - **Dashboard: YES (local, read-only, frozen d13)**
-- **Execution preflight: YES (terminal-only, unsigned)**
-- **Wallet: NO**
-- **Signer: NO**
+- **Execution preflight: YES (terminal-only, unsigned until an explicit wallet command)**
+- **Wallet security boundary: YES (interactive memory signer, hidden TTY only)**
+- **Signing: YES (manual/local only; no broadcast)**
 - **Transaction sending: NO**
 - **Real trading: NO**
 
@@ -58,6 +59,8 @@ r125_v1 may then **compare five fixed entry hypotheses** against the same histor
 Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener. That dashboard stays frozen in Checkpoint 14. It has no BUILD / SIMULATE / SIGN / SEND buttons.
 
 Checkpoint 14 adds an **unsigned Jupiter Swap API V2 preflight engine**. `execution:build` requests a real `/swap/v2/build` route and compiles a real unsigned v0 message. `execution:simulate` then estimates compute units on Solana RPC and requires a second simulation against an explicit CU limit. That is **not** a send. Quoted output is not guaranteed execution output. Simulation passed is not a guarantee of landing and not a profit result.
+
+Checkpoint 15 adds the **wallet security and signing boundary**. A Solana keypair may be loaded into memory from a hidden interactive TTY, checked against `EXECUTION_TAKER_PUBKEY`, and used to sign either a domain-separated self-test or the exact e14 `simulation_passed` candidate. The signed wire is verified locally and discarded. That is **not** a broadcast. Never paste a private key into source, chat, `.env`, or a command argument.
 
 Features describe observations. They do **not** decide trades.
 
@@ -118,7 +121,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 14
+Checkpoint: 15
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -131,14 +134,14 @@ Exit engine: available
 Performance analytics: available
 Strategy benchmark lab: available
 Dashboard: available
-Execution preflight engine: available
-Wallet: unavailable
-Signing: unavailable
+Execution preflight: available
+Wallet security boundary: available
+Signing: manual/local only
 Transaction broadcast: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, or execution commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, or `execution:simulate`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, execution, or wallet commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, or `wallet:sign-preflight`. It does **not** prompt for a wallet secret.
 
 ## How to check Solana, market data, and discovery
 
@@ -435,11 +438,36 @@ The CLI reports a **calculated priority-fee component** and a separate **RPC tra
 
 These commands refuse if `TRADING_ENABLED=true` and refuse `execution:build` / `execution:simulate` unless `SOLANA_NETWORK=mainnet-beta`.
 
-Do **not** paste a private key into this project. Wallet security is Checkpoint 15. Tiny live broadcast is Checkpoint 16.
+Do **not** paste a private key into this project, `.env`, source, or chat.
 
 There is no `execution:watch`, `execution:send`, or `execution:jito`.
 
 See [docs/CHECKPOINT_14.md](docs/CHECKPOINT_14.md) and [docs/EXECUTION_SOURCES.md](docs/EXECUTION_SOURCES.md).
+
+## How to use the wallet security boundary
+
+Checkpoint 15 can load a trading-wallet secret into memory from a hidden TTY, prove it matches `EXECUTION_TAKER_PUBKEY`, and sign the exact e14 preflight candidate. Spec `w15_v1`. It does **not** broadcast. It does **not** accept a private key from `.env`, a file, a seed phrase, or command arguments.
+
+```bash
+npm run wallet:status
+npm run wallet:verify
+npm run wallet:sign-test
+npm run wallet:sign-preflight
+```
+
+`wallet:status` is local only: no secret, no network, no database writes. It shows the w15 spec, that secrets are hidden-TTY-only, and that broadcast / Jito / dashboard signing are unavailable.
+
+`wallet:verify` and `wallet:sign-test` prompt on an interactive terminal. Typed characters are not echoed. They do not call Jupiter or Solana RPC.
+
+`wallet:sign-preflight` may call the same Jupiter `/build` and Solana RPC endpoints already used by Checkpoint 14. All expensive preflight happens before unlock. After unlock, the only network call is one bounded block-height expiry recheck. It prompts for the secret **only after** e14 status is `simulation_passed`, then signs the exact e14 final compiled message. The signed transaction is verified locally and discarded. The command result is a public proof, not a sendable byte string. Do not import a generic signer from `src/wallet`.
+
+Never paste a private key into source, chat, `.env`, or `npm run` arguments. Shell history is not a keystore.
+
+The interactive-memory backend is a local controlled signer. It is not unattended production custody. A later Keychain / KMS / HSM backend can replace it without changing strategy or execution logic.
+
+Checkpoint 16 owns broadcast. There is no `wallet:send`, `wallet:broadcast`, `wallet:export`, or `wallet:generate`.
+
+See [docs/CHECKPOINT_15.md](docs/CHECKPOINT_15.md) and [docs/WALLET_SECURITY_SOURCES.md](docs/WALLET_SECURITY_SOURCES.md).
 
 ## How to use the local database
 
@@ -518,6 +546,7 @@ src/             Application source code
   research/      r125_v1 read-only strategy research / benchmark lab (no stored research tables)
   dashboard/     d13_v1 local loopback-only read-only observability dashboard (no stored dashboard tables)
   execution/     e14_v1 Jupiter V2 unsigned swap preflight engine (no wallet, no sign, no send)
+  wallet/        w15_v1 interactive in-memory signer (hidden TTY, no persist, no send)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
@@ -525,4 +554,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 15 will add wallet security. Checkpoint 16 will add tiny live trading. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md) and are **not** implemented yet.
+Checkpoint 16 will add tiny live trading. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet.

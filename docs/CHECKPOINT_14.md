@@ -125,7 +125,7 @@ e14 does not include a tip instruction.
 
 ## What Checkpoint 15 adds
 
-Wallet / signer security: how a key is stored, loaded, and used. Not started here.
+Wallet / signer security: how a key is stored, loaded, and used. Implemented in Checkpoint 15 as an interactive in-memory signer. See [CHECKPOINT_15.md](CHECKPOINT_15.md).
 
 ## What Checkpoint 16 adds
 

@@ -21,8 +21,8 @@ Do not implement a later checkpoint until the current one is complete.
 | 12         | Performance analytics             | Complete                  |
 | 12.5       | Strategy Research / Benchmark Lab | Complete                  |
 | 13         | Dashboard                         | Complete                  |
-| 14         | Real execution engine             | Complete after validation |
-| 15         | Wallet security                   | Not started               |
+| 14         | Real execution engine             | Complete                  |
+| 15         | Wallet security                   | Complete after validation |
 | 16         | Tiny live trading                 | Not started               |
 | 17         | Strategy optimization             | Not started               |
 | 18         | Wallet intelligence               | Not started               |
@@ -31,25 +31,25 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 14 Real execution engine (complete after validation)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, an r125_v1 read-only historical strategy research / benchmark lab, a d13_v1 local loopback-only read-only observability dashboard, and an e14_v1 Jupiter Swap API V2 unsigned swap preflight engine
-- **Not implemented:** everything from Checkpoint 15 onward
+- **Active checkpoint:** 15 Wallet security (complete after validation)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, an r125_v1 read-only historical strategy research / benchmark lab, a d13_v1 local loopback-only read-only observability dashboard, an e14_v1 Jupiter Swap API V2 unsigned swap preflight engine, and a w15_v1 interactive in-memory signer security boundary
+- **Not implemented:** everything from Checkpoint 16 onward
 
-## What Checkpoint 14 did
+## What Checkpoint 15 did
 
-Checkpoint 14 completes the **unsigned route/build/simulation execution engine**.
+Checkpoint 15 completes the **wallet security and signing boundary**.
 
-It can request a real Jupiter Swap API V2 `/build` route, compile a real unsigned v0 Solana transaction message, estimate compute units with `replaceRecentBlockhash: true`, then prove a second simulation of the exact provider-bound candidate (`replaceRecentBlockhash: false`) after `getGenesisHash` matches official mainnet-beta. Quoted output, minimum output threshold, RPC message-fee estimate, and calculated priority-fee component are separate numbers. They are not a landing or profit guarantee.
+It can accept a base58 64-byte Solana keypair from a hidden interactive TTY, keep that secret in memory only, require the derived address to equal `EXECUTION_TAKER_PUBKEY`, prove local message signing, and sign the exact e14 `simulation_passed` candidate. The signature is verified locally. The signed wire is discarded. Public output is a signing proof, not a sendable transaction.
 
-It does **not** create or import a private key. It does **not** sign. It does **not** broadcast. It does **not** call Jupiter `/execute` or `/submit`. It does **not** call Jito. Transaction signing is intentionally withheld until Checkpoint 15. Actual tiny broadcast is intentionally withheld until Checkpoint 16.
+It does **not** broadcast. It does **not** call `sendTransaction`, Jupiter `/execute`, Jupiter `/submit`, or Jito. It does **not** store a private key in `.env`, a file, or SQLite. It does **not** add dashboard signing controls. `TRADING_ENABLED` must remain false.
 
-The Checkpoint 13 dashboard remains a frozen d13 observability artifact. It has no BUILD / SIMULATE / SIGN / SEND buttons.
+CP15 can produce and verify an in-memory signature. CP15 cannot transmit it.
 
-## Planned next checkpoint: 15 Wallet security
+## Planned next checkpoint: 16 Tiny live trading
 
-This phase is **not** implemented in Checkpoint 14.
+This phase is **not** implemented in Checkpoint 15.
 
-Checkpoint 15 owns wallet / signer security. Do not add a private key in Checkpoint 14.
+Checkpoint 16 owns a tightly bounded live broadcast of an already-signed artifact. Do not add `sendTransaction` in Checkpoint 15.
 
 ## Checkpoint 17 still owns optimization
 

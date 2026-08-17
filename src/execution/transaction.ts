@@ -11,6 +11,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   type AddressesByLookupTableAddress,
   type Blockhash,
+  type Transaction,
 } from '@solana/kit';
 import { COMPUTE_UNIT_HARD_MAX, SOLANA_PACKET_DATA_SIZE } from './constants.js';
 import { ExecutionError } from './errors.js';
@@ -21,6 +22,7 @@ export type CompiledUnsignedCandidate = {
   readonly candidate: ExecutionCandidate;
   readonly wireTransactionBase64: string;
   readonly messageBase64: string;
+  readonly compiledTransaction: Transaction;
 };
 
 export function compileUnsignedCandidate(
@@ -100,6 +102,7 @@ export function compileUnsignedCandidate(
       },
       wireTransactionBase64,
       messageBase64: Buffer.from(compiled.messageBytes).toString('base64'),
+      compiledTransaction: compiled,
     };
   } catch (error: unknown) {
     if (error instanceof ExecutionError) {
