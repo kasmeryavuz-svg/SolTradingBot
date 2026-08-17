@@ -65,5 +65,12 @@ export function openedPositionFrom(bundle: PositionBundle) {
   return openPaperPositionFromEvaluation(bundle.positionEvaluation, bundle.paperEvaluation);
 }
 
-export { nextRepresentableNumber, insufficientPaperBundle, noEntryPaperBundle, paperBundle, paperBundleAt } from './paper-fixtures.js';
+export {
+  nextRepresentableNumber,
+  previousRepresentableNumber,
+  insufficientPaperBundle,
+  noEntryPaperBundle,
+  paperBundle,
+  paperBundleAt,
+} from './paper-fixtures.js';
 export { OTHER_PAIR, PAIR_ADDRESS, T_10_00, T_10_05, T_10_10 } from './feature-fixtures.js';

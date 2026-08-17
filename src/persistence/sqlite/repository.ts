@@ -32,6 +32,23 @@ import {
 } from '../../position/invariants.js';
 import { evaluatePositionAction } from '../../position/evaluator.js';
 import type { PositionEvaluation } from '../../position/types.js';
+import {
+  EXIT_CLOSE_FRACTION_BPS,
+  EXIT_MAX_HOLDING_MS,
+  EXIT_SPEC_NAME,
+  EXIT_SPEC_VERSION,
+  EXIT_STOP_LOSS_BPS,
+  EXIT_TAKE_PROFIT_BPS,
+} from '../../exit/constants.js';
+import { evaluateExitAction } from '../../exit/evaluator.js';
+import {
+  EXIT_DEFINITION_FINGERPRINT,
+  exitEvaluationSourceIdentity,
+  exitEvidenceSourceIdentity,
+  marketSourceIdentity,
+} from '../../exit/identity.js';
+import { exitEvaluationsSemanticallyEqual } from '../../exit/invariants.js';
+import type { ExitEvaluation } from '../../exit/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -59,6 +76,8 @@ import type {
   RecordedPaperBundle,
   PositionBundle,
   RecordedPositionBundle,
+  ExitBundle,
+  RecordedExitBundle,
   StoredFeatureVectorSummary,
   StoredObservation,
   StoredRiskScanSummary,
@@ -75,6 +94,8 @@ import type {
   StoredOpenPaperPosition,
   StoredPositionEvaluationSummary,
   TokenPositionHistory,
+  StoredExitEvaluationSummary,
+  TokenExitHistory,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
 import {
@@ -85,6 +106,7 @@ import {
   assertPersistableStrategyEvaluation,
   assertPersistablePaperEvaluation,
   assertPersistablePositionEvaluation,
+  assertPersistableExitEvaluation,
 } from '../validate.js';
 import { openSqliteDatabase, readPragmaValue } from './database.js';
 import { applyMigrations, currentSchemaVersion } from './migrations.js';
@@ -180,11 +202,23 @@ type Statements = {
   getOpenPositionIndex: StatementSync;
   getOpenPaperPosition: StatementSync;
   getPaperPositionById: StatementSync;
+  getPaperPositionByPk: StatementSync;
   getPaperById: StatementSync;
   countPositionDefinitions: StatementSync;
   countPositionEvaluations: StatementSync;
   countPaperPositions: StatementSync;
   countOpenPaperPositions: StatementSync;
+  getExitDefinition: StatementSync;
+  insertExitDefinition: StatementSync;
+  getExitByIdentity: StatementSync;
+  insertExitEvaluation: StatementSync;
+  exitHistory: StatementSync;
+  insertPaperPositionExit: StatementSync;
+  getPaperPositionExitByPositionId: StatementSync;
+  deleteOpenPaperPosition: StatementSync;
+  countExitDefinitions: StatementSync;
+  countExitEvaluations: StatementSync;
+  countPaperPositionExits: StatementSync;
 };
 
 type FeaturePersistAbort =
@@ -209,6 +243,13 @@ type PositionPersistAbort =
   | 'positionEvaluation'
   | 'paperPosition'
   | 'openPositionState';
+
+type ExitPersistAbort =
+  | 'market'
+  | 'exitDefinition'
+  | 'exitEvaluation'
+  | 'paperPositionExit'
+  | 'openPositionDelete';
 
 const FEATURE_PERSIST_ABORTS = new Set<FeaturePersistAbort>([
   'token',
@@ -430,6 +471,16 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordExitBundle(bundle: ExitBundle): RecordedExitBundle {
+    return this.transact(() => this.persistExitBundle(bundle));
+  }
+
+  recordExitBundleAndAbortAfter(bundle: ExitBundle, abortAfter: ExitPersistAbort): void {
+    this.transact(() => {
+      this.persistExitBundle(bundle, { abortAfter });
+    });
+  }
+
   getPreviousMarketSnapshot(
     tokenMint: string,
     pairAddress: string,
@@ -515,6 +566,19 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  getExitHistory(tokenMint: string, limit: number): TokenExitHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const rows = this.requireStatements().exitHistory.all(token.id, clampHistoryLimit(limit));
+    return {
+      token,
+      evaluations: rows.map((row) => this.mapExitEvaluationSummary(row)),
+    };
+  }
+
   getTableCounts(): {
     tokens: number;
     discoveryRuns: number;
@@ -539,6 +603,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     positionEvaluations: number;
     paperPositions: number;
     openPaperPositions: number;
+    exitDefinitions: number;
+    exitEvaluations: number;
+    paperPositionExits: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -566,6 +633,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       positionEvaluations: asNumber(statements.countPositionEvaluations.get()?.['count']),
       paperPositions: asNumber(statements.countPaperPositions.get()?.['count']),
       openPaperPositions: asNumber(statements.countOpenPaperPositions.get()?.['count']),
+      exitDefinitions: asNumber(statements.countExitDefinitions.get()?.['count']),
+      exitEvaluations: asNumber(statements.countExitEvaluations.get()?.['count']),
+      paperPositionExits: asNumber(statements.countPaperPositionExits.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -604,6 +674,8 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       positionEvaluationCount: asNumber(statements.countPositionEvaluations.get()?.['count']),
       paperPositionCount: asNumber(statements.countPaperPositions.get()?.['count']),
       openPaperPositionCount: asNumber(statements.countOpenPaperPositions.get()?.['count']),
+      exitEvaluationCount: asNumber(statements.countExitEvaluations.get()?.['count']),
+      paperPositionExitCount: asNumber(statements.countPaperPositionExits.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -1312,6 +1384,276 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private persistExitBundle(
+    bundle: ExitBundle,
+    options: { abortAfter?: ExitPersistAbort } = {},
+  ): RecordedExitBundle {
+    assertPersistableExitEvaluation(bundle.exitEvaluation, {
+      openPosition: bundle.openPosition,
+      marketSnapshot: bundle.marketSnapshot,
+    });
+
+    const recomputed = evaluateExitAction({
+      openPosition: bundle.openPosition,
+      marketSnapshot: bundle.marketSnapshot,
+    });
+    if (!exitEvaluationsSemanticallyEqual(recomputed, bundle.exitEvaluation)) {
+      throw new PersistenceError(
+        'Exit evaluation does not match a fresh x11_v1 evaluation of the supplied open position and market snapshot.',
+      );
+    }
+
+    const dbOpen = this.reloadOpenPaperPosition(bundle.openPosition.tokenMint);
+    if (dbOpen === null) {
+      return this.reuseIdenticalClosedExit(bundle, recomputed);
+    }
+    this.assertOpenPositionStateMatchesCaller(bundle.openPosition, dbOpen);
+
+    const token = this.getToken(bundle.openPosition.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Exit evaluation token is missing.');
+    }
+    this.upsertToken(token.mint, bundle.marketSnapshot.collectedAt, bundle.marketSnapshot.collectedAt);
+
+    const market = this.persistExactMarketSnapshot(token.id, bundle.marketSnapshot);
+    if (options.abortAfter === 'market') {
+      throw new PersistenceError('Test-forced write failure after market insert.');
+    }
+
+    const definitionInserted = this.ensureExitDefinition(recomputed);
+    if (options.abortAfter === 'exitDefinition') {
+      throw new PersistenceError('Test-forced write failure after exit definition insert.');
+    }
+
+    const existing = this.requireStatements().getExitByIdentity.get(recomputed.sourceIdentity);
+    let exitEvaluationId: number;
+    let inserted = false;
+    if (existing !== undefined) {
+      const stored = this.mapExitEvaluationSummary(existing);
+      if (!storedExitMatchesEvaluation(stored, recomputed, dbOpen.id, market.id)) {
+        throw new PersistenceError(
+          'This exit source identity was already stored with different exit semantics.',
+        );
+      }
+      exitEvaluationId = stored.id;
+    } else {
+      const insertedRow = this.requireStatements().insertExitEvaluation.run(
+        token.id,
+        dbOpen.id,
+        market.id,
+        recomputed.exitSpecVersion,
+        recomputed.exitDefinitionFingerprint,
+        recomputed.positionDefinitionFingerprint,
+        recomputed.positionSourceIdentity,
+        recomputed.asOf,
+        recomputed.evaluatedAt,
+        recomputed.pairAddress,
+        recomputed.marketCollectedAt,
+        recomputed.observedPriceUsd,
+        recomputed.entryPriceUsd,
+        recomputed.stopTriggerPriceUsd,
+        recomputed.takeProfitTriggerPriceUsd,
+        recomputed.holdingAgeMs,
+        recomputed.maxHoldingMs,
+        recomputed.exitAction,
+        recomputed.exitReason,
+        recomputed.simulatedExitPriceUsd,
+        recomputed.closedQuantityTokens,
+        recomputed.sourceIdentity,
+      );
+      exitEvaluationId = Number(insertedRow.lastInsertRowid);
+      inserted = true;
+    }
+    if (options.abortAfter === 'exitEvaluation') {
+      throw new PersistenceError('Test-forced write failure after exit evaluation insert.');
+    }
+
+    if (recomputed.exitAction === 'no_change') {
+      if (options.abortAfter === 'paperPositionExit' || options.abortAfter === 'openPositionDelete') {
+        throw new PersistenceError(
+          options.abortAfter === 'paperPositionExit'
+            ? 'Test-forced write failure after paper position exit insert.'
+            : 'Test-forced write failure after open-position delete.',
+        );
+      }
+      return {
+        exitEvaluationId,
+        marketSnapshotId: market.id,
+        paperPositionExitId: null,
+        openPositionRemoved: false,
+        tokenMint: recomputed.tokenMint,
+        sourceIdentity: recomputed.sourceIdentity,
+        inserted,
+        marketInserted: market.inserted,
+        exitDefinitionInserted: definitionInserted,
+      };
+    }
+
+    const existingExit = this.requireStatements().getPaperPositionExitByPositionId.get(dbOpen.id);
+    if (existingExit !== undefined) {
+      throw new PersistenceError('This paper position already has immutable close evidence.');
+    }
+
+    if (recomputed.simulatedExitPriceUsd === null || recomputed.closedQuantityTokens === null) {
+      throw new PersistenceError('CLOSE_POSITION is missing simulated exit price or closed quantity.');
+    }
+
+    const evidenceIdentity = exitEvidenceSourceIdentity({
+      exitSpecVersion: EXIT_SPEC_VERSION,
+      exitDefinitionFingerprint: EXIT_DEFINITION_FINGERPRINT,
+      positionSourceIdentity: dbOpen.positionSourceIdentity,
+      exitEvaluationSourceIdentity: recomputed.sourceIdentity,
+    });
+    const expectedIdentity = exitEvaluationSourceIdentity({
+      exitSpecVersion: EXIT_SPEC_VERSION,
+      exitDefinitionFingerprint: EXIT_DEFINITION_FINGERPRINT,
+      positionSourceIdentity: dbOpen.positionSourceIdentity,
+      marketSourceIdentity: marketSourceIdentity({
+        tokenMint: bundle.marketSnapshot.tokenMint,
+        pairAddress: bundle.marketSnapshot.pairAddress,
+        collectedAt: bundle.marketSnapshot.collectedAt,
+      }),
+    });
+    if (recomputed.sourceIdentity !== expectedIdentity) {
+      throw new PersistenceError('Exit source identity does not match the canonical evaluation identity.');
+    }
+
+    const exitInserted = this.requireStatements().insertPaperPositionExit.run(
+      token.id,
+      dbOpen.id,
+      exitEvaluationId,
+      EXIT_SPEC_VERSION,
+      EXIT_DEFINITION_FINGERPRINT,
+      POSITION_DEFINITION_FINGERPRINT,
+      dbOpen.pairAddress,
+      recomputed.evaluatedAt,
+      recomputed.marketCollectedAt,
+      recomputed.simulatedExitPriceUsd,
+      recomputed.closedQuantityTokens,
+      dbOpen.positionSourceIdentity,
+      evidenceIdentity,
+    );
+    if (options.abortAfter === 'paperPositionExit') {
+      throw new PersistenceError('Test-forced write failure after paper position exit insert.');
+    }
+
+    const deleted = this.requireStatements().deleteOpenPaperPosition.run(token.id, dbOpen.id);
+    if (Number(deleted.changes) !== 1) {
+      throw new PersistenceError(
+        'Exact current-open row was not removed. Expected exactly one paper_open_positions row.',
+      );
+    }
+    if (options.abortAfter === 'openPositionDelete') {
+      throw new PersistenceError('Test-forced write failure after open-position delete.');
+    }
+
+    return {
+      exitEvaluationId,
+      marketSnapshotId: market.id,
+      paperPositionExitId: Number(exitInserted.lastInsertRowid),
+      openPositionRemoved: true,
+      tokenMint: recomputed.tokenMint,
+      sourceIdentity: recomputed.sourceIdentity,
+      inserted,
+      marketInserted: market.inserted,
+      exitDefinitionInserted: definitionInserted,
+    };
+  }
+
+  private reuseIdenticalClosedExit(
+    bundle: ExitBundle,
+    recomputed: ExitEvaluation,
+  ): RecordedExitBundle {
+    if (recomputed.exitAction !== 'close_position') {
+      throw new PersistenceError('Current open-position state changed since evaluation. Retry the command.');
+    }
+    if (recomputed.simulatedExitPriceUsd === null || recomputed.closedQuantityTokens === null) {
+      throw new PersistenceError('CLOSE_POSITION is missing simulated exit price or closed quantity.');
+    }
+
+    const token = this.getToken(bundle.openPosition.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Exit evaluation token is missing.');
+    }
+
+    const historicalRow = this.requireStatements().getPaperPositionByPk.get(bundle.openPosition.id, token.id);
+    if (historicalRow === undefined) {
+      throw new PersistenceError('Current open-position state changed since evaluation. Retry the command.');
+    }
+    const historical = this.mapStoredOpenPaperPosition(historicalRow, bundle.openPosition.tokenMint);
+    this.assertOpenPositionStateMatchesCaller(bundle.openPosition, historical);
+
+    const existing = this.requireStatements().getExitByIdentity.get(recomputed.sourceIdentity);
+    if (existing === undefined) {
+      throw new PersistenceError('Current open-position state changed since evaluation. Retry the command.');
+    }
+    const stored = this.mapExitEvaluationSummary(existing);
+
+    const marketRow = this.requireStatements().snapshotByIdentity.get(
+      token.id,
+      bundle.marketSnapshot.pairAddress,
+      bundle.marketSnapshot.collectedAt,
+    );
+    if (marketRow === undefined) {
+      throw new PersistenceError('Current open-position state changed since evaluation. Retry the command.');
+    }
+    const marketId = asNumber(marketRow['id']);
+    const storedMarket = mapSnapshotRow(marketRow, bundle.marketSnapshot.tokenMint);
+    if (!marketSnapshotsEquivalent(storedMarket, bundle.marketSnapshot)) {
+      throw new PersistenceError(
+        'An existing market snapshot with the same token, pair, and collectedAt has different values.',
+      );
+    }
+    if (!storedExitMatchesEvaluation(stored, recomputed, bundle.openPosition.id, marketId)) {
+      throw new PersistenceError(
+        'This exit source identity was already stored with different exit semantics.',
+      );
+    }
+
+    const evidence = this.requireStatements().getPaperPositionExitByPositionId.get(bundle.openPosition.id);
+    if (evidence === undefined) {
+      throw new PersistenceError('Current open-position state changed since evaluation. Retry the command.');
+    }
+
+    const evidenceIdentity = exitEvidenceSourceIdentity({
+      exitSpecVersion: EXIT_SPEC_VERSION,
+      exitDefinitionFingerprint: EXIT_DEFINITION_FINGERPRINT,
+      positionSourceIdentity: bundle.openPosition.positionSourceIdentity,
+      exitEvaluationSourceIdentity: recomputed.sourceIdentity,
+    });
+    if (
+      asNumber(evidence['token_id']) !== token.id ||
+      asNumber(evidence['position_id']) !== bundle.openPosition.id ||
+      asNumber(evidence['exit_evaluation_id']) !== stored.id ||
+      asString(evidence['exit_spec_version']) !== EXIT_SPEC_VERSION ||
+      asString(evidence['exit_definition_fingerprint']) !== EXIT_DEFINITION_FINGERPRINT ||
+      asString(evidence['position_definition_fingerprint']) !== POSITION_DEFINITION_FINGERPRINT ||
+      asString(evidence['pair_address']) !== bundle.openPosition.pairAddress ||
+      asString(evidence['exited_at']) !== recomputed.evaluatedAt ||
+      asString(evidence['exit_market_collected_at']) !== recomputed.marketCollectedAt ||
+      !Object.is(asNumber(evidence['exit_price_usd']), recomputed.simulatedExitPriceUsd) ||
+      !Object.is(asNumber(evidence['quantity_tokens']), recomputed.closedQuantityTokens) ||
+      asString(evidence['closing_position_source_identity']) !== bundle.openPosition.positionSourceIdentity ||
+      asString(evidence['source_identity']) !== evidenceIdentity
+    ) {
+      throw new PersistenceError(
+        'This exit source identity was already stored with different exit semantics.',
+      );
+    }
+
+    return {
+      exitEvaluationId: stored.id,
+      marketSnapshotId: marketId,
+      paperPositionExitId: asNumber(evidence['id']),
+      openPositionRemoved: true,
+      tokenMint: recomputed.tokenMint,
+      sourceIdentity: recomputed.sourceIdentity,
+      inserted: false,
+      marketInserted: false,
+      exitDefinitionInserted: false,
+    };
+  }
+
   private ensurePaperDefinition(evaluation: PaperEvaluation): boolean {
     const existing = this.requireStatements().getPaperDefinition.get(evaluation.paperSpecVersion);
     if (existing === undefined) {
@@ -1371,6 +1713,43 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     ) {
       throw new PersistenceError(
         'Stored position definition for pm10_v1 does not match the current code fingerprint. Create a new position spec version instead of mutating pm10_v1.',
+      );
+    }
+
+    return false;
+  }
+
+  private ensureExitDefinition(evaluation: ExitEvaluation): boolean {
+    const existing = this.requireStatements().getExitDefinition.get(evaluation.exitSpecVersion);
+    if (existing === undefined) {
+      this.requireStatements().insertExitDefinition.run(
+        evaluation.exitSpecVersion,
+        evaluation.exitSpecName,
+        evaluation.positionSpecVersion,
+        evaluation.positionDefinitionFingerprint,
+        EXIT_STOP_LOSS_BPS,
+        EXIT_TAKE_PROFIT_BPS,
+        EXIT_MAX_HOLDING_MS,
+        EXIT_CLOSE_FRACTION_BPS,
+        evaluation.exitDefinitionFingerprint,
+        evaluation.evaluatedAt,
+      );
+      return true;
+    }
+
+    if (
+      asString(existing['exit_spec_name']) !== evaluation.exitSpecName ||
+      asString(existing['exit_spec_name']) !== EXIT_SPEC_NAME ||
+      asString(existing['position_spec_version']) !== evaluation.positionSpecVersion ||
+      asString(existing['position_definition_fingerprint']) !== evaluation.positionDefinitionFingerprint ||
+      asNumber(existing['stop_loss_bps']) !== EXIT_STOP_LOSS_BPS ||
+      asNumber(existing['take_profit_bps']) !== EXIT_TAKE_PROFIT_BPS ||
+      asNumber(existing['max_holding_ms']) !== EXIT_MAX_HOLDING_MS ||
+      asNumber(existing['close_fraction_bps']) !== EXIT_CLOSE_FRACTION_BPS ||
+      asString(existing['definition_fingerprint']) !== evaluation.exitDefinitionFingerprint
+    ) {
+      throw new PersistenceError(
+        'Stored exit definition for x11_v1 does not match the current code fingerprint. Create a new exit spec version instead of mutating x11_v1.',
       );
     }
 
@@ -1592,6 +1971,28 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     }
 
     return this.insertSnapshot(tokenId, null, snapshot) === 1;
+  }
+
+  private persistExactMarketSnapshot(
+    tokenId: number,
+    snapshot: MarketSnapshot,
+  ): { id: number; inserted: boolean } {
+    const inserted = this.persistMarketSnapshotIfAbsent(tokenId, snapshot);
+    const existingRow = this.requireStatements().snapshotByIdentity.get(
+      tokenId,
+      snapshot.pairAddress,
+      snapshot.collectedAt,
+    );
+    if (existingRow === undefined) {
+      throw new PersistenceError('Exact market snapshot used for exit evaluation is missing after persist.');
+    }
+    const existing = mapSnapshotRow(existingRow, snapshot.tokenMint);
+    if (!marketSnapshotsEquivalent(existing, snapshot)) {
+      throw new PersistenceError(
+        'Stored market snapshot does not match the exact snapshot passed to the exit evaluator.',
+      );
+    }
+    return { id: asNumber(existingRow['id']), inserted };
   }
 
   private assertExactFeatureVectorLinkage(
@@ -2093,6 +2494,35 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private mapExitEvaluationSummary(row: Record<string, SQLOutputValue>): StoredExitEvaluationSummary {
+    return {
+      id: asNumber(row['id']),
+      tokenMint: asString(row['token_mint']),
+      positionId: asNumber(row['position_id']),
+      marketSnapshotId: asNumber(row['market_snapshot_id']),
+      exitSpecVersion: asString(row['exit_spec_version']),
+      exitSpecName: asString(row['exit_spec_name']),
+      exitDefinitionFingerprint: asString(row['exit_definition_fingerprint']),
+      positionDefinitionFingerprint: asString(row['position_definition_fingerprint']),
+      positionSourceIdentity: asString(row['position_source_identity']),
+      pairAddress: asString(row['pair_address']),
+      asOf: asString(row['as_of']),
+      evaluatedAt: asString(row['evaluated_at']),
+      marketCollectedAt: asString(row['market_collected_at']),
+      observedPriceUsd: asNullableNumber(row['observed_price_usd']),
+      entryPriceUsd: asNumber(row['entry_price_usd']),
+      stopTriggerPriceUsd: asNumber(row['stop_trigger_price_usd']),
+      takeProfitTriggerPriceUsd: asNumber(row['take_profit_trigger_price_usd']),
+      holdingAgeMs: asNumber(row['holding_age_ms']),
+      maxHoldingMs: asNumber(row['max_holding_ms']),
+      exitAction: asString(row['exit_action']) as ExitEvaluation['exitAction'],
+      exitReason: asString(row['exit_reason']) as ExitEvaluation['exitReason'],
+      simulatedExitPriceUsd: asNullableNumber(row['simulated_exit_price_usd']),
+      closedQuantityTokens: asNullableNumber(row['closed_quantity_tokens']),
+      sourceIdentity: asString(row['source_identity']),
+    };
+  }
+
   private mapStoredOpenPaperPosition(
     row: Record<string, SQLOutputValue>,
     tokenMint: string,
@@ -2409,7 +2839,7 @@ function prepareStatements(database: DatabaseSync): Statements {
        LIMIT 1`,
     ),
     snapshotByIdentity: database.prepare(
-      `SELECT token_name, token_symbol, dex_id, pair_address, quote_token_mint, quote_token_symbol,
+      `SELECT id, token_name, token_symbol, dex_id, pair_address, quote_token_mint, quote_token_symbol,
               price_usd, liquidity_usd, volume_5m_usd, volume_1h_usd, volume_24h_usd,
               buys_5m, sells_5m, buys_1h, sells_1h, price_change_5m_pct, price_change_1h_pct,
               price_change_24h_pct, market_cap_usd, fdv_usd, pair_created_at, collected_at
@@ -2626,11 +3056,89 @@ function prepareStatements(database: DatabaseSync): Statements {
     getPaperPositionById: database.prepare(
       'SELECT id FROM paper_positions WHERE position_evaluation_id = ?',
     ),
+    getPaperPositionByPk: database.prepare(
+      `SELECT pp.id, pp.position_evaluation_id, pp.opening_paper_evaluation_id, pp.pair_address,
+              pp.position_spec_version, pp.position_definition_fingerprint, pp.opened_at,
+              pp.entry_market_collected_at, pp.entry_price_usd, pp.entry_notional_usd, pp.quantity_tokens,
+              pp.opening_paper_source_identity, pp.source_identity, t.mint AS token_mint
+       FROM paper_positions pp
+       JOIN tokens t ON t.id = pp.token_id
+       WHERE pp.id = ? AND pp.token_id = ?`,
+    ),
     getPaperById: database.prepare(`${PAPER_EVALUATION_SELECT} WHERE p.id = ?`),
     countPositionDefinitions: database.prepare('SELECT COUNT(*) AS count FROM position_definitions'),
     countPositionEvaluations: database.prepare('SELECT COUNT(*) AS count FROM position_evaluations'),
     countPaperPositions: database.prepare('SELECT COUNT(*) AS count FROM paper_positions'),
     countOpenPaperPositions: database.prepare('SELECT COUNT(*) AS count FROM paper_open_positions'),
+    getExitDefinition: database.prepare(
+      `SELECT exit_spec_version, exit_spec_name, position_spec_version, position_definition_fingerprint,
+              stop_loss_bps, take_profit_bps, max_holding_ms, close_fraction_bps, definition_fingerprint,
+              first_recorded_at
+       FROM exit_definitions
+       WHERE exit_spec_version = ?`,
+    ),
+    insertExitDefinition: database.prepare(
+      `INSERT INTO exit_definitions (
+        exit_spec_version, exit_spec_name, position_spec_version, position_definition_fingerprint,
+        stop_loss_bps, take_profit_bps, max_holding_ms, close_fraction_bps, definition_fingerprint,
+        first_recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    getExitByIdentity: database.prepare(
+      `SELECT e.id, t.mint AS token_mint, e.position_id, e.market_snapshot_id, e.exit_spec_version,
+              d.exit_spec_name, e.exit_definition_fingerprint, e.position_definition_fingerprint,
+              e.position_source_identity, e.pair_address, e.as_of, e.evaluated_at, e.market_collected_at,
+              e.observed_price_usd, e.entry_price_usd, e.stop_trigger_price_usd,
+              e.take_profit_trigger_price_usd, e.holding_age_ms, e.max_holding_ms, e.exit_action,
+              e.exit_reason, e.simulated_exit_price_usd, e.closed_quantity_tokens, e.source_identity
+       FROM exit_evaluations e
+       JOIN exit_definitions d ON d.exit_spec_version = e.exit_spec_version
+       JOIN tokens t ON t.id = e.token_id
+       WHERE e.source_identity = ?`,
+    ),
+    insertExitEvaluation: database.prepare(
+      `INSERT INTO exit_evaluations (
+        token_id, position_id, market_snapshot_id, exit_spec_version, exit_definition_fingerprint,
+        position_definition_fingerprint, position_source_identity, as_of, evaluated_at, pair_address,
+        market_collected_at, observed_price_usd, entry_price_usd, stop_trigger_price_usd,
+        take_profit_trigger_price_usd, holding_age_ms, max_holding_ms, exit_action, exit_reason,
+        simulated_exit_price_usd, closed_quantity_tokens, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    exitHistory: database.prepare(
+      `SELECT e.id, t.mint AS token_mint, e.position_id, e.market_snapshot_id, e.exit_spec_version,
+              d.exit_spec_name, e.exit_definition_fingerprint, e.position_definition_fingerprint,
+              e.position_source_identity, e.pair_address, e.as_of, e.evaluated_at, e.market_collected_at,
+              e.observed_price_usd, e.entry_price_usd, e.stop_trigger_price_usd,
+              e.take_profit_trigger_price_usd, e.holding_age_ms, e.max_holding_ms, e.exit_action,
+              e.exit_reason, e.simulated_exit_price_usd, e.closed_quantity_tokens, e.source_identity
+       FROM exit_evaluations e
+       JOIN exit_definitions d ON d.exit_spec_version = e.exit_spec_version
+       JOIN tokens t ON t.id = e.token_id
+       WHERE e.token_id = ?
+       ORDER BY e.as_of DESC, e.id DESC
+       LIMIT ?`,
+    ),
+    insertPaperPositionExit: database.prepare(
+      `INSERT INTO paper_position_exits (
+        token_id, position_id, exit_evaluation_id, exit_spec_version, exit_definition_fingerprint,
+        position_definition_fingerprint, pair_address, exited_at, exit_market_collected_at,
+        exit_price_usd, quantity_tokens, closing_position_source_identity, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    getPaperPositionExitByPositionId: database.prepare(
+      `SELECT id, token_id, position_id, exit_evaluation_id, exit_spec_version, exit_definition_fingerprint,
+              position_definition_fingerprint, pair_address, exited_at, exit_market_collected_at,
+              exit_price_usd, quantity_tokens, closing_position_source_identity, source_identity
+       FROM paper_position_exits
+       WHERE position_id = ?`,
+    ),
+    deleteOpenPaperPosition: database.prepare(
+      'DELETE FROM paper_open_positions WHERE token_id = ? AND position_id = ?',
+    ),
+    countExitDefinitions: database.prepare('SELECT COUNT(*) AS count FROM exit_definitions'),
+    countExitEvaluations: database.prepare('SELECT COUNT(*) AS count FROM exit_evaluations'),
+    countPaperPositionExits: database.prepare('SELECT COUNT(*) AS count FROM paper_position_exits'),
   };
 }
 
@@ -2699,6 +3207,39 @@ function storedPositionMatchesEvaluation(
         paperSourceIdentity: evaluation.paperSourceIdentity,
         priorOpenPositionSourceIdentity: evaluation.priorOpenPositionSourceIdentity,
       })
+  );
+}
+
+function storedExitMatchesEvaluation(
+  stored: StoredExitEvaluationSummary,
+  evaluation: ExitEvaluation,
+  positionId: number,
+  marketSnapshotId: number,
+): boolean {
+  return (
+    stored.tokenMint === evaluation.tokenMint &&
+    stored.positionId === positionId &&
+    stored.marketSnapshotId === marketSnapshotId &&
+    stored.exitSpecVersion === evaluation.exitSpecVersion &&
+    stored.exitSpecName === evaluation.exitSpecName &&
+    stored.exitDefinitionFingerprint === evaluation.exitDefinitionFingerprint &&
+    stored.positionDefinitionFingerprint === evaluation.positionDefinitionFingerprint &&
+    stored.positionSourceIdentity === evaluation.positionSourceIdentity &&
+    stored.pairAddress === evaluation.pairAddress &&
+    stored.asOf === evaluation.asOf &&
+    stored.evaluatedAt === evaluation.evaluatedAt &&
+    stored.marketCollectedAt === evaluation.marketCollectedAt &&
+    Object.is(stored.observedPriceUsd, evaluation.observedPriceUsd) &&
+    Object.is(stored.entryPriceUsd, evaluation.entryPriceUsd) &&
+    Object.is(stored.stopTriggerPriceUsd, evaluation.stopTriggerPriceUsd) &&
+    Object.is(stored.takeProfitTriggerPriceUsd, evaluation.takeProfitTriggerPriceUsd) &&
+    stored.holdingAgeMs === evaluation.holdingAgeMs &&
+    stored.maxHoldingMs === evaluation.maxHoldingMs &&
+    stored.exitAction === evaluation.exitAction &&
+    stored.exitReason === evaluation.exitReason &&
+    Object.is(stored.simulatedExitPriceUsd, evaluation.simulatedExitPriceUsd) &&
+    Object.is(stored.closedQuantityTokens, evaluation.closedQuantityTokens) &&
+    stored.sourceIdentity === evaluation.sourceIdentity
   );
 }
 

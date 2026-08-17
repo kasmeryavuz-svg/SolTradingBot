@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 10
+## Current checkpoint: 11
 
 **Current capabilities:**
 
@@ -20,6 +20,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - b08_v1 historical backtester
 - p09_v1 live paper-entry observation
 - pm10_v1 simulated position management
+- x11_v1 paper exit engine
 
 ### What this checkpoint is not
 
@@ -28,7 +29,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Backtester: YES**
 - **Paper trading: YES**
 - **Position management: YES**
-- **Exit engine: NO**
+- **Exit engine: YES**
 - **Performance analytics: NO**
 - **Wallet: NO**
 - **Signer: NO**
@@ -39,7 +40,9 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 
 A p09_v1 **paper entry observation** records that frozen `s07_v1` classified a live snapshot as an entry candidate, using that snapshot’s exact `priceUsd` as a reference price. It is **not** an executable quote, fill, or position.
 
-pm10_v1 may open a **simulated paper position** from that observation: one current open position per token mint, a fixed **$100** reference notional, and `quantity = 100 / entry price`. That $100 figure is a modeling reference, not real funds, not a bankroll, and not a recommendation for future live size. There is no cash balance, no exit, and no PnL in this checkpoint.
+pm10_v1 may open a **simulated paper position** from that observation: one current open position per token mint, a fixed **$100** reference notional, and `quantity = 100 / entry price`. That $100 figure is a modeling reference, not real funds, not a bankroll, and not a recommendation for future live size.
+
+x11_v1 may then **simulate a full close** of that open position using the **exact opening DEX pair**, a 10% stop, a 20% take profit, and a 6-hour maximum hold. Those thresholds are an experimental baseline. They are not optimized, not financial advice, and not evidence of profitability. There is still no cash balance and no PnL in this checkpoint.
 
 Features describe observations. They do **not** decide trades.
 
@@ -100,7 +103,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 10
+Checkpoint: 11
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
@@ -109,11 +112,12 @@ Strategy evaluator: available
 Backtester: available
 Paper trading: available
 Position management: available
-Exit engine: unavailable
+Exit engine: available
+Performance analytics: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, or position watchers, and it does **not** write database rows. It does **not** automatically run `paper:step` or `position:step`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, or exit watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, or `exit:step`.
 
 ## How to check Solana, market data, and discovery
 
@@ -278,6 +282,26 @@ npm run position:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 
 See [docs/CHECKPOINT_10.md](docs/CHECKPOINT_10.md) for token-wide one-open-position rules, the $100 modeling limitation, and why entry rows are separate from current-open state.
 
+## How to run a simulated paper exit
+
+Checkpoint 11 may close a simulated open paper position. Spec `x11_v1` uses the **exact opening pair**, a 10% stop, a 20% take profit, a 6-hour max hold, and a 100% quantity close. It does **not** send a transaction or calculate PnL.
+
+```bash
+npm run exit:step -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show stored exit evaluations for one mint (`DATABASE_ENABLED=true`, no network, no re-evaluation):
+
+```bash
+npm run exit:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+If there is no current open paper position, `exit:step` is a successful no-op: no market request and no domain write. That is expected. Do not fabricate a live open position just to exercise a close. Synthetic tests cover stop, take-profit, max hold, and reopen.
+
+`position:step` remains pm10 only. It does **not** run the exit engine. After a simulated close, `position:status` shows no current open position. Historical `paper_positions` entry rows remain. There is no `exit:watch`.
+
+See [docs/CHECKPOINT_11.md](docs/CHECKPOINT_11.md) for exact-pair pricing, inclusive thresholds, decision precedence, zero-price handling, and stale-state protection.
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -349,7 +373,8 @@ src/             Application source code
   strategy/      Experimental s07_v1 entry-candidate classifier and strategy commands
   backtest/      Read-only historical b08_v1 event study for frozen s07_v1
   paper/         p09_v1 live paper-entry observation (no quantity or positions)
-  position/      pm10_v1 simulated single-open-position management (no exits or PnL)
+  position/      pm10_v1 simulated single-open-position management (no automatic exits or PnL)
+  exit/          x11_v1 experimental paper exit engine (exact opening pair, full close, no PnL)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -357,4 +382,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add an exit engine and performance analytics. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add performance analytics. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

@@ -28,7 +28,7 @@ describe('paper formatter', () => {
     expect(lines).toContain('No order was created.');
     expect(lines).toContain('No position exists.');
     expect(lines).toContain('No blockchain transaction exists.');
-    expect(lines).toContain('Checkpoint: 10');
+    expect(lines).toContain('Checkpoint: 11');
     expect(lines).not.toMatch(/\bBUY NOW\b|\bbought\b|purchase executed|order filled|trade opened/i);
     expect(lines).not.toMatch(/profit|PnL|win rate/i);
   });

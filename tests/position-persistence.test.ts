@@ -237,8 +237,8 @@ describe('position persistence migration', () => {
         repository.initialize();
         repository.initialize();
         const stats = repository.getStats();
-        expect(stats.schemaVersion).toBe(6);
-        expect(repository.getTableCounts().schemaMigrations).toBe(6);
+        expect(stats.schemaVersion).toBe(7);
+        expect(repository.getTableCounts().schemaMigrations).toBe(7);
         expect(stats.paperEvaluationCount).toBe(1);
         expect(stats.positionEvaluationCount).toBe(0);
         expect(stats.paperPositionCount).toBe(0);
@@ -684,7 +684,7 @@ describe('position persistence', () => {
     expect(source).not.toMatch(/DELETE FROM paper_positions\b/);
     expect(source).not.toMatch(/REPLACE INTO paper_positions\b/);
     expect(source).not.toMatch(/UPDATE paper_open_positions\b/);
-    expect(source).not.toMatch(/DELETE FROM paper_open_positions\b/);
+    expect(source).toMatch(/DELETE FROM paper_open_positions WHERE token_id = \? AND position_id = \?/);
     expect(source).not.toMatch(/REPLACE INTO paper_open_positions\b/);
   });
 

@@ -11,7 +11,7 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 10');
+  console.log('Checkpoint: 11');
   console.log('Blockchain capability: READ ONLY');
   console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
   console.log('Token risk scanner: available');
@@ -20,6 +20,7 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
   console.log('Backtester: available');
   console.log('Paper trading: available');
   console.log('Position management: available');
-  console.log('Exit engine: unavailable');
+  console.log('Exit engine: available');
+  console.log('Performance analytics: unavailable');
   console.log('Trading capability: disabled');
 }

@@ -17,6 +17,8 @@ export {
   type RecordedPaperBundle,
   type PositionBundle,
   type RecordedPositionBundle,
+  type ExitBundle,
+  type RecordedExitBundle,
   type StoredFeatureVectorSummary,
   type StoredObservation,
   type StoredRiskScanSummary,
@@ -33,4 +35,6 @@ export {
   type StoredOpenPaperPosition,
   type StoredPositionEvaluationSummary,
   type TokenPositionHistory,
+  type StoredExitEvaluationSummary,
+  type TokenExitHistory,
 } from './types.js';
