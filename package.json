@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-    "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 11 adds a deterministic paper exit engine on frozen pm10_v1 — blockchain writes and trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 12 adds deterministic GROSS paper-trade analytics over frozen x11_v1 closes — blockchain writes and trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -40,7 +40,9 @@
     "position:status": "tsx src/position/status.ts",
     "position:history": "tsx src/position/history.ts",
     "exit:step": "tsx src/exit/step.ts",
-    "exit:history": "tsx src/exit/history.ts"
+    "exit:history": "tsx src/exit/history.ts",
+    "performance:report": "tsx src/performance/run-report.ts",
+    "performance:trades": "tsx src/performance/run-trades.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

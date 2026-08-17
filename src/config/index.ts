@@ -23,6 +23,7 @@ export {
   DEFAULT_PAPER_HISTORY_LIMIT,
   DEFAULT_POSITION_HISTORY_LIMIT,
   DEFAULT_EXIT_HISTORY_LIMIT,
+  DEFAULT_PERFORMANCE_TRADE_LIMIT,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -46,10 +47,16 @@ export type {
   PaperConfig,
   PositionConfig,
   ExitConfig,
+  PerformanceConfig,
   RiskCommitment,
   RiskConfig,
   SolanaConfig,
   SolanaNetwork,
   StrategyConfig,
 } from './types.js';
-export { LOG_LEVEL_VALUES, NODE_ENV_VALUES, RISK_COMMITMENT_VALUES, SOLANA_NETWORK_VALUES } from './types.js';
+export {
+  LOG_LEVEL_VALUES,
+  NODE_ENV_VALUES,
+  RISK_COMMITMENT_VALUES,
+  SOLANA_NETWORK_VALUES,
+} from './types.js';

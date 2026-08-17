@@ -12,9 +12,11 @@ describe('feature formatter', () => {
       'They are not BUY/SELL signals or investment recommendations.',
       '',
     );
-    expect(withoutDisclaimer).not.toMatch(/\bBUY\b|\bSELL\b|RECOMMENDED|bullish|bearish|good setup|winner/);
+    expect(withoutDisclaimer).not.toMatch(
+      /\bBUY\b|\bSELL\b|RECOMMENDED|bullish|bearish|good setup|winner/,
+    );
     expect(lines).not.toMatch(/NaN|Infinity/);
-    expect(lines).toContain('Checkpoint: 11');
+    expect(lines).toContain('Checkpoint: 12');
   });
 
   it('shows unavailable features as n/a with a reason', () => {
@@ -35,7 +37,9 @@ describe('feature formatter', () => {
   });
 
   it('handles unknown-token feature history cleanly', () => {
-    const lines = formatFeatureHistoryLines('UnknownMint111111111111111111111111111', null).join('\n');
+    const lines = formatFeatureHistoryLines('UnknownMint111111111111111111111111111', null).join(
+      '\n',
+    );
     expect(lines).toContain('No feature history found for this mint.');
     expect(lines).not.toMatch(/\bBUY\b|\bSELL\b|PnL|profit/);
   });

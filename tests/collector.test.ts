@@ -94,8 +94,14 @@ describe('collector', () => {
     const cycle = await runCollectorCycle({
       config: discoveryConfig(),
       feeds: [
-        { source: 'dexscreener_profile', fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]) },
-        { source: 'dexscreener_boost', fetchRecords: () => Promise.resolve([record('dexscreener_boost', WRAPPED_SOL_MINT)]) },
+        {
+          source: 'dexscreener_profile',
+          fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]),
+        },
+        {
+          source: 'dexscreener_boost',
+          fetchRecords: () => Promise.resolve([record('dexscreener_boost', WRAPPED_SOL_MINT)]),
+        },
       ],
       repository,
       marketData: {
@@ -118,8 +124,14 @@ describe('collector', () => {
     const partial = await runCollectorCycle({
       config: discoveryConfig(),
       feeds: [
-        { source: 'dexscreener_profile', fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]) },
-        { source: 'dexscreener_boost', fetchRecords: () => Promise.reject(new Error('boosts down')) },
+        {
+          source: 'dexscreener_profile',
+          fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]),
+        },
+        {
+          source: 'dexscreener_boost',
+          fetchRecords: () => Promise.reject(new Error('boosts down')),
+        },
       ],
       repository,
       now: () => new Date('2026-08-17T10:00:00.000Z'),
@@ -133,8 +145,14 @@ describe('collector', () => {
       runCollectorCycle({
         config: discoveryConfig(),
         feeds: [
-          { source: 'dexscreener_profile', fetchRecords: () => Promise.reject(new Error('profiles down')) },
-          { source: 'dexscreener_boost', fetchRecords: () => Promise.reject(new Error('boosts down')) },
+          {
+            source: 'dexscreener_profile',
+            fetchRecords: () => Promise.reject(new Error('profiles down')),
+          },
+          {
+            source: 'dexscreener_boost',
+            fetchRecords: () => Promise.reject(new Error('boosts down')),
+          },
         ],
         repository,
       }),
@@ -148,7 +166,10 @@ describe('collector', () => {
     const cycle = await runCollectorCycle({
       config: discoveryConfig(),
       feeds: [
-        { source: 'dexscreener_profile', fetchRecords: () => Promise.resolve([record('dexscreener_profile', BONK_MINT)]) },
+        {
+          source: 'dexscreener_profile',
+          fetchRecords: () => Promise.resolve([record('dexscreener_profile', BONK_MINT)]),
+        },
       ],
       repository,
       marketData: {
@@ -166,7 +187,10 @@ describe('collector', () => {
   it('does not count a skipped exact-duplicate snapshot as a write', async () => {
     const repository = openMemoryRepo();
     const feeds: DiscoveryFeedProvider[] = [
-      { source: 'dexscreener_profile', fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]) },
+      {
+        source: 'dexscreener_profile',
+        fetchRecords: () => Promise.resolve([record('dexscreener_profile', WRAPPED_SOL_MINT)]),
+      },
     ];
     const marketData = {
       getSnapshot: (tokenMint: string) => Promise.resolve(snapshot(tokenMint)),
@@ -204,7 +228,9 @@ describe('collector', () => {
 
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
-      expect(source).not.toMatch(/scanTokenRisk|recordRiskReport|createSolanaRiskDataProvider|generateFeatureVector|recordFeatureBundle/);
+      expect(source).not.toMatch(
+        /scanTokenRisk|recordRiskReport|createSolanaRiskDataProvider|generateFeatureVector|recordFeatureBundle/,
+      );
     }
   });
 
@@ -239,7 +265,7 @@ describe('collector', () => {
       signal: controller.signal,
       write: (line) => {
         lines.push(line);
-        if (line.includes('Checkpoint: 11') && cycles >= 2) {
+        if (line.includes('Checkpoint: 12') && cycles >= 2) {
           controller.abort();
         }
       },
