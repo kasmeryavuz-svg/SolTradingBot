@@ -1,6 +1,10 @@
-import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import type { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import type { DatabaseConfig } from '../../config/types.js';
 import type { DiscoveryCandidate, DiscoveryRunResult, DiscoverySource } from '../../discovery/types.js';
+import { FEATURE_SET_VERSION } from '../../features/definitions.js';
+import { featureValuesEqual } from '../../features/invariants.js';
+import { featureSourceIdentity } from '../../features/numbers.js';
+import type { FeatureValue, FeatureValueKind, FeatureValueStatus } from '../../features/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -17,20 +21,25 @@ import type {
 import { clampHistoryLimit } from '../limits.js';
 import type { PersistenceRepository } from '../repository.js';
 import type {
+  FeatureBundle,
   PersistenceIntegrity,
   PersistenceStats,
+  RecordedFeatureBundle,
   RecordedRiskScan,
   RecordedRun,
+  StoredFeatureVectorSummary,
   StoredObservation,
   StoredRiskScanSummary,
   StoredSourceResult,
   StoredToken,
+  TokenFeatureHistory,
   TokenHistory,
   TokenRiskHistory,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
 import {
   assertPersistableCandidate,
+  assertPersistableFeatureVector,
   assertPersistableRiskReport,
   assertPersistableSnapshot,
 } from '../validate.js';
@@ -86,6 +95,17 @@ type Statements = {
   riskChecks: StatementSync;
   riskExtensions: StatementSync;
   riskFindings: StatementSync;
+  previousSnapshot: StatementSync;
+  snapshotByIdentity: StatementSync;
+  riskAsOf: StatementSync;
+  getRiskByScannedAt: StatementSync;
+  insertFeatureVector: StatementSync;
+  insertFeatureValue: StatementSync;
+  getFeatureByIdentity: StatementSync;
+  featureHistory: StatementSync;
+  featureValues: StatementSync;
+  countFeatureVectors: StatementSync;
+  countFeatureValues: StatementSync;
 };
 
 export class SqlitePersistenceRepository implements PersistenceRepository {
@@ -187,6 +207,53 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordFeatureBundle(bundle: FeatureBundle): RecordedFeatureBundle {
+    return this.transact(() => this.persistFeatureBundle(bundle));
+  }
+
+  recordFeatureBundleAndAbortAfterChild(bundle: FeatureBundle): void {
+    this.transact(() => {
+      this.persistFeatureBundle(bundle, { abortAfterFirstValue: true });
+    });
+  }
+
+  getPreviousMarketSnapshot(
+    tokenMint: string,
+    pairAddress: string,
+    beforeCollectedAt: string,
+  ): MarketSnapshot | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const row = this.requireStatements().previousSnapshot.get(token.id, pairAddress, beforeCollectedAt);
+    return row === undefined ? null : mapSnapshotRow(row, token.mint);
+  }
+
+  getLatestRiskScanAsOf(tokenMint: string, asOf: string): StoredRiskScanSummary | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const row = this.requireStatements().riskAsOf.get(token.id, asOf);
+    return row === undefined ? null : this.mapRiskScanSummary(row);
+  }
+
+  getFeatureHistory(tokenMint: string, limit: number): TokenFeatureHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const rows = this.requireStatements().featureHistory.all(token.id, clampHistoryLimit(limit));
+    return {
+      token,
+      vectors: rows.map((row) => this.mapFeatureVectorSummary(row)),
+    };
+  }
+
   getTableCounts(): {
     tokens: number;
     discoveryRuns: number;
@@ -200,6 +267,8 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     riskScanExtensions: number;
     riskTopTokenAccounts: number;
     riskFindings: number;
+    featureVectors: number;
+    featureValues: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -216,6 +285,8 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       riskScanExtensions: asNumber(statements.countRiskExtensions.get()?.['count']),
       riskTopTokenAccounts: asNumber(statements.countRiskAccounts.get()?.['count']),
       riskFindings: asNumber(statements.countRiskFindings.get()?.['count']),
+      featureVectors: asNumber(statements.countFeatureVectors.get()?.['count']),
+      featureValues: asNumber(statements.countFeatureValues.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -248,6 +319,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       discoveryObservationCount: asNumber(statements.countObservations.get()?.['count']),
       marketSnapshotCount: asNumber(statements.countSnapshots.get()?.['count']),
       riskScanCount: asNumber(statements.countRiskScans.get()?.['count']),
+      featureVectorCount: asNumber(statements.countFeatureVectors.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -279,24 +351,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     }
 
     const statements = this.requireStatements();
-    const scans = statements.riskHistory.all(token.id, clampHistoryLimit(limit)).map((row) => {
-      const scanId = asNumber(row['id']);
-      return {
-        id: scanId,
-        scannedAt: asString(row['scanned_at']),
-        tokenProgram: asString(row['token_program']) as TokenProgramKind,
-        mintAuthority: asNullableString(row['mint_authority']),
-        freezeAuthority: asNullableString(row['freeze_authority']),
-        supplyRaw: asNullableString(row['supply_raw']),
-        top1Bps: asNullableNumber(row['top1_bps']),
-        top5Bps: asNullableNumber(row['top5_bps']),
-        highestFindingSeverity: asString(row['highest_finding_severity']) as HighestFindingSeverity,
-        findingCodes: this.readRiskFindings(scanId).map((finding) => finding.code),
-        checks: this.readRiskChecks(scanId),
-        extensions: this.readRiskExtensions(scanId),
-        findings: this.readRiskFindings(scanId),
-      } satisfies StoredRiskScanSummary;
-    });
+    const scans = statements.riskHistory.all(token.id, clampHistoryLimit(limit)).map((row) =>
+      this.mapRiskScanSummary(row),
+    );
 
     return { token, scans };
   }
@@ -408,6 +465,211 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       scannedAt: report.scannedAt,
       tokenInserted: token.inserted,
     };
+  }
+
+  private persistFeatureBundle(
+    bundle: FeatureBundle,
+    options: { abortAfterFirstValue?: boolean } = {},
+  ): RecordedFeatureBundle {
+    assertPersistableSnapshot(bundle.marketSnapshot);
+    assertPersistableFeatureVector(bundle.featureVector);
+    this.assertBundleConsistency(bundle);
+
+    const vector = bundle.featureVector;
+    const sourceIdentity = featureSourceIdentity(vector);
+    const existing = this.requireStatements().getFeatureByIdentity.get(sourceIdentity);
+    if (existing !== undefined) {
+      const existingValues = this.readFeatureValues(asNumber(existing['id']));
+      if (!featureValuesEqual(existingValues, vector.values)) {
+        throw new PersistenceError(
+          'Source identity already exists with different feature values. Change FEATURE_SET_VERSION if semantics changed.',
+        );
+      }
+
+      return {
+        vectorId: asNumber(existing['id']),
+        tokenMint: vector.tokenMint,
+        sourceIdentity,
+        inserted: false,
+        tokenInserted: false,
+        marketInserted: false,
+        riskInserted: false,
+      };
+    }
+
+    if (bundle.riskReport !== null) {
+      assertPersistableRiskReport(bundle.riskReport);
+    }
+
+    const token = this.upsertToken(vector.tokenMint, bundle.marketSnapshot.collectedAt, vector.asOf);
+    const marketInserted = this.persistMarketSnapshotIfAbsent(token.id, bundle.marketSnapshot);
+    const riskInserted =
+      bundle.riskReport === null ? false : this.persistRiskReportIfAbsent(bundle.riskReport);
+
+    const inserted = this.requireStatements().insertFeatureVector.run(
+      token.id,
+      vector.featureSetVersion,
+      vector.generatedAt,
+      vector.asOf,
+      vector.marketCollectedAt,
+      vector.marketPairAddress,
+      vector.previousMarketCollectedAt,
+      vector.riskScannedAt,
+      vector.featureCompleteness,
+      vector.availableFeatureCount,
+      vector.unavailableFeatureCount,
+      sourceIdentity,
+    );
+    const vectorId = Number(inserted.lastInsertRowid);
+
+    for (const [ordinal, value] of vector.values.entries()) {
+      this.insertFeatureValue(vectorId, ordinal, value);
+      if (options.abortAfterFirstValue === true) {
+        throw new PersistenceError('Test-forced write failure after child insert.');
+      }
+    }
+
+    return {
+      vectorId,
+      tokenMint: vector.tokenMint,
+      sourceIdentity,
+      inserted: true,
+      tokenInserted: token.inserted,
+      marketInserted,
+      riskInserted,
+    };
+  }
+
+  private persistMarketSnapshotIfAbsent(tokenId: number, snapshot: MarketSnapshot): boolean {
+    const existingRow = this.requireStatements().snapshotByIdentity.get(
+      tokenId,
+      snapshot.pairAddress,
+      snapshot.collectedAt,
+    );
+    if (existingRow !== undefined) {
+      const existing = mapSnapshotRow(existingRow, snapshot.tokenMint);
+      if (!marketSnapshotsEquivalent(existing, snapshot)) {
+        throw new PersistenceError(
+          'An existing market snapshot with the same token, pair, and collectedAt has different values.',
+        );
+      }
+      return false;
+    }
+
+    return this.insertSnapshot(tokenId, null, snapshot) === 1;
+  }
+
+  private persistRiskReportIfAbsent(report: TokenRiskReport): boolean {
+    const token = this.getToken(report.tokenMint);
+    if (token !== null) {
+      const existing = this.requireStatements().getRiskByScannedAt.get(token.id, report.scannedAt);
+      if (existing !== undefined) {
+        const findings = this.readRiskFindings(asNumber(existing['id']));
+        if (riskFeatureFingerprintFromRow(existing, findings) !== riskFeatureFingerprintFromReport(report)) {
+          throw new PersistenceError(
+            'An existing risk scan with the same token and scannedAt has different feature-relevant values.',
+          );
+        }
+        return false;
+      }
+    }
+
+    this.persistRiskReport(report);
+    return true;
+  }
+
+  private insertFeatureValue(vectorId: number, ordinal: number, value: FeatureValue): void {
+    if (value.status === 'unavailable') {
+      this.requireStatements().insertFeatureValue.run(
+        vectorId,
+        ordinal,
+        value.name,
+        value.kind,
+        value.status,
+        null,
+        null,
+        null,
+        value.unavailableReason,
+      );
+      return;
+    }
+
+    if (value.kind === 'number') {
+      if (typeof value.value !== 'number' || !Number.isFinite(value.value)) {
+        throw new PersistenceError(`Feature ${value.name} is not a finite number.`);
+      }
+      this.requireStatements().insertFeatureValue.run(
+        vectorId,
+        ordinal,
+        value.name,
+        value.kind,
+        value.status,
+        value.value,
+        null,
+        null,
+        null,
+      );
+      return;
+    }
+
+    if (value.kind === 'integer') {
+      if (typeof value.value !== 'number' || !Number.isSafeInteger(value.value)) {
+        throw new PersistenceError(`Feature ${value.name} is not a safe integer.`);
+      }
+      this.requireStatements().insertFeatureValue.run(
+        vectorId,
+        ordinal,
+        value.name,
+        value.kind,
+        value.status,
+        null,
+        value.value,
+        null,
+        null,
+      );
+      return;
+    }
+
+    if (typeof value.value !== 'boolean') {
+      throw new PersistenceError(`Feature ${value.name} is not a boolean.`);
+    }
+
+    this.requireStatements().insertFeatureValue.run(
+      vectorId,
+      ordinal,
+      value.name,
+      value.kind,
+      value.status,
+      null,
+      null,
+      value.value ? 1 : 0,
+      null,
+    );
+  }
+
+  private assertBundleConsistency(bundle: FeatureBundle): void {
+    const vector = bundle.featureVector;
+    if (vector.featureSetVersion !== FEATURE_SET_VERSION) {
+      throw new PersistenceError(`Unknown feature-set version: ${vector.featureSetVersion}.`);
+    }
+    if (bundle.marketSnapshot.tokenMint !== vector.tokenMint) {
+      throw new PersistenceError('Feature vector token mint does not match the market snapshot.');
+    }
+    if (bundle.marketSnapshot.collectedAt !== vector.marketCollectedAt) {
+      throw new PersistenceError('Feature vector marketCollectedAt does not match the market snapshot.');
+    }
+    if (bundle.marketSnapshot.pairAddress !== vector.marketPairAddress) {
+      throw new PersistenceError('Feature vector market pair does not match the market snapshot.');
+    }
+    if (bundle.riskReport === null && vector.riskScannedAt !== null) {
+      throw new PersistenceError('Feature vector has riskScannedAt but no risk report was supplied.');
+    }
+    if (bundle.riskReport !== null && bundle.riskReport.scannedAt !== vector.riskScannedAt) {
+      throw new PersistenceError('Feature vector riskScannedAt does not match the risk report.');
+    }
+    if (bundle.riskReport !== null && bundle.riskReport.tokenMint !== vector.tokenMint) {
+      throw new PersistenceError('Risk report token mint does not match the feature vector.');
+    }
   }
 
   private persistDiscoveryRun(result: DiscoveryRunResult): RecordedRun {
@@ -598,6 +860,63 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       }));
   }
 
+  private mapRiskScanSummary(row: Record<string, SQLOutputValue>): StoredRiskScanSummary {
+    const scanId = asNumber(row['id']);
+    const findings = this.readRiskFindings(scanId);
+    return {
+      id: scanId,
+      scannedAt: asString(row['scanned_at']),
+      tokenProgram: asString(row['token_program']) as TokenProgramKind,
+      mintAuthority: asNullableString(row['mint_authority']),
+      freezeAuthority: asNullableString(row['freeze_authority']),
+      supplyRaw: asNullableString(row['supply_raw']),
+      top1Bps: asNullableNumber(row['top1_bps']),
+      top5Bps: asNullableNumber(row['top5_bps']),
+      highestFindingSeverity: asString(row['highest_finding_severity']) as HighestFindingSeverity,
+      findingCodes: findings.map((finding) => finding.code),
+      checks: this.readRiskChecks(scanId),
+      extensions: this.readRiskExtensions(scanId),
+      findings,
+    };
+  }
+
+  private mapFeatureVectorSummary(
+    row: Record<string, SQLOutputValue>,
+  ): StoredFeatureVectorSummary {
+    const vectorId = asNumber(row['id']);
+    return {
+      id: vectorId,
+      featureSetVersion: asString(row['feature_set_version']),
+      generatedAt: asString(row['generated_at']),
+      asOf: asString(row['as_of']),
+      marketCollectedAt: asString(row['market_collected_at']),
+      marketPairAddress: asString(row['market_pair_address']),
+      previousMarketCollectedAt: asNullableString(row['previous_market_collected_at']),
+      riskScannedAt: asNullableString(row['risk_scanned_at']),
+      featureCompleteness: asString(row['feature_completeness']) as StoredFeatureVectorSummary['featureCompleteness'],
+      availableFeatureCount: asNumber(row['available_feature_count']),
+      unavailableFeatureCount: asNumber(row['unavailable_feature_count']),
+      sourceIdentity: asString(row['source_identity']),
+      values: this.readFeatureValues(vectorId),
+    };
+  }
+
+  private readFeatureValues(vectorId: number): FeatureValue[] {
+    return this.requireStatements()
+      .featureValues.all(vectorId)
+      .map((row) => {
+        const kind = asString(row['kind']) as FeatureValueKind;
+        const status = asString(row['status']) as FeatureValueStatus;
+        return {
+          name: asString(row['feature_name']) as FeatureValue['name'],
+          kind,
+          status,
+          value: readStoredFeatureValue(kind, status, row),
+          unavailableReason: asNullableString(row['unavailable_reason']),
+        };
+      });
+  }
+
   private readObservationSources(observationId: number): DiscoverySource[] {
     return this.requireStatements()
       .observationSources.all(observationId)
@@ -785,6 +1104,71 @@ function prepareStatements(database: DatabaseSync): Statements {
        ORDER BY collected_at DESC, id DESC
        LIMIT ?`,
     ),
+    previousSnapshot: database.prepare(
+      `SELECT token_name, token_symbol, dex_id, pair_address, quote_token_mint, quote_token_symbol,
+              price_usd, liquidity_usd, volume_5m_usd, volume_1h_usd, volume_24h_usd,
+              buys_5m, sells_5m, buys_1h, sells_1h, price_change_5m_pct, price_change_1h_pct,
+              price_change_24h_pct, market_cap_usd, fdv_usd, pair_created_at, collected_at
+       FROM market_snapshots
+       WHERE token_id = ? AND pair_address = ? AND collected_at < ?
+       ORDER BY collected_at DESC, id DESC
+       LIMIT 1`,
+    ),
+    snapshotByIdentity: database.prepare(
+      `SELECT token_name, token_symbol, dex_id, pair_address, quote_token_mint, quote_token_symbol,
+              price_usd, liquidity_usd, volume_5m_usd, volume_1h_usd, volume_24h_usd,
+              buys_5m, sells_5m, buys_1h, sells_1h, price_change_5m_pct, price_change_1h_pct,
+              price_change_24h_pct, market_cap_usd, fdv_usd, pair_created_at, collected_at
+       FROM market_snapshots
+       WHERE token_id = ? AND pair_address = ? AND collected_at = ?
+       LIMIT 1`,
+    ),
+    riskAsOf: database.prepare(
+      `SELECT id, scanned_at, token_program, mint_authority, freeze_authority, supply_raw,
+              top1_bps, top5_bps, highest_finding_severity
+       FROM risk_scans
+       WHERE token_id = ? AND scanned_at <= ?
+       ORDER BY scanned_at DESC, id DESC
+       LIMIT 1`,
+    ),
+    getRiskByScannedAt: database.prepare(
+      `SELECT id, token_program, data_completeness, top1_bps, top5_bps, top10_bps, top20_bps
+       FROM risk_scans
+       WHERE token_id = ? AND scanned_at = ?`,
+    ),
+    insertFeatureVector: database.prepare(
+      `INSERT INTO feature_vectors (
+        token_id, feature_set_version, generated_at, as_of, market_collected_at, market_pair_address,
+        previous_market_collected_at, risk_scanned_at, feature_completeness, available_feature_count,
+        unavailable_feature_count, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    insertFeatureValue: database.prepare(
+      `INSERT INTO feature_values (
+        vector_id, ordinal, feature_name, kind, status, number_value, integer_value, boolean_value,
+        unavailable_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    getFeatureByIdentity: database.prepare(
+      'SELECT id FROM feature_vectors WHERE source_identity = ?',
+    ),
+    featureHistory: database.prepare(
+      `SELECT id, feature_set_version, generated_at, as_of, market_collected_at, market_pair_address,
+              previous_market_collected_at, risk_scanned_at, feature_completeness,
+              available_feature_count, unavailable_feature_count, source_identity
+       FROM feature_vectors
+       WHERE token_id = ?
+       ORDER BY as_of DESC, id DESC
+       LIMIT ?`,
+    ),
+    featureValues: database.prepare(
+      `SELECT feature_name, kind, status, number_value, integer_value, boolean_value, unavailable_reason
+       FROM feature_values
+       WHERE vector_id = ?
+       ORDER BY ordinal ASC`,
+    ),
+    countFeatureVectors: database.prepare('SELECT COUNT(*) AS count FROM feature_vectors'),
+    countFeatureValues: database.prepare('SELECT COUNT(*) AS count FROM feature_values'),
   };
 }
 
@@ -807,4 +1191,102 @@ function minIso(left: string, right: string): string {
 
 function maxIso(left: string, right: string): string {
   return left > right ? left : right;
+}
+
+function readStoredFeatureValue(
+  kind: FeatureValueKind,
+  status: FeatureValueStatus,
+  row: Record<string, SQLOutputValue>,
+): number | boolean | null {
+  if (status === 'unavailable') {
+    return null;
+  }
+
+  if (kind === 'boolean') {
+    return asNumber(row['boolean_value']) === 1;
+  }
+
+  if (kind === 'integer') {
+    return asNumber(row['integer_value']);
+  }
+
+  return asNumber(row['number_value']);
+}
+
+function marketSnapshotsEquivalent(left: MarketSnapshot, right: MarketSnapshot): boolean {
+  return (
+    left.tokenMint === right.tokenMint &&
+    left.tokenName === right.tokenName &&
+    left.tokenSymbol === right.tokenSymbol &&
+    left.dexId === right.dexId &&
+    left.pairAddress === right.pairAddress &&
+    left.quoteTokenMint === right.quoteTokenMint &&
+    left.quoteTokenSymbol === right.quoteTokenSymbol &&
+    Object.is(left.priceUsd, right.priceUsd) &&
+    Object.is(left.liquidityUsd, right.liquidityUsd) &&
+    Object.is(left.volume5mUsd, right.volume5mUsd) &&
+    Object.is(left.volume1hUsd, right.volume1hUsd) &&
+    Object.is(left.volume24hUsd, right.volume24hUsd) &&
+    Object.is(left.buys5m, right.buys5m) &&
+    Object.is(left.sells5m, right.sells5m) &&
+    Object.is(left.buys1h, right.buys1h) &&
+    Object.is(left.sells1h, right.sells1h) &&
+    Object.is(left.priceChange5mPct, right.priceChange5mPct) &&
+    Object.is(left.priceChange1hPct, right.priceChange1hPct) &&
+    Object.is(left.priceChange24hPct, right.priceChange24hPct) &&
+    Object.is(left.marketCapUsd, right.marketCapUsd) &&
+    Object.is(left.fdvUsd, right.fdvUsd) &&
+    left.pairCreatedAt === right.pairCreatedAt &&
+    left.collectedAt === right.collectedAt
+  );
+}
+
+function riskFeatureFingerprintFromReport(report: TokenRiskReport): string {
+  return riskFeatureFingerprint({
+    tokenProgram: report.tokenProgram,
+    dataCompleteness: report.dataCompleteness,
+    findings: report.findings,
+    top1Bps: report.concentration?.top1Bps ?? null,
+    top5Bps: report.concentration?.top5Bps ?? null,
+    top10Bps: report.concentration?.top10Bps ?? null,
+    top20Bps: report.concentration?.top20Bps ?? null,
+  });
+}
+
+function riskFeatureFingerprintFromRow(
+  row: Record<string, SQLOutputValue>,
+  findings: readonly RiskFinding[],
+): string {
+  return riskFeatureFingerprint({
+    tokenProgram: asString(row['token_program']),
+    dataCompleteness: asString(row['data_completeness']),
+    findings,
+    top1Bps: asNullableNumber(row['top1_bps']),
+    top5Bps: asNullableNumber(row['top5_bps']),
+    top10Bps: asNullableNumber(row['top10_bps']),
+    top20Bps: asNullableNumber(row['top20_bps']),
+  });
+}
+
+function riskFeatureFingerprint(input: {
+  tokenProgram: string;
+  dataCompleteness: string;
+  findings: readonly Pick<RiskFinding, 'code' | 'severity'>[];
+  top1Bps: number | null;
+  top5Bps: number | null;
+  top10Bps: number | null;
+  top20Bps: number | null;
+}): string {
+  const findings = [...input.findings]
+    .map((finding) => ({ code: finding.code, severity: finding.severity }))
+    .sort((left, right) => left.code.localeCompare(right.code));
+  return JSON.stringify({
+    tokenProgram: input.tokenProgram,
+    dataCompleteness: input.dataCompleteness,
+    findings,
+    top1Bps: input.top1Bps,
+    top5Bps: input.top5Bps,
+    top10Bps: input.top10Bps,
+    top20Bps: input.top20Bps,
+  });
 }

@@ -204,7 +204,7 @@ describe('collector', () => {
 
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
-      expect(source).not.toMatch(/scanTokenRisk|recordRiskReport|createSolanaRiskDataProvider/);
+      expect(source).not.toMatch(/scanTokenRisk|recordRiskReport|createSolanaRiskDataProvider|generateFeatureVector|recordFeatureBundle/);
     }
   });
 
@@ -239,7 +239,7 @@ describe('collector', () => {
       signal: controller.signal,
       write: (line) => {
         lines.push(line);
-        if (line.includes('Checkpoint: 05') && cycles >= 2) {
+        if (line.includes('Checkpoint: 06') && cycles >= 2) {
           controller.abort();
         }
       },

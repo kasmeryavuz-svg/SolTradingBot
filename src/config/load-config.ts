@@ -27,6 +27,7 @@ import {
   DEFAULT_SOLANA_NETWORK,
   DEFAULT_SOLANA_RPC_TIMEOUT_MS,
   DEFAULT_SOLANA_RPC_URL,
+  DEFAULT_FEATURE_HISTORY_LIMIT,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -100,6 +101,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     discovery: loadDiscoveryConfig(source),
     database: loadDatabaseConfig(source),
     risk: loadRiskConfig(source),
+    features: loadFeatureConfig(source),
   };
 }
 
@@ -185,6 +187,17 @@ function loadRiskConfig(source: EnvSource): AppConfig['risk'] {
       readOptionalEnv(source, 'RISK_HISTORY_LIMIT'),
       DEFAULT_RISK_HISTORY_LIMIT,
       'RISK_HISTORY_LIMIT',
+      HISTORY_LIMIT_MAX,
+    ),
+  };
+}
+
+function loadFeatureConfig(source: EnvSource): AppConfig['features'] {
+  return {
+    historyLimit: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'FEATURE_HISTORY_LIMIT'),
+      DEFAULT_FEATURE_HISTORY_LIMIT,
+      'FEATURE_HISTORY_LIMIT',
       HISTORY_LIMIT_MAX,
     ),
   };

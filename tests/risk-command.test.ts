@@ -72,6 +72,11 @@ describe('risk commands', () => {
     }).toThrow(TradingSafetyError);
   });
 
+  it('does not auto-generate feature vectors from risk:record', () => {
+    const source = readFileSync(new URL('../src/risk/record.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/generateFeatureVector|recordFeatureBundle|feature:record/);
+  });
+
   it('validates the mint argument', () => {
     expect(() => {
       requireRiskMintArgument(['node', 'check.ts'], 'risk:check');

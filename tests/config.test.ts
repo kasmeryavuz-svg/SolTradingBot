@@ -61,6 +61,9 @@ describe('loadConfig', () => {
         commitment: 'confirmed',
         historyLimit: 20,
       },
+      features: {
+        historyLimit: 20,
+      },
     });
   });
 
@@ -252,6 +255,17 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ RISK_SCAN_COMMITMENT: 'processed' });
     }).toThrow(/Invalid RISK_SCAN_COMMITMENT/);
+  });
+
+  it('loads feature history settings from the environment', () => {
+    const config = loadConfig({ FEATURE_HISTORY_LIMIT: '12' });
+    expect(config.features).toEqual({ historyLimit: 12 });
+  });
+
+  it('rejects a feature history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ FEATURE_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid FEATURE_HISTORY_LIMIT/);
   });
 
   it('rejects a risk history limit above the bound', () => {
