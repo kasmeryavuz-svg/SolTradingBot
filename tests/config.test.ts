@@ -67,6 +67,9 @@ describe('loadConfig', () => {
       strategy: {
         historyLimit: 20,
       },
+      paper: {
+        historyLimit: 20,
+      },
     });
   });
 
@@ -280,6 +283,17 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ STRATEGY_HISTORY_LIMIT: '101' });
     }).toThrow(/Invalid STRATEGY_HISTORY_LIMIT/);
+  });
+
+  it('loads paper history settings from the environment', () => {
+    const config = loadConfig({ PAPER_HISTORY_LIMIT: '12' });
+    expect(config.paper).toEqual({ historyLimit: 12 });
+  });
+
+  it('rejects a paper history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ PAPER_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid PAPER_HISTORY_LIMIT/);
   });
 
   it('rejects a risk history limit above the bound', () => {

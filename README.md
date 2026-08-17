@@ -4,43 +4,38 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 08
+## Current checkpoint: 09
 
 **Current capabilities:**
 
 - TypeScript foundation
 - hard trading safety guard
 - read-only Solana RPC
-- market observations
+- live market observations
 - discovery
-- SQLite historical data
-- schema migrations
-- historical discovery runs
-- historical market snapshots
-- explicit persistent collector
-- technical token risk scanning
-- deterministic feature engine
-- deterministic s07_v1 strategy
-- historical point-in-time backtester
+- SQLite persistence
+- technical risk scanner
+- c06_v1 feature engine
+- s07_v1 strategy
+- b08_v1 historical backtester
+- p09_v1 live paper-entry observation
 
 ### What this checkpoint is not
 
 - **Blockchain capability: READ ONLY**
-- **SQLite operational persistence: YES**
-- **Backtest database access: READ ONLY**
-- **Risk scanner: YES**
-- **Feature engine: YES**
-- **Strategy evaluator: YES**
-- **Backtester: YES (historical event study only)**
-- **Paper trading: NO**
-- **Wallet: NO**
-- **Transaction signing: NO**
-- **Transaction sending: NO**
+- **Local SQLite persistence: YES**
+- **Backtester: YES**
+- **Paper trading foundation: YES**
 - **Position management: NO**
 - **Exit engine: NO**
+- **Wallet: NO**
+- **Signer: NO**
+- **Transaction sending: NO**
 - **Real trading: NO**
 
-`ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or paper trade.
+`ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or blockchain trade.
+
+A p09_v1 **paper entry observation** records that frozen `s07_v1` classified a live snapshot as an entry candidate, using that snapshot’s exact `priceUsd` as a reference price. It is **not** an executable quote, fill, or position. It does not model slippage, fees, DEX execution, latency, MEV, size, or liquidity impact. There is no quantity or virtual balance yet.
 
 Features describe observations. They do **not** decide trades.
 
@@ -101,18 +96,19 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 08
+Checkpoint: 09
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
 Feature engine: available
 Strategy evaluator: available
 Backtester: available
-Paper trading: unavailable
+Paper trading: available
+Position management: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, or backtest watchers, and it does **not** write database rows. It does **not** automatically run a backtest.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, or paper watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`.
 
 ## How to check Solana, market data, and discovery
 
@@ -233,6 +229,26 @@ A positive average gross forward return on this sample would still **not** mean 
 
 See [docs/CHECKPOINT_08.md](docs/CHECKPOINT_08.md) for point-in-time replay, outcome windows, and dataset bias.
 
+## How to run a live paper-entry observation
+
+Checkpoint 09 records what frozen `s07_v1` would do on one live snapshot. Spec `p09_v1` copies the exact strategy market reference price. It does **not** size an order, open a position, or send a transaction.
+
+```bash
+npm run paper:step -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show stored paper evaluations for one mint (`DATABASE_ENABLED=true`, no network):
+
+```bash
+npm run paper:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+`paper:step` may add market, risk, feature, strategy, and paper rows. That is expected. Blockchain state does not change.
+
+A live result of `NO_ENTRY` / `NO_ACTION` is acceptable. Do not weaken `s07_v1` to force an entry observation. There is no `paper:watch`.
+
+See [docs/CHECKPOINT_09.md](docs/CHECKPOINT_09.md) for the difference between strategy classification, paper observation, position, and a real trade.
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -303,6 +319,7 @@ src/             Application source code
   features/      Deterministic feature engine and feature commands
   strategy/      Experimental s07_v1 entry-candidate classifier and strategy commands
   backtest/      Read-only historical b08_v1 event study for frozen s07_v1
+  paper/         p09_v1 live paper-entry observation (no quantity or positions)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -310,4 +327,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add paper trading and position management. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add position management and an exit engine. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

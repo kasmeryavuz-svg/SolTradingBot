@@ -71,8 +71,8 @@ describe('feature persistence migration', () => {
       try {
         repository.initialize();
         repository.initialize();
-        expect(repository.getStats().schemaVersion).toBe(4);
-        expect(repository.getTableCounts().schemaMigrations).toBe(4);
+        expect(repository.getStats().schemaVersion).toBe(5);
+        expect(repository.getTableCounts().schemaMigrations).toBe(5);
         expect(repository.getToken(WRAPPED_SOL_MINT)?.mint).toBe(WRAPPED_SOL_MINT);
         expect(repository.getStats().discoveryRunCount).toBe(1);
 

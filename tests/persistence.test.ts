@@ -24,6 +24,8 @@ import {
   RISK_MIGRATION_VERSION,
   STRATEGY_MIGRATION_NAME,
   STRATEGY_MIGRATION_VERSION,
+  PAPER_MIGRATION_NAME,
+  PAPER_MIGRATION_VERSION,
 } from '../src/persistence/sqlite/migrations.js';
 import {
   createSqlitePersistenceRepository,
@@ -138,12 +140,15 @@ describe('SQLite persistence', () => {
     expect(FEATURE_MIGRATION_VERSION).toBe(3);
     expect(STRATEGY_MIGRATION_NAME).toBe('004_strategy_evaluations');
     expect(STRATEGY_MIGRATION_VERSION).toBe(4);
+    expect(PAPER_MIGRATION_NAME).toBe('005_paper_evaluations');
+    expect(PAPER_MIGRATION_VERSION).toBe(5);
     expect(first.foreignKeysEnabled).toBe(true);
     expect(first.integrity.ok).toBe(true);
     expect(first.riskScanCount).toBe(0);
     expect(first.featureVectorCount).toBe(0);
     expect(first.strategyEvaluationCount).toBe(0);
-    expect(repository.getTableCounts().schemaMigrations).toBe(4);
+    expect(first.paperEvaluationCount).toBe(0);
+    expect(repository.getTableCounts().schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
   });
 
   it('inserts one token row and updates observation bounds', () => {

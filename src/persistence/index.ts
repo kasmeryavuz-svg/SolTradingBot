@@ -13,6 +13,8 @@ export {
   type RecordedRiskScan,
   type RecordedRun,
   type RecordedStrategyBundle,
+  type PaperBundle,
+  type RecordedPaperBundle,
   type StoredFeatureVectorSummary,
   type StoredObservation,
   type StoredRiskScanSummary,
@@ -24,4 +26,6 @@ export {
   type TokenHistory,
   type TokenRiskHistory,
   type TokenStrategyHistory,
+  type TokenPaperHistory,
+  type StoredPaperEvaluationSummary,
 } from './types.js';

@@ -9,7 +9,8 @@ import { USDC_MINT, WRAPPED_SOL_MINT } from '../src/config/index.js';
 import { PersistenceError } from '../src/persistence/types.js';
 import { createSqlitePersistenceRepository, SqlitePersistenceRepository } from '../src/persistence/index.js';
 import { FINDING_CODES, TOKEN_2022_PROGRAM_ID } from '../src/risk/constants.js';
-import { LATEST_SCHEMA_VERSION } from '../src/persistence/sqlite/migrations.js';
+import { COMPATIBLE_SCHEMA_VERSIONS, REQUIRED_SCHEMA_VERSION } from '../src/backtest/constants.js';
+import { applyMigrations, LATEST_SCHEMA_VERSION, openSqliteDatabase } from '../src/persistence/sqlite/index.js';
 import {
   CONCENTRATION_UNAVAILABLE_REASON,
   riskDerivedFeatures,
@@ -387,10 +388,12 @@ describe('sqlite historical source', () => {
     }).toThrow(/schema 4/);
   });
 
-  it('accepts schema 4 and does not write rows during a backtest run', () => {
+  it('accepts schema 5 and does not write rows during a backtest run', () => {
     const path = tempDbPath();
     const before = seedHistoricalDb(path);
     expect(before.schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
+    expect(COMPATIBLE_SCHEMA_VERSIONS).toEqual([4, 5]);
+    expect(REQUIRED_SCHEMA_VERSION).toBe(4);
 
     const config = prepareBacktestCommand({
       DATABASE_ENABLED: 'true',
@@ -403,7 +406,29 @@ describe('sqlite historical source', () => {
 
     const afterRepo = openWriteRepo(path);
     expect(afterRepo.getTableCounts()).toEqual(before);
-    expect(afterRepo.getStats().schemaVersion).toBe(4);
+    expect(afterRepo.getStats().schemaVersion).toBe(5);
+  });
+
+  it('still opens a schema 4 database read-only without migrating it', () => {
+    const path = tempDbPath();
+    const database = openSqliteDatabase({ path, busyTimeoutMs: 1000 });
+    applyMigrations(database, { targetVersion: 4 });
+    expect(database.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()?.['version']).toBe(4);
+    database.close();
+
+    const source = openSqliteBacktestDataSource({ path, busyTimeoutMs: 1000 });
+    openSources.push(source);
+    source.verifyCompatibleSchema();
+
+    const after = openSqliteDatabase({ path, busyTimeoutMs: 1000 });
+    try {
+      expect(after.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()?.['version']).toBe(4);
+      expect(
+        after.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'paper_evaluations'").get(),
+      ).toBeUndefined();
+    } finally {
+      after.close();
+    }
   });
 
   it('does not insert, update, delete, or change schema from the backtest source module', () => {

@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe('strategy persistence migration', () => {
-  it('applies migration 004 and upgrades v3 to v4 without deleting older rows', () => {
+  it('applies migration 004 and upgrades v3 to the latest schema without deleting older rows', () => {
     const directory = mkdtempSync(join(tmpdir(), 'mtb-strategy-mig-'));
     const path = join(directory, 'history.sqlite');
     const raw = openSqliteDatabase({ path, busyTimeoutMs: 1000 });
@@ -97,8 +97,8 @@ describe('strategy persistence migration', () => {
       try {
         repository.initialize();
         repository.initialize();
-        expect(repository.getStats().schemaVersion).toBe(4);
-        expect(repository.getTableCounts().schemaMigrations).toBe(4);
+        expect(repository.getStats().schemaVersion).toBe(5);
+        expect(repository.getTableCounts().schemaMigrations).toBe(5);
         expect(repository.getToken(WRAPPED_SOL_MINT)?.mint).toBe(WRAPPED_SOL_MINT);
         expect(repository.getStats().discoveryRunCount).toBe(1);
         expect(repository.getStats().featureVectorCount).toBe(1);
@@ -123,13 +123,15 @@ describe('strategy persistence migration', () => {
     }
   });
 
-  it('keeps historical migration names and does not rewrite 001-003', () => {
+  it('keeps historical migration names and does not rewrite 001-004', () => {
     const source = readFileSync(new URL('../src/persistence/sqlite/migrations.ts', import.meta.url), 'utf8');
     expect(source.indexOf('001_initial_persistence')).toBeLessThan(source.indexOf('002_token_risk_scans'));
     expect(source.indexOf('002_token_risk_scans')).toBeLessThan(source.indexOf('003_feature_vectors'));
     expect(source.indexOf('003_feature_vectors')).toBeLessThan(source.indexOf('004_strategy_evaluations'));
+    expect(source.indexOf('004_strategy_evaluations')).toBeLessThan(source.indexOf('005_paper_evaluations'));
     expect(source).toContain('CREATE TABLE feature_vectors');
     expect(source).toContain('CREATE TABLE strategy_evaluations');
+    expect(source).toContain('CREATE TABLE paper_evaluations');
     expect(migrationSqlDigest(1)).toBe('7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a');
     expect(migrationSqlDigest(2)).toBe('c80bbcc691b4eb36c75a3a5fae303f694241152d2ab79679ec8328f9b267071e');
     expect(migrationSqlDigest(3)).toBe('891ed1347be25bcda40cc2219208789fd3af117f91d9d140367c241c087ece1c');

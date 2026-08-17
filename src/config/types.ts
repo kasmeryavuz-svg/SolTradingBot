@@ -50,6 +50,10 @@ export type StrategyConfig = {
   historyLimit: number;
 };
 
+export type PaperConfig = {
+  historyLimit: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -61,6 +65,7 @@ export type AppConfig = {
   risk: RiskConfig;
   features: FeatureConfig;
   strategy: StrategyConfig;
+  paper: PaperConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

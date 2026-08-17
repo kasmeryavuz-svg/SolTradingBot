@@ -9,6 +9,9 @@ import { STRATEGY_NAME, STRATEGY_VERSION } from '../../strategy/constants.js';
 import { STRATEGY_DEFINITION_FINGERPRINT, strategySourceIdentity } from '../../strategy/identity.js';
 import { strategyEvaluationsSemanticallyEqual } from '../../strategy/invariants.js';
 import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../../strategy/types.js';
+import { PAPER_SPEC_VERSION } from '../../paper/constants.js';
+import { PAPER_DEFINITION_FINGERPRINT, paperSourceIdentity } from '../../paper/identity.js';
+import type { PaperEvaluation } from '../../paper/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -32,6 +35,8 @@ import type {
   RecordedRiskScan,
   RecordedRun,
   RecordedStrategyBundle,
+  PaperBundle,
+  RecordedPaperBundle,
   StoredFeatureVectorSummary,
   StoredObservation,
   StoredRiskScanSummary,
@@ -43,6 +48,8 @@ import type {
   TokenHistory,
   TokenRiskHistory,
   TokenStrategyHistory,
+  TokenPaperHistory,
+  StoredPaperEvaluationSummary,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
 import {
@@ -51,6 +58,7 @@ import {
   assertPersistableRiskReport,
   assertPersistableSnapshot,
   assertPersistableStrategyEvaluation,
+  assertPersistablePaperEvaluation,
 } from '../validate.js';
 import { openSqliteDatabase, readPragmaValue } from './database.js';
 import { applyMigrations, currentSchemaVersion } from './migrations.js';
@@ -127,7 +135,60 @@ type Statements = {
   countStrategyEvaluations: StatementSync;
   countStrategyDefinitions: StatementSync;
   countStrategyRuleResults: StatementSync;
+  getPaperDefinition: StatementSync;
+  insertPaperDefinition: StatementSync;
+  getPaperByIdentity: StatementSync;
+  insertPaperEvaluation: StatementSync;
+  paperHistory: StatementSync;
+  getStrategyById: StatementSync;
+  countPaperDefinitions: StatementSync;
+  countPaperEvaluations: StatementSync;
 };
+
+type FeaturePersistAbort =
+  | 'token'
+  | 'market'
+  | 'riskParent'
+  | 'riskChildren'
+  | 'featureVector'
+  | 'featureValues';
+
+type StrategyPersistAbort =
+  | FeaturePersistAbort
+  | 'strategyDefinition'
+  | 'strategyEvaluation'
+  | 'strategyRules';
+
+type PaperPersistAbort = StrategyPersistAbort | 'paperDefinition' | 'paperEvaluation';
+
+const FEATURE_PERSIST_ABORTS = new Set<FeaturePersistAbort>([
+  'token',
+  'market',
+  'riskParent',
+  'riskChildren',
+  'featureVector',
+  'featureValues',
+]);
+
+const STRATEGY_PERSIST_ABORTS = new Set<StrategyPersistAbort>([
+  'token',
+  'market',
+  'riskParent',
+  'riskChildren',
+  'featureVector',
+  'featureValues',
+  'strategyDefinition',
+  'strategyEvaluation',
+  'strategyRules',
+]);
+
+function isFeaturePersistAbort(value: string): value is FeaturePersistAbort {
+  return FEATURE_PERSIST_ABORTS.has(value as FeaturePersistAbort);
+}
+
+function isStrategyPersistAbort(value: string): value is StrategyPersistAbort {
+  return STRATEGY_PERSIST_ABORTS.has(value as StrategyPersistAbort);
+}
 
 export class SqlitePersistenceRepository implements PersistenceRepository {
   private readonly database: DatabaseSync;
@@ -248,6 +309,50 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordPaperBundle(bundle: PaperBundle): RecordedPaperBundle {
+    return this.transact(() => this.persistPaperBundle(bundle));
+  }
+
+  recordPaperBundleAndAbortAfter(bundle: PaperBundle, abortAfter: PaperPersistAbort): void {
+    this.transact(() => {
+      this.persistPaperBundle(bundle, { abortAfter });
+    });
+  }
+
+  recordPaperBundleAndViolatePaperConstraint(bundle: PaperBundle): void {
+    this.transact(() => {
+      const strategyRecorded = this.persistStrategyBundle(bundle);
+      this.ensurePaperDefinition(bundle.paperEvaluation);
+      const token = this.getToken(bundle.paperEvaluation.tokenMint);
+      if (token === null) {
+        throw new PersistenceError('Paper evaluation token is missing after strategy persistence.');
+      }
+      this.requireStatements().insertPaperEvaluation.run(
+        token.id,
+        strategyRecorded.evaluationId,
+        bundle.paperEvaluation.paperSpecVersion,
+        bundle.paperEvaluation.paperDefinitionFingerprint,
+        bundle.paperEvaluation.strategyDefinitionFingerprint,
+        bundle.paperEvaluation.featureSetVersion,
+        bundle.paperEvaluation.asOf,
+        bundle.paperEvaluation.evaluatedAt,
+        bundle.paperEvaluation.marketCollectedAt,
+        bundle.paperEvaluation.pairAddress,
+        'entry_candidate',
+        'no_action',
+        'strategy_no_entry',
+        null,
+        null,
+        bundle.paperEvaluation.executionModel,
+        bundle.paperEvaluation.costModel,
+        bundle.paperEvaluation.quantityModel,
+        bundle.paperEvaluation.positionModel,
+        bundle.paperEvaluation.exitModel,
+        `${bundle.paperEvaluation.asOf}:constraint-failure`,
+      );
+    });
+  }
+
   getPreviousMarketSnapshot(
     tokenMint: string,
     pairAddress: string,
@@ -298,6 +403,19 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  getPaperHistory(tokenMint: string, limit: number): TokenPaperHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const rows = this.requireStatements().paperHistory.all(token.id, clampHistoryLimit(limit));
+    return {
+      token,
+      evaluations: rows.map((row) => this.mapPaperEvaluationSummary(row)),
+    };
+  }
+
   getTableCounts(): {
     tokens: number;
     discoveryRuns: number;
@@ -316,6 +434,8 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     strategyDefinitions: number;
     strategyEvaluations: number;
     strategyRuleResults: number;
+    paperDefinitions: number;
+    paperEvaluations: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -337,6 +457,8 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       strategyDefinitions: asNumber(statements.countStrategyDefinitions.get()?.['count']),
       strategyEvaluations: asNumber(statements.countStrategyEvaluations.get()?.['count']),
       strategyRuleResults: asNumber(statements.countStrategyRuleResults.get()?.['count']),
+      paperDefinitions: asNumber(statements.countPaperDefinitions.get()?.['count']),
+      paperEvaluations: asNumber(statements.countPaperEvaluations.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -371,6 +493,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       riskScanCount: asNumber(statements.countRiskScans.get()?.['count']),
       featureVectorCount: asNumber(statements.countFeatureVectors.get()?.['count']),
       strategyEvaluationCount: asNumber(statements.countStrategyEvaluations.get()?.['count']),
+      paperEvaluationCount: asNumber(statements.countPaperEvaluations.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -437,7 +560,10 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     this.database.close();
   }
 
-  private persistRiskReport(report: TokenRiskReport): RecordedRiskScan {
+  private persistRiskReport(
+    report: TokenRiskReport,
+    options: { abortAfter?: 'riskParent' | 'riskChildren' } = {},
+  ): RecordedRiskScan {
     assertPersistableRiskReport(report);
     const statements = this.requireStatements();
     const token = this.upsertToken(report.tokenMint, report.scannedAt, report.scannedAt);
@@ -463,6 +589,15 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       report.highestFindingSeverity,
     );
     const scanId = Number(inserted.lastInsertRowid);
+    if (options.abortAfter === 'riskParent') {
+      throw new PersistenceError('Test-forced write failure after risk parent insert.');
+    }
+
+    const abortAfterRiskChild = (): void => {
+      if (options.abortAfter === 'riskChildren') {
+        throw new PersistenceError('Test-forced write failure after risk child insert.');
+      }
+    };
 
     for (const check of report.checks) {
       statements.insertRiskCheck.run(
@@ -472,6 +607,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         check.contextSlot,
         check.error,
       );
+      abortAfterRiskChild();
     }
 
     for (const [ordinal, extension] of report.extensions.entries()) {
@@ -486,6 +622,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         extension.maximumFeeRaw,
         extension.parsed ? 1 : 0,
       );
+      abortAfterRiskChild();
     }
 
     for (const account of report.largestTokenAccounts) {
@@ -496,6 +633,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         account.amountRaw,
         account.shareBps,
       );
+      abortAfterRiskChild();
     }
 
     for (const finding of report.findings) {
@@ -508,6 +646,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         finding.title,
         finding.description,
       );
+      abortAfterRiskChild();
     }
 
     return {
@@ -520,7 +659,10 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
 
   private persistFeatureBundle(
     bundle: FeatureBundle,
-    options: { abortAfterFirstValue?: boolean } = {},
+    options: {
+      abortAfterFirstValue?: boolean;
+      abortAfter?: FeaturePersistAbort;
+    } = {},
   ): RecordedFeatureBundle {
     assertPersistableSnapshot(bundle.marketSnapshot);
     assertPersistableFeatureVector(bundle.featureVector);
@@ -562,9 +704,22 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     }
 
     const token = this.upsertToken(vector.tokenMint, bundle.marketSnapshot.collectedAt, vector.asOf);
+    if (options.abortAfter === 'token') {
+      throw new PersistenceError('Test-forced write failure after token update.');
+    }
     const marketInserted = this.persistMarketSnapshotIfAbsent(token.id, bundle.marketSnapshot);
+    if (options.abortAfter === 'market') {
+      throw new PersistenceError('Test-forced write failure after market insert.');
+    }
     const riskInserted =
-      bundle.riskReport === null ? false : this.persistRiskReportIfAbsent(bundle.riskReport);
+      bundle.riskReport === null
+        ? false
+        : this.persistRiskReportIfAbsent(
+            bundle.riskReport,
+            options.abortAfter === 'riskParent' || options.abortAfter === 'riskChildren'
+              ? { abortAfter: options.abortAfter }
+              : {},
+          );
 
     const inserted = this.requireStatements().insertFeatureVector.run(
       token.id,
@@ -581,10 +736,13 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       sourceIdentity,
     );
     const vectorId = Number(inserted.lastInsertRowid);
+    if (options.abortAfter === 'featureVector') {
+      throw new PersistenceError('Test-forced write failure after feature vector insert.');
+    }
 
     for (const [ordinal, value] of vector.values.entries()) {
       this.insertFeatureValue(vectorId, ordinal, value);
-      if (options.abortAfterFirstValue === true) {
+      if (options.abortAfterFirstValue === true || options.abortAfter === 'featureValues') {
         throw new PersistenceError('Test-forced write failure after child insert.');
       }
     }
@@ -602,7 +760,11 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
 
   private persistStrategyBundle(
     bundle: StrategyBundle,
-    options: { abortAfterFirstRule?: boolean } = {},
+    options: {
+      abortAfterFirstRule?: boolean;
+      abortAfterFirstValue?: boolean;
+      abortAfter?: StrategyPersistAbort;
+    } = {},
   ): RecordedStrategyBundle {
     assertPersistableStrategyEvaluation(bundle.strategyEvaluation, bundle.featureVector);
     this.assertBundleConsistency(bundle);
@@ -616,11 +778,21 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       featureSourceIdentity: expectedFeatureIdentity,
     });
 
-    const featureRecorded = this.persistFeatureBundle({
-      marketSnapshot: bundle.marketSnapshot,
-      riskReport: bundle.riskReport,
-      featureVector: bundle.featureVector,
-    });
+    const featureAbort =
+      options.abortAfter !== undefined && isFeaturePersistAbort(options.abortAfter)
+        ? options.abortAfter
+        : undefined;
+    const featureRecorded = this.persistFeatureBundle(
+      {
+        marketSnapshot: bundle.marketSnapshot,
+        riskReport: bundle.riskReport,
+        featureVector: bundle.featureVector,
+      },
+      {
+        abortAfterFirstValue: options.abortAfterFirstValue === true,
+        ...(featureAbort === undefined ? {} : { abortAfter: featureAbort }),
+      },
+    );
     this.assertExactFeatureVectorLinkage(
       featureRecorded.vectorId,
       evaluation,
@@ -629,6 +801,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     );
 
     const definitionInserted = this.ensureStrategyDefinition(evaluation);
+    if (options.abortAfter === 'strategyDefinition') {
+      throw new PersistenceError('Test-forced write failure after strategy definition insert.');
+    }
     const existing = this.requireStatements().getStrategyByIdentity.get(sourceIdentity);
     if (existing !== undefined) {
       const existingEvaluation = this.mapStrategyEvaluationSummary(existing);
@@ -677,6 +852,9 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       sourceIdentity,
     );
     const evaluationId = Number(inserted.lastInsertRowid);
+    if (options.abortAfter === 'strategyEvaluation') {
+      throw new PersistenceError('Test-forced write failure after strategy evaluation insert.');
+    }
 
     for (const rule of evaluation.rules) {
       this.requireStatements().insertStrategyRuleResult.run(
@@ -690,7 +868,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
         rule.observed,
         rule.reason,
       );
-      if (options.abortAfterFirstRule === true) {
+      if (options.abortAfterFirstRule === true || options.abortAfter === 'strategyRules') {
         throw new PersistenceError('Test-forced write failure after child insert.');
       }
     }
@@ -707,6 +885,228 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       riskInserted: featureRecorded.riskInserted,
       definitionInserted,
     };
+  }
+
+  private persistPaperBundle(
+    bundle: PaperBundle,
+    options: { abortAfter?: PaperPersistAbort } = {},
+  ): RecordedPaperBundle {
+    assertPersistablePaperEvaluation(bundle.paperEvaluation, {
+      marketSnapshot: bundle.marketSnapshot,
+      featureVector: bundle.featureVector,
+      strategyEvaluation: bundle.strategyEvaluation,
+    });
+
+    const strategyAbort =
+      options.abortAfter !== undefined && isStrategyPersistAbort(options.abortAfter)
+        ? options.abortAfter
+        : undefined;
+    const strategyRecorded =
+      strategyAbort === undefined
+        ? this.persistStrategyBundle(bundle)
+        : this.persistStrategyBundle(bundle, { abortAfter: strategyAbort });
+    this.assertExactStrategyEvaluationLinkage(
+      strategyRecorded.evaluationId,
+      strategyRecorded.vectorId,
+      bundle,
+    );
+
+    const paper = bundle.paperEvaluation;
+    const expectedFeatureIdentity = featureSourceIdentity(bundle.featureVector);
+    const expectedStrategyIdentity = strategySourceIdentity({
+      strategyVersion: STRATEGY_VERSION,
+      strategyDefinitionFingerprint: STRATEGY_DEFINITION_FINGERPRINT,
+      featureSourceIdentity: expectedFeatureIdentity,
+    });
+    const sourceIdentity = paperSourceIdentity({
+      paperSpecVersion: PAPER_SPEC_VERSION,
+      paperDefinitionFingerprint: PAPER_DEFINITION_FINGERPRINT,
+      strategySourceIdentity: expectedStrategyIdentity,
+    });
+    const definitionInserted = this.ensurePaperDefinition(paper);
+    if (options.abortAfter === 'paperDefinition') {
+      throw new PersistenceError('Test-forced write failure after paper definition insert.');
+    }
+
+    const existing = this.requireStatements().getPaperByIdentity.get(sourceIdentity);
+    if (existing !== undefined) {
+      const stored = this.mapPaperEvaluationSummary(existing);
+      if (!storedPaperMatchesEvaluation(stored, paper)) {
+        throw new PersistenceError(
+          'Source identity already exists with a different paper evaluation. This indicates non-determinism or semantic drift.',
+        );
+      }
+      if (asNumber(existing['strategy_evaluation_id']) !== strategyRecorded.evaluationId) {
+        throw new PersistenceError(
+          'Existing paper evaluation does not reference the exact strategy evaluation used for this observation.',
+        );
+      }
+
+      return {
+        paperEvaluationId: stored.id,
+        strategyEvaluationId: strategyRecorded.evaluationId,
+        vectorId: strategyRecorded.vectorId,
+        tokenMint: paper.tokenMint,
+        sourceIdentity,
+        inserted: false,
+        strategyInserted: strategyRecorded.inserted,
+        featureInserted: strategyRecorded.featureInserted,
+        marketInserted: strategyRecorded.marketInserted,
+        riskInserted: strategyRecorded.riskInserted,
+        tokenInserted: strategyRecorded.tokenInserted,
+        paperDefinitionInserted: definitionInserted,
+      };
+    }
+
+    const token = this.getToken(paper.tokenMint);
+    if (token === null) {
+      throw new PersistenceError('Paper evaluation token is missing after strategy persistence.');
+    }
+
+    const inserted = this.requireStatements().insertPaperEvaluation.run(
+      token.id,
+      strategyRecorded.evaluationId,
+      paper.paperSpecVersion,
+      paper.paperDefinitionFingerprint,
+      paper.strategyDefinitionFingerprint,
+      paper.featureSetVersion,
+      paper.asOf,
+      paper.evaluatedAt,
+      paper.marketCollectedAt,
+      paper.pairAddress,
+      paper.strategyDecision,
+      paper.paperAction,
+      paper.noActionReason,
+      paper.referencePriceUsd,
+      paper.simulatedEntryPriceUsd,
+      paper.executionModel,
+      paper.costModel,
+      paper.quantityModel,
+      paper.positionModel,
+      paper.exitModel,
+      sourceIdentity,
+    );
+    if (options.abortAfter === 'paperEvaluation') {
+      throw new PersistenceError('Test-forced write failure after paper evaluation insert.');
+    }
+
+    const paperEvaluationId = Number(inserted.lastInsertRowid);
+    this.assertExactStrategyEvaluationLinkage(
+      strategyRecorded.evaluationId,
+      strategyRecorded.vectorId,
+      bundle,
+    );
+    return {
+      paperEvaluationId,
+      strategyEvaluationId: strategyRecorded.evaluationId,
+      vectorId: strategyRecorded.vectorId,
+      tokenMint: paper.tokenMint,
+      sourceIdentity,
+      inserted: true,
+      strategyInserted: strategyRecorded.inserted,
+      featureInserted: strategyRecorded.featureInserted,
+      marketInserted: strategyRecorded.marketInserted,
+      riskInserted: strategyRecorded.riskInserted,
+      tokenInserted: strategyRecorded.tokenInserted,
+      paperDefinitionInserted: definitionInserted,
+    };
+  }
+
+  private ensurePaperDefinition(evaluation: PaperEvaluation): boolean {
+    const existing = this.requireStatements().getPaperDefinition.get(evaluation.paperSpecVersion);
+    if (existing === undefined) {
+      this.requireStatements().insertPaperDefinition.run(
+        evaluation.paperSpecVersion,
+        evaluation.paperSpecName,
+        evaluation.featureSetVersion,
+        evaluation.strategyVersion,
+        evaluation.strategyDefinitionFingerprint,
+        evaluation.paperDefinitionFingerprint,
+        evaluation.evaluatedAt,
+      );
+      return true;
+    }
+
+    if (
+      asString(existing['paper_spec_name']) !== evaluation.paperSpecName ||
+      asString(existing['feature_set_version']) !== evaluation.featureSetVersion ||
+      asString(existing['strategy_version']) !== evaluation.strategyVersion ||
+      asString(existing['strategy_definition_fingerprint']) !== evaluation.strategyDefinitionFingerprint ||
+      asString(existing['definition_fingerprint']) !== evaluation.paperDefinitionFingerprint
+    ) {
+      throw new PersistenceError(
+        'Stored paper definition for p09_v1 does not match the current code fingerprint. Create a new paper spec version instead of mutating p09_v1.',
+      );
+    }
+
+    return false;
+  }
+
+  private assertExactStrategyEvaluationLinkage(
+    evaluationId: number,
+    vectorId: number,
+    bundle: PaperBundle,
+  ): void {
+    const row = this.requireStatements().getStrategyById.get(evaluationId);
+    if (row === undefined) {
+      throw new PersistenceError('Paper evaluation does not reference an exact stored strategy evaluation.');
+    }
+
+    const evaluation = bundle.strategyEvaluation;
+    const expectedFeatureIdentity = featureSourceIdentity(bundle.featureVector);
+    const expectedStrategyIdentity = strategySourceIdentity({
+      strategyVersion: STRATEGY_VERSION,
+      strategyDefinitionFingerprint: STRATEGY_DEFINITION_FINGERPRINT,
+      featureSourceIdentity: expectedFeatureIdentity,
+    });
+    if (asNumber(row['id']) !== evaluationId) {
+      throw new PersistenceError('Paper evaluation strategy_evaluation_id does not match the exact stored evaluation.');
+    }
+    if (asNumber(row['feature_vector_id']) !== vectorId) {
+      throw new PersistenceError(
+        'Stored strategy evaluation feature_vector_id does not match the exact feature vector used for this paper observation.',
+      );
+    }
+    if (asString(row['token_mint']) !== evaluation.tokenMint || asString(row['token_mint']) !== bundle.paperEvaluation.tokenMint) {
+      throw new PersistenceError('Stored strategy evaluation token does not match the paper evaluation.');
+    }
+    if (asString(row['strategy_version']) !== evaluation.strategyVersion) {
+      throw new PersistenceError('Stored strategy evaluation version does not match the paper evaluation.');
+    }
+    if (asString(row['strategy_definition_fingerprint']) !== evaluation.strategyDefinitionFingerprint) {
+      throw new PersistenceError('Stored strategy evaluation fingerprint does not match the paper evaluation.');
+    }
+    if (asString(row['feature_set_version']) !== evaluation.featureSetVersion) {
+      throw new PersistenceError('Stored strategy evaluation feature set does not match the paper evaluation.');
+    }
+    if (asString(row['as_of']) !== evaluation.asOf || asString(row['as_of']) !== bundle.paperEvaluation.asOf) {
+      throw new PersistenceError('Stored strategy evaluation asOf does not match the paper evaluation.');
+    }
+    if (asString(row['decision']) !== evaluation.decision || asString(row['decision']) !== bundle.paperEvaluation.strategyDecision) {
+      throw new PersistenceError('Stored strategy evaluation decision does not match the paper evaluation.');
+    }
+    if (asNumber(row['passed_rule_count']) !== evaluation.passedRuleCount) {
+      throw new PersistenceError('Stored strategy evaluation passed_rule_count does not match the paper evaluation.');
+    }
+    if (asNumber(row['failed_rule_count']) !== evaluation.failedRuleCount) {
+      throw new PersistenceError('Stored strategy evaluation failed_rule_count does not match the paper evaluation.');
+    }
+    if (asNumber(row['unavailable_rule_count']) !== evaluation.unavailableRuleCount) {
+      throw new PersistenceError('Stored strategy evaluation unavailable_rule_count does not match the paper evaluation.');
+    }
+    if (asString(row['source_identity']) !== expectedStrategyIdentity) {
+      throw new PersistenceError('Stored strategy evaluation source identity does not match the recomputed identity.');
+    }
+    if (asString(row['feature_source_identity']) !== expectedFeatureIdentity) {
+      throw new PersistenceError('Stored strategy evaluation feature source identity does not match the recomputed identity.');
+    }
+
+    const stored = this.mapStrategyEvaluationSummary(row);
+    if (!strategyEvaluationsSemanticallyEqual(stored, evaluation)) {
+      throw new PersistenceError(
+        'Stored strategy evaluation rules and metadata do not match the exact s07_v1 evaluation supplied for this paper observation.',
+      );
+    }
   }
 
   private ensureStrategyDefinition(evaluation: StrategyEvaluation): boolean {
@@ -815,7 +1215,10 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     }
   }
 
-  private persistRiskReportIfAbsent(report: TokenRiskReport): boolean {
+  private persistRiskReportIfAbsent(
+    report: TokenRiskReport,
+    options: { abortAfter?: 'riskParent' | 'riskChildren' } = {},
+  ): boolean {
     const token = this.getToken(report.tokenMint);
     if (token !== null) {
       const existing = this.requireStatements().getRiskByScannedAt.get(token.id, report.scannedAt);
@@ -837,7 +1240,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       }
     }
 
-    this.persistRiskReport(report);
+    this.persistRiskReport(report, options);
     return true;
   }
 
@@ -1213,6 +1616,37 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     };
   }
 
+  private mapPaperEvaluationSummary(
+    row: Record<string, SQLOutputValue>,
+  ): StoredPaperEvaluationSummary {
+    return {
+      id: asNumber(row['id']),
+      strategyEvaluationId: asNumber(row['strategy_evaluation_id']),
+      tokenMint: asString(row['token_mint']),
+      paperSpecVersion: asString(row['paper_spec_version']),
+      paperSpecName: asString(row['paper_spec_name']),
+      paperDefinitionFingerprint: asString(row['paper_definition_fingerprint']),
+      strategyVersion: asString(row['strategy_version']),
+      strategyDefinitionFingerprint: asString(row['strategy_definition_fingerprint']),
+      strategyDecision: asString(row['strategy_decision']) as StrategyDecision,
+      featureSetVersion: asString(row['feature_set_version']),
+      asOf: asString(row['as_of']),
+      evaluatedAt: asString(row['evaluated_at']),
+      pairAddress: asString(row['pair_address']),
+      marketCollectedAt: asString(row['market_collected_at']),
+      paperAction: asString(row['paper_action']) as PaperEvaluation['paperAction'],
+      noActionReason: asNullableString(row['no_action_reason']) as PaperEvaluation['noActionReason'],
+      referencePriceUsd: asNullableNumber(row['reference_price_usd']),
+      simulatedEntryPriceUsd: asNullableNumber(row['simulated_entry_price_usd']),
+      executionModel: asString(row['execution_model']) as PaperEvaluation['executionModel'],
+      costModel: asString(row['cost_model']) as PaperEvaluation['costModel'],
+      quantityModel: asString(row['quantity_model']) as PaperEvaluation['quantityModel'],
+      positionModel: asString(row['position_model']) as PaperEvaluation['positionModel'],
+      exitModel: asString(row['exit_model']) as PaperEvaluation['exitModel'],
+      sourceIdentity: asString(row['source_identity']),
+    };
+  }
+
   private readStrategyRuleResults(evaluationId: number): StrategyRuleResult[] {
     return this.requireStatements()
       .strategyRuleResults.all(evaluationId)
@@ -1565,7 +1999,102 @@ function prepareStatements(database: DatabaseSync): Statements {
     countStrategyEvaluations: database.prepare('SELECT COUNT(*) AS count FROM strategy_evaluations'),
     countStrategyDefinitions: database.prepare('SELECT COUNT(*) AS count FROM strategy_definitions'),
     countStrategyRuleResults: database.prepare('SELECT COUNT(*) AS count FROM strategy_rule_results'),
+    getPaperDefinition: database.prepare(
+      `SELECT paper_spec_version, paper_spec_name, feature_set_version, strategy_version,
+              strategy_definition_fingerprint, definition_fingerprint, first_recorded_at
+       FROM paper_definitions
+       WHERE paper_spec_version = ?`,
+    ),
+    insertPaperDefinition: database.prepare(
+      `INSERT INTO paper_definitions (
+        paper_spec_version, paper_spec_name, feature_set_version, strategy_version,
+        strategy_definition_fingerprint, definition_fingerprint, first_recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    getPaperByIdentity: database.prepare(
+      `SELECT p.id, p.strategy_evaluation_id, t.mint AS token_mint, p.paper_spec_version, d.paper_spec_name,
+              p.paper_definition_fingerprint, d.strategy_version, p.strategy_definition_fingerprint,
+              p.strategy_decision, p.feature_set_version, p.as_of, p.evaluated_at, p.pair_address,
+              p.market_collected_at, p.paper_action, p.no_action_reason, p.reference_price_usd,
+              p.simulated_entry_price_usd, p.execution_model, p.cost_model, p.quantity_model,
+              p.position_model, p.exit_model, p.source_identity
+       FROM paper_evaluations p
+       JOIN paper_definitions d ON d.paper_spec_version = p.paper_spec_version
+       JOIN tokens t ON t.id = p.token_id
+       WHERE p.source_identity = ?`,
+    ),
+    insertPaperEvaluation: database.prepare(
+      `INSERT INTO paper_evaluations (
+        token_id, strategy_evaluation_id, paper_spec_version, paper_definition_fingerprint,
+        strategy_definition_fingerprint, feature_set_version, as_of, evaluated_at, market_collected_at,
+        pair_address, strategy_decision, paper_action, no_action_reason, reference_price_usd,
+        simulated_entry_price_usd, execution_model, cost_model, quantity_model, position_model,
+        exit_model, source_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    paperHistory: database.prepare(
+      `SELECT p.id, p.strategy_evaluation_id, t.mint AS token_mint, p.paper_spec_version, d.paper_spec_name,
+              p.paper_definition_fingerprint, d.strategy_version, p.strategy_definition_fingerprint,
+              p.strategy_decision, p.feature_set_version, p.as_of, p.evaluated_at, p.pair_address,
+              p.market_collected_at, p.paper_action, p.no_action_reason, p.reference_price_usd,
+              p.simulated_entry_price_usd, p.execution_model, p.cost_model, p.quantity_model,
+              p.position_model, p.exit_model, p.source_identity
+       FROM paper_evaluations p
+       JOIN paper_definitions d ON d.paper_spec_version = p.paper_spec_version
+       JOIN tokens t ON t.id = p.token_id
+       WHERE p.token_id = ?
+       ORDER BY p.as_of DESC, p.id DESC
+       LIMIT ?`,
+    ),
+    getStrategyById: database.prepare(
+      `SELECT e.id, e.feature_vector_id, t.mint AS token_mint, e.strategy_version, d.strategy_name,
+              e.strategy_definition_fingerprint, e.feature_set_version, e.evaluated_at, e.as_of,
+              e.decision, e.passed_rule_count, e.failed_rule_count, e.unavailable_rule_count,
+              e.source_identity, f.source_identity AS feature_source_identity
+       FROM strategy_evaluations e
+       JOIN strategy_definitions d ON d.strategy_version = e.strategy_version
+       JOIN feature_vectors f ON f.id = e.feature_vector_id
+       JOIN tokens t ON t.id = e.token_id
+       WHERE e.id = ?`,
+    ),
+    countPaperDefinitions: database.prepare('SELECT COUNT(*) AS count FROM paper_definitions'),
+    countPaperEvaluations: database.prepare('SELECT COUNT(*) AS count FROM paper_evaluations'),
   };
+}
+
+function storedPaperMatchesEvaluation(
+  stored: StoredPaperEvaluationSummary,
+  paper: PaperEvaluation,
+): boolean {
+  return (
+    stored.tokenMint === paper.tokenMint &&
+    stored.paperSpecVersion === paper.paperSpecVersion &&
+    stored.paperSpecName === paper.paperSpecName &&
+    stored.paperDefinitionFingerprint === paper.paperDefinitionFingerprint &&
+    stored.strategyVersion === paper.strategyVersion &&
+    stored.strategyDefinitionFingerprint === paper.strategyDefinitionFingerprint &&
+    stored.strategyDecision === paper.strategyDecision &&
+    stored.featureSetVersion === paper.featureSetVersion &&
+    stored.asOf === paper.asOf &&
+    stored.evaluatedAt === paper.evaluatedAt &&
+    stored.pairAddress === paper.pairAddress &&
+    stored.marketCollectedAt === paper.marketCollectedAt &&
+    stored.paperAction === paper.paperAction &&
+    stored.noActionReason === paper.noActionReason &&
+    Object.is(stored.referencePriceUsd, paper.referencePriceUsd) &&
+    Object.is(stored.simulatedEntryPriceUsd, paper.simulatedEntryPriceUsd) &&
+    (stored.executionModel as string) === (paper.executionModel as string) &&
+    (stored.costModel as string) === (paper.costModel as string) &&
+    (stored.quantityModel as string) === (paper.quantityModel as string) &&
+    (stored.positionModel as string) === (paper.positionModel as string) &&
+    (stored.exitModel as string) === (paper.exitModel as string) &&
+    stored.sourceIdentity ===
+      paperSourceIdentity({
+        paperSpecVersion: paper.paperSpecVersion,
+        paperDefinitionFingerprint: paper.paperDefinitionFingerprint,
+        strategySourceIdentity: paper.strategySourceIdentity,
+      })
+  );
 }
 
 function uniqueSources(sources: readonly DiscoverySource[]): DiscoverySource[] {

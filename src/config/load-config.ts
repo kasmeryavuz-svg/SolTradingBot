@@ -29,6 +29,7 @@ import {
   DEFAULT_SOLANA_RPC_URL,
   DEFAULT_FEATURE_HISTORY_LIMIT,
   DEFAULT_STRATEGY_HISTORY_LIMIT,
+  DEFAULT_PAPER_HISTORY_LIMIT,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -104,6 +105,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     risk: loadRiskConfig(source),
     features: loadFeatureConfig(source),
     strategy: loadStrategyConfig(source),
+    paper: loadPaperConfig(source),
   };
 }
 
@@ -211,6 +213,17 @@ function loadStrategyConfig(source: EnvSource): AppConfig['strategy'] {
       readOptionalEnv(source, 'STRATEGY_HISTORY_LIMIT'),
       DEFAULT_STRATEGY_HISTORY_LIMIT,
       'STRATEGY_HISTORY_LIMIT',
+      HISTORY_LIMIT_MAX,
+    ),
+  };
+}
+
+function loadPaperConfig(source: EnvSource): AppConfig['paper'] {
+  return {
+    historyLimit: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'PAPER_HISTORY_LIMIT'),
+      DEFAULT_PAPER_HISTORY_LIMIT,
+      'PAPER_HISTORY_LIMIT',
       HISTORY_LIMIT_MAX,
     ),
   };

@@ -12,6 +12,7 @@ export {
   REQUIRED_BACKTEST_FEATURE_SET_VERSION,
   REQUIRED_BACKTEST_STRATEGY_VERSION,
   REQUIRED_SCHEMA_VERSION,
+  COMPATIBLE_SCHEMA_VERSIONS,
 } from './constants.js';
 export { runBacktest } from './engine.js';
 export { formatBacktestLines } from './format.js';

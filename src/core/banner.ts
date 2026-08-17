@@ -11,13 +11,14 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 08');
+  console.log('Checkpoint: 09');
   console.log('Blockchain capability: READ ONLY');
   console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
   console.log('Token risk scanner: available');
   console.log('Feature engine: available');
   console.log('Strategy evaluator: available');
   console.log('Backtester: available');
-  console.log('Paper trading: unavailable');
+  console.log('Paper trading: available');
+  console.log('Position management: unavailable');
   console.log('Trading capability: disabled');
 }
