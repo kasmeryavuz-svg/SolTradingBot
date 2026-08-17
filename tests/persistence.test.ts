@@ -18,6 +18,8 @@ import {
   INITIAL_MIGRATION_NAME,
   INITIAL_MIGRATION_VERSION,
   LATEST_SCHEMA_VERSION,
+  FEATURE_MIGRATION_NAME,
+  FEATURE_MIGRATION_VERSION,
   RISK_MIGRATION_NAME,
   RISK_MIGRATION_VERSION,
 } from '../src/persistence/sqlite/migrations.js';
@@ -130,10 +132,13 @@ describe('SQLite persistence', () => {
     expect(INITIAL_MIGRATION_VERSION).toBe(1);
     expect(RISK_MIGRATION_NAME).toBe('002_token_risk_scans');
     expect(RISK_MIGRATION_VERSION).toBe(2);
+    expect(FEATURE_MIGRATION_NAME).toBe('003_feature_vectors');
+    expect(FEATURE_MIGRATION_VERSION).toBe(3);
     expect(first.foreignKeysEnabled).toBe(true);
     expect(first.integrity.ok).toBe(true);
     expect(first.riskScanCount).toBe(0);
-    expect(repository.getTableCounts().schemaMigrations).toBe(2);
+    expect(first.featureVectorCount).toBe(0);
+    expect(repository.getTableCounts().schemaMigrations).toBe(3);
   });
 
   it('inserts one token row and updates observation bounds', () => {

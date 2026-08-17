@@ -1,4 +1,5 @@
 import type { DiscoverySource, MarketDataStatus } from '../discovery/types.js';
+import type { FeatureValue, FeatureVector } from '../features/types.js';
 import type { MarketSnapshot } from '../market-data/types.js';
 import type {
   HighestFindingSeverity,
@@ -6,6 +7,7 @@ import type {
   RiskFinding,
   TokenExtensionObservation,
   TokenProgramKind,
+  TokenRiskReport,
 } from '../risk/types.js';
 
 export class PersistenceError extends Error {
@@ -41,6 +43,7 @@ export type PersistenceStats = {
   discoveryObservationCount: number;
   marketSnapshotCount: number;
   riskScanCount: number;
+  featureVectorCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -111,4 +114,41 @@ export type StoredRiskScanSummary = {
 export type TokenRiskHistory = {
   token: StoredToken;
   scans: StoredRiskScanSummary[];
+};
+
+export type FeatureBundle = {
+  marketSnapshot: MarketSnapshot;
+  riskReport: TokenRiskReport | null;
+  featureVector: FeatureVector;
+};
+
+export type RecordedFeatureBundle = {
+  vectorId: number;
+  tokenMint: string;
+  sourceIdentity: string;
+  inserted: boolean;
+  tokenInserted: boolean;
+  marketInserted: boolean;
+  riskInserted: boolean;
+};
+
+export type StoredFeatureVectorSummary = {
+  id: number;
+  featureSetVersion: string;
+  generatedAt: string;
+  asOf: string;
+  marketCollectedAt: string;
+  marketPairAddress: string;
+  previousMarketCollectedAt: string | null;
+  riskScannedAt: string | null;
+  featureCompleteness: FeatureVector['featureCompleteness'];
+  availableFeatureCount: number;
+  unavailableFeatureCount: number;
+  sourceIdentity: string;
+  values: FeatureValue[];
+};
+
+export type TokenFeatureHistory = {
+  token: StoredToken;
+  vectors: StoredFeatureVectorSummary[];
 };

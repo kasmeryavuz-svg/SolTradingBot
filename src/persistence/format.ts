@@ -8,8 +8,9 @@ export function formatCapabilityFooter(): string[] {
     'Blockchain capability: READ ONLY',
     'Local persistence: ENABLED',
     'Token risk scanner: available',
+    'Feature engine: available',
     'Trading capability: DISABLED',
-    'Checkpoint: 05',
+    'Checkpoint: 06',
   ];
 }
 
@@ -44,6 +45,7 @@ export function formatStatusLines(path: string, stats: PersistenceStats): string
     `Discovery observations: ${String(stats.discoveryObservationCount)}`,
     `Market snapshots: ${String(stats.marketSnapshotCount)}`,
     `Risk scans: ${String(stats.riskScanCount)}`,
+    `Feature vectors: ${String(stats.featureVectorCount)}`,
     '',
     `Earliest observation: ${stats.earliestObservationAt ?? 'n/a'}`,
     `Latest observation: ${stats.latestObservationAt ?? 'n/a'}`,

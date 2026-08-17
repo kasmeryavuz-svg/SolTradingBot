@@ -30,3 +30,4 @@ export const HISTORY_LIMIT_MAX = 100;
 export const DEFAULT_RISK_SCAN_TIMEOUT_MS = 10_000;
 export const DEFAULT_RISK_SCAN_COMMITMENT = 'confirmed';
 export const DEFAULT_RISK_HISTORY_LIMIT = 20;
+export const DEFAULT_FEATURE_HISTORY_LIMIT = 20;

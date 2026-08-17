@@ -42,6 +42,10 @@ export type RiskConfig = {
   historyLimit: number;
 };
 
+export type FeatureConfig = {
+  historyLimit: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -51,6 +55,7 @@ export type AppConfig = {
   discovery: DiscoveryConfig;
   database: DatabaseConfig;
   risk: RiskConfig;
+  features: FeatureConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 05 adds a read-only token risk scanner — blockchain writes and trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 06 adds a deterministic feature engine — blockchain writes and trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -26,7 +26,10 @@
     "collect:watch": "tsx src/collector/watch.ts",
     "risk:check": "tsx src/risk/check.ts",
     "risk:record": "tsx src/risk/record.ts",
-    "risk:history": "tsx src/risk/history.ts"
+    "risk:history": "tsx src/risk/history.ts",
+    "feature:check": "tsx src/features/check.ts",
+    "feature:record": "tsx src/features/record.ts",
+    "feature:history": "tsx src/features/history.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

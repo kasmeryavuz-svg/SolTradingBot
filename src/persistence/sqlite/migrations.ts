@@ -5,7 +5,9 @@ export const INITIAL_MIGRATION_VERSION = 1;
 export const INITIAL_MIGRATION_NAME = '001_initial_persistence';
 export const RISK_MIGRATION_VERSION = 2;
 export const RISK_MIGRATION_NAME = '002_token_risk_scans';
-export const LATEST_SCHEMA_VERSION = RISK_MIGRATION_VERSION;
+export const FEATURE_MIGRATION_VERSION = 3;
+export const FEATURE_MIGRATION_NAME = '003_feature_vectors';
+export const LATEST_SCHEMA_VERSION = FEATURE_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -188,6 +190,84 @@ CREATE TABLE risk_findings (
   description TEXT NOT NULL,
   PRIMARY KEY (scan_id, code),
   FOREIGN KEY (scan_id) REFERENCES risk_scans(id)
+) STRICT;
+`,
+  },
+  {
+    version: FEATURE_MIGRATION_VERSION,
+    name: FEATURE_MIGRATION_NAME,
+    sql: `
+CREATE TABLE feature_vectors (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  feature_set_version TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  market_collected_at TEXT NOT NULL,
+  market_pair_address TEXT NOT NULL,
+  previous_market_collected_at TEXT,
+  risk_scanned_at TEXT,
+  feature_completeness TEXT NOT NULL CHECK (feature_completeness IN ('complete', 'partial')),
+  available_feature_count INTEGER NOT NULL CHECK (available_feature_count >= 0),
+  unavailable_feature_count INTEGER NOT NULL CHECK (unavailable_feature_count >= 0),
+  source_identity TEXT NOT NULL UNIQUE,
+  CHECK (market_collected_at <= as_of),
+  CHECK (risk_scanned_at IS NULL OR risk_scanned_at <= as_of),
+  CHECK (
+    previous_market_collected_at IS NULL
+    OR previous_market_collected_at < market_collected_at
+  ),
+  FOREIGN KEY (token_id) REFERENCES tokens(id)
+) STRICT;
+
+CREATE INDEX feature_vectors_token_as_of_idx ON feature_vectors (token_id, as_of DESC, id DESC);
+
+CREATE TABLE feature_values (
+  vector_id INTEGER NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  feature_name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('number', 'integer', 'boolean')),
+  status TEXT NOT NULL CHECK (status IN ('available', 'unavailable')),
+  number_value REAL,
+  integer_value INTEGER,
+  boolean_value INTEGER,
+  unavailable_reason TEXT,
+  PRIMARY KEY (vector_id, feature_name),
+  UNIQUE (vector_id, ordinal),
+  FOREIGN KEY (vector_id) REFERENCES feature_vectors(id),
+  CHECK (
+    (
+      status = 'available'
+      AND kind = 'number'
+      AND number_value IS NOT NULL
+      AND integer_value IS NULL
+      AND boolean_value IS NULL
+      AND unavailable_reason IS NULL
+    )
+    OR (
+      status = 'available'
+      AND kind = 'integer'
+      AND integer_value IS NOT NULL
+      AND number_value IS NULL
+      AND boolean_value IS NULL
+      AND unavailable_reason IS NULL
+    )
+    OR (
+      status = 'available'
+      AND kind = 'boolean'
+      AND boolean_value IN (0, 1)
+      AND number_value IS NULL
+      AND integer_value IS NULL
+      AND unavailable_reason IS NULL
+    )
+    OR (
+      status = 'unavailable'
+      AND number_value IS NULL
+      AND integer_value IS NULL
+      AND boolean_value IS NULL
+      AND unavailable_reason IS NOT NULL
+    )
+  )
 ) STRICT;
 `,
   },

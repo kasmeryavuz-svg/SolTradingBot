@@ -1,4 +1,7 @@
 import type { DiscoveryCandidate } from '../discovery/types.js';
+import { assertFeatureVectorInvariants, assertSourceIdentity } from '../features/invariants.js';
+import { featureSourceIdentity } from '../features/numbers.js';
+import { FeatureEngineError, type FeatureVector } from '../features/types.js';
 import type { MarketSnapshot } from '../market-data/types.js';
 import { assertRiskReportInvariants } from '../risk/invariants.js';
 import { RAW_AMOUNT_PATTERN } from '../risk/numbers.js';
@@ -80,6 +83,19 @@ export function requireRawAmountOrNull(value: string | null, field: string): str
   }
 
   return value;
+}
+
+export function assertPersistableFeatureVector(vector: FeatureVector): void {
+  try {
+    assertFeatureVectorInvariants(vector);
+    assertSourceIdentity(vector, featureSourceIdentity(vector));
+  } catch (error: unknown) {
+    if (error instanceof FeatureEngineError) {
+      throw new PersistenceError(error.message, { cause: error });
+    }
+
+    throw error;
+  }
 }
 
 export function assertPersistableCandidate(candidate: DiscoveryCandidate): void {
