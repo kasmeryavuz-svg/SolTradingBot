@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 12.5
+## Current checkpoint: 13
 
 **Current capabilities:**
 
@@ -23,6 +23,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - x11_v1 paper exit engine
 - a12_v1 GROSS paper performance analytics
 - r125_v1 strategy research / benchmark lab
+- d13_v1 local read-only observability dashboard
 
 ### What this checkpoint is not
 
@@ -34,7 +35,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Exit engine: YES**
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
-- **Dashboard: NO**
+- **Dashboard: YES (local, read-only)**
 - **Wallet: NO**
 - **Signer: NO**
 - **Transaction sending: NO**
@@ -51,6 +52,8 @@ x11_v1 may then **simulate a full close** of that open position using the **exac
 a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated closes already stored in SQLite. Those numbers exclude fees, slippage, and execution. They are not net performance, not a wallet result, and not a forecast. The current local database may have zero closed paper trades; that is not a 0% result.
 
 r125_v1 may then **compare five fixed entry hypotheses** against the same historical SQLite dataset. Those comparisons reuse frozen c06 features, frozen x11 exits, and a12-compatible GROSS math. They do **not** prove a live edge, pick a winner, or optimize thresholds.
+
+Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener.
 
 Features describe observations. They do **not** decide trades.
 
@@ -111,7 +114,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 12.5
+Checkpoint: 13
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
@@ -123,11 +126,12 @@ Position management: available
 Exit engine: available
 Performance analytics: available
 Strategy benchmark lab: available
-Dashboard: unavailable
+Dashboard: available
+Real execution engine: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, or research watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, or `research:trades`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, or dashboard servers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, or `dashboard:start`.
 
 ## How to check Solana, market data, and discovery
 
@@ -361,6 +365,38 @@ There is no `research:watch`, `research:optimize`, or `research:live`.
 
 See [docs/CHECKPOINT_12_5.md](docs/CHECKPOINT_12_5.md) and [docs/STRATEGY_RESEARCH_SOURCES.md](docs/STRATEGY_RESEARCH_SOURCES.md).
 
+## How to open the local observability dashboard
+
+Checkpoint 13 serves a **local read-only** browser UI over stored evidence. Spec `d13_v1`. It is **not** a trading console.
+
+```bash
+npm run dashboard:start
+```
+
+Default URL: [http://127.0.0.1:4313](http://127.0.0.1:4313)
+
+The process binds **only** to `127.0.0.1`. There is no `DASHBOARD_HOST`. Optional `DASHBOARD_PORT` (default `4313`, allowed `1024..65535`) is operational configuration only.
+
+**LOCAL ONLY. READ ONLY. NO WALLET. NO EXECUTION. NO LIVE TRADING CONTROLS.**
+
+The dashboard shows:
+
+- Latest stored market observations (not live prices)
+- Runtime paper lifecycle (p09/pm10/x11), separate from research trades
+- a12 GROSS paper performance (not net, not live)
+- r125 historical research comparison (not optimized, not ranked)
+- Database / data health facts (no invented quality score)
+
+It does **not** call Solana RPC, DEX Screener, or any third-party HTTP API. It does **not** start collectors. It does **not** run `paper:step`, `position:step`, or `exit:step`. If `TRADING_ENABLED=true`, `dashboard:start` refuses to start because Checkpoint 13 is read-only only.
+
+The HTML/JS/CSS files live in `src/dashboard/public`. `npm run build` does **not** copy them into `dist`. `dashboard:start` uses `tsx` and those source assets. `dist` is not a packaged dashboard. Sections are rebuilt independently; this is not one atomic database snapshot. Market values are latest stored observations, not live prices.
+
+Zero runtime trades or many research `insufficient_data` rows is a valid empty state. That is not a 0% win rate.
+
+Press `CTRL+C` to stop. `npm run dev` does **not** start the dashboard.
+
+See [docs/CHECKPOINT_13.md](docs/CHECKPOINT_13.md).
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -436,6 +472,7 @@ src/             Application source code
   exit/          x11_v1 experimental paper exit engine (exact opening pair, full close, no PnL)
   performance/   a12_v1 read-only GROSS closed-paper-trade analytics (no stored metric tables)
   research/      r125_v1 read-only strategy research / benchmark lab (no stored research tables)
+  dashboard/     d13_v1 local loopback-only read-only observability dashboard (no stored dashboard tables)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -443,4 +480,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a dashboard, then real execution. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Checkpoint 13+ is **not** implemented yet.
+Later checkpoints will add a real execution engine, then wallet security. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Checkpoint 14+ is **not** implemented yet.

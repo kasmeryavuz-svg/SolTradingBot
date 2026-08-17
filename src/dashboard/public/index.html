@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>SolTradingBot Dashboard — Checkpoint 13</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="topbar">
+      <div class="brand">
+        <p class="brand-name">SolTradingBot</p>
+        <p class="brand-meta">Checkpoint 13 · Local observability</p>
+      </div>
+      <div class="status-cluster" aria-label="Safety status">
+        <span class="badge badge-readonly">READ ONLY</span>
+        <span class="badge badge-disabled">TRADING DISABLED</span>
+      </div>
+      <div class="toolbar">
+        <p id="last-refreshed" class="last-refreshed">Last refreshed: n/a</p>
+        <label class="auto-refresh">
+          <input id="auto-refresh" type="checkbox" />
+          Auto-refresh 15s
+        </label>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+    <div class="shell">
+      <nav class="nav" aria-label="Dashboard sections">
+        <button type="button" class="nav-btn" data-section="overview" aria-current="page">Overview</button>
+        <button type="button" class="nav-btn" data-section="market">Market</button>
+        <button type="button" class="nav-btn" data-section="paper">Paper</button>
+        <button type="button" class="nav-btn" data-section="performance">Performance</button>
+        <button type="button" class="nav-btn" data-section="research">Research</button>
+        <button type="button" class="nav-btn" data-section="health">Data Health</button>
+      </nav>
+      <main id="main">
+        <p class="notice">
+          This page shows latest stored observations from the local database. It is not a live market feed and it cannot trade.
+        </p>
+        <section id="section-overview" class="panel" aria-labelledby="overview-title"></section>
+        <section id="section-market" class="panel" hidden aria-labelledby="market-title"></section>
+        <section id="section-paper" class="panel" hidden aria-labelledby="paper-title"></section>
+        <section id="section-performance" class="panel" hidden aria-labelledby="performance-title"></section>
+        <section id="section-research" class="panel" hidden aria-labelledby="research-title"></section>
+        <section id="section-health" class="panel" hidden aria-labelledby="health-title"></section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

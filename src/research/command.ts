@@ -57,12 +57,19 @@ export function executeResearchCatalog(): ResearchCandidateDescriptor[] {
   return listResearchCandidateDescriptors();
 }
 
-export function executeResearchCompare(config: AppConfig): ResearchCompareReport {
+export type ResearchIntegrityMode = 'verify' | 'skip';
+
+export function executeResearchCompare(
+  config: AppConfig,
+  options: { integrity?: ResearchIntegrityMode } = {},
+): ResearchCompareReport {
   const source = openSqliteResearchDataSource(config.database);
   try {
     return source.withReadSnapshot(() => {
       source.verifyCompatibleSchema();
-      source.verifyIntegrity();
+      if ((options.integrity ?? 'verify') === 'verify') {
+        source.verifyIntegrity();
+      }
       const dataset = source.loadResearchDataset();
       return buildResearchCompareReport(dataset);
     });

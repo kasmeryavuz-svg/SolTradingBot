@@ -82,6 +82,9 @@ describe('loadConfig', () => {
       research: {
         tradeLimit: 20,
       },
+      dashboard: {
+        port: 4313,
+      },
     });
   });
 
@@ -344,6 +347,47 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ RESEARCH_TRADE_LIMIT: '101' });
     }).toThrow(/Invalid RESEARCH_TRADE_LIMIT/);
+  });
+
+  it('loads the dashboard port from the environment', () => {
+    const config = loadConfig({ DASHBOARD_PORT: '4500' });
+    expect(config.dashboard).toEqual({ port: 4500 });
+  });
+
+  it('accepts dashboard ports at the inclusive bounds', () => {
+    expect(loadConfig({ DASHBOARD_PORT: '1024' }).dashboard.port).toBe(1024);
+    expect(loadConfig({ DASHBOARD_PORT: '65535' }).dashboard.port).toBe(65535);
+    expect(loadConfig({ DASHBOARD_PORT: '4313' }).dashboard.port).toBe(4313);
+    expect(loadConfig({ DASHBOARD_PORT: ' 4313 ' }).dashboard.port).toBe(4313);
+  });
+
+  it('uses the default dashboard port for empty or whitespace DASHBOARD_PORT', () => {
+    expect(loadConfig({ DASHBOARD_PORT: '' }).dashboard.port).toBe(4313);
+    expect(loadConfig({ DASHBOARD_PORT: '   ' }).dashboard.port).toBe(4313);
+  });
+
+  it('rejects invalid dashboard ports without parseInt prefix acceptance', () => {
+    for (const value of ['1023', '65536', '0', '-1', '1.5', '4313x', '999999999999999999', 'NaN']) {
+      expect(() => loadConfig({ DASHBOARD_PORT: value })).toThrow(/Invalid DASHBOARD_PORT/);
+    }
+  });
+
+  it('ignores DASHBOARD_HOST because the bind host is code-defined', () => {
+    const config = loadConfig({ DASHBOARD_HOST: '0.0.0.0' });
+    expect(config.dashboard).toEqual({ port: 4313 });
+    expect(config).not.toHaveProperty('dashboardHost');
+  });
+
+  it('rejects a dashboard port below 1024', () => {
+    expect(() => {
+      loadConfig({ DASHBOARD_PORT: '1023' });
+    }).toThrow(/Invalid DASHBOARD_PORT/);
+  });
+
+  it('rejects a dashboard port above 65535', () => {
+    expect(() => {
+      loadConfig({ DASHBOARD_PORT: '65536' });
+    }).toThrow(/Invalid DASHBOARD_PORT/);
   });
 
   it('rejects a research trade display limit of zero', () => {

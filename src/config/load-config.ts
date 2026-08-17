@@ -5,6 +5,7 @@ import {
   parseBoundedPositiveInteger,
   parseEnumValue,
   parseHttpUrl,
+  parseIntegerInInclusiveRange,
   parsePositiveInteger,
   readOptionalEnv,
 } from '../utils/parse-env.js';
@@ -34,6 +35,9 @@ import {
   DEFAULT_EXIT_HISTORY_LIMIT,
   DEFAULT_PERFORMANCE_TRADE_LIMIT,
   DEFAULT_RESEARCH_TRADE_LIMIT,
+  DEFAULT_DASHBOARD_PORT,
+  DASHBOARD_PORT_MIN,
+  DASHBOARD_PORT_MAX,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -114,6 +118,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     exit: loadExitConfig(source),
     performance: loadPerformanceConfig(source),
     research: loadResearchConfig(source),
+    dashboard: loadDashboardConfig(source),
   };
 }
 
@@ -277,6 +282,18 @@ function loadResearchConfig(source: EnvSource): AppConfig['research'] {
       DEFAULT_RESEARCH_TRADE_LIMIT,
       'RESEARCH_TRADE_LIMIT',
       HISTORY_LIMIT_MAX,
+    ),
+  };
+}
+
+function loadDashboardConfig(source: EnvSource): AppConfig['dashboard'] {
+  return {
+    port: parseIntegerInInclusiveRange(
+      readOptionalEnv(source, 'DASHBOARD_PORT'),
+      DEFAULT_DASHBOARD_PORT,
+      'DASHBOARD_PORT',
+      DASHBOARD_PORT_MIN,
+      DASHBOARD_PORT_MAX,
     ),
   };
 }

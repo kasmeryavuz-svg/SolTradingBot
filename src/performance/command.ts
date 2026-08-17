@@ -16,20 +16,30 @@ export function assertNoExtraPerformanceArguments(argv: readonly string[], comma
   }
 }
 
-export function executePerformanceReport(config: AppConfig): PerformanceReport {
-  return loadValidatedPerformanceReport(config);
+export type PerformanceIntegrityMode = 'verify' | 'skip';
+
+export function executePerformanceReport(
+  config: AppConfig,
+  options: { integrity?: PerformanceIntegrityMode } = {},
+): PerformanceReport {
+  return loadValidatedPerformanceReport(config, options.integrity ?? 'verify');
 }
 
 export function executePerformanceTrades(config: AppConfig): PerformanceReport {
-  return loadValidatedPerformanceReport(config);
+  return loadValidatedPerformanceReport(config, 'verify');
 }
 
-function loadValidatedPerformanceReport(config: AppConfig): PerformanceReport {
+function loadValidatedPerformanceReport(
+  config: AppConfig,
+  integrity: PerformanceIntegrityMode,
+): PerformanceReport {
   const source = openSqlitePerformanceDataSource(config.database);
   try {
     return source.withReadSnapshot(() => {
       source.verifyCompatibleSchema();
-      source.verifyIntegrity();
+      if (integrity === 'verify') {
+        source.verifyIntegrity();
+      }
       const evidence = source.loadCompletedTradeEvidence();
       const trades = evidence.map((item) => normalizeCompletedPaperTrade(item));
       return buildPerformanceReport(trades);
