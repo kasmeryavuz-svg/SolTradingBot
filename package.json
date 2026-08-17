@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 13 adds a local loopback-only read-only observability dashboard over stored evidence — blockchain writes and trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 14 adds a Jupiter Swap API V2 unsigned swap preflight engine — signing, broadcast, and live trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -46,7 +46,10 @@
     "research:catalog": "tsx src/research/run-catalog.ts",
     "research:compare": "tsx src/research/run-compare.ts",
     "research:trades": "tsx src/research/run-trades.ts",
-    "dashboard:start": "tsx src/dashboard/run.ts"
+    "dashboard:start": "tsx src/dashboard/run.ts",
+    "execution:status": "tsx src/execution/status.ts",
+    "execution:build": "tsx src/execution/build.ts",
+    "execution:simulate": "tsx src/execution/simulate.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

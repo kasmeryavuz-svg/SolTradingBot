@@ -74,6 +74,15 @@ export type DashboardConfig = {
   port: number;
 };
 
+export type ExecutionConfig = {
+  takerPublicKey: string | null;
+  inputMint: string | null;
+  outputMint: string | null;
+  amountRaw: string | null;
+  providerTimeoutMs: number;
+  jupiterApiKeyConfigured: boolean;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -91,6 +100,7 @@ export type AppConfig = {
   performance: PerformanceConfig;
   research: ResearchConfig;
   dashboard: DashboardConfig;
+  execution: ExecutionConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

@@ -85,6 +85,14 @@ describe('loadConfig', () => {
       dashboard: {
         port: 4313,
       },
+      execution: {
+        takerPublicKey: null,
+        inputMint: null,
+        outputMint: null,
+        amountRaw: null,
+        providerTimeoutMs: 5000,
+        jupiterApiKeyConfigured: false,
+      },
     });
   });
 
@@ -406,6 +414,44 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ RISK_HISTORY_LIMIT: '101' });
     }).toThrow(/Invalid RISK_HISTORY_LIMIT/);
+  });
+
+  it('loads public execution settings without storing the Jupiter API key', () => {
+    const config = loadConfig({
+      EXECUTION_TAKER_PUBKEY: 'GkwFnmMDvn3HGMpJpWBg8tgJxr3NxNvg3AXxvXVPbRGJ',
+      EXECUTION_INPUT_MINT: WRAPPED_SOL_MINT,
+      EXECUTION_OUTPUT_MINT: USDC_MINT,
+      EXECUTION_AMOUNT_RAW: '1000000',
+      EXECUTION_PROVIDER_TIMEOUT_MS: '8000',
+      JUPITER_API_KEY: 'SUPER_SECRET_JUP_KEY_123',
+    });
+
+    expect(config.execution).toEqual({
+      takerPublicKey: 'GkwFnmMDvn3HGMpJpWBg8tgJxr3NxNvg3AXxvXVPbRGJ',
+      inputMint: WRAPPED_SOL_MINT,
+      outputMint: USDC_MINT,
+      amountRaw: '1000000',
+      providerTimeoutMs: 8000,
+      jupiterApiKeyConfigured: true,
+    });
+    expect(JSON.stringify(config)).not.toContain('SUPER_SECRET_JUP_KEY_123');
+  });
+
+  it('ignores JUPITER_BASE_URL because the provider host is code-defined', () => {
+    const config = loadConfig({ JUPITER_BASE_URL: 'http://127.0.0.1' });
+    expect(config.execution.takerPublicKey).toBeNull();
+    expect(config).not.toHaveProperty('jupiterBaseUrl');
+  });
+
+  it('rejects non-canonical execution amountRaw and timeout prefix forms', () => {
+    expect(() => loadConfig({ EXECUTION_AMOUNT_RAW: '01' })).toThrow(/Invalid EXECUTION_AMOUNT_RAW/);
+    expect(() => loadConfig({ EXECUTION_AMOUNT_RAW: '1.0' })).toThrow(/Invalid EXECUTION_AMOUNT_RAW/);
+    expect(() => loadConfig({ EXECUTION_PROVIDER_TIMEOUT_MS: '5000x' })).toThrow(
+      /Invalid EXECUTION_PROVIDER_TIMEOUT_MS/,
+    );
+    expect(() => loadConfig({ EXECUTION_PROVIDER_TIMEOUT_MS: '499' })).toThrow(
+      /Invalid EXECUTION_PROVIDER_TIMEOUT_MS/,
+    );
   });
 
   it('does not read the process environment', () => {

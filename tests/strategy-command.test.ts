@@ -190,6 +190,10 @@ describe('strategy commands', () => {
       expect(source).not.toMatch(/createWallet|importWallet|secret key|seed phrase|mnemonic|Keypair|sendTransaction|@solana\/web3\.js|jupiter|jito|paper trade|backtest/i);
     }
     const packageJson = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
-    expect(packageJson).not.toMatch(/createWallet|importWallet|secret key|seed phrase|mnemonic|Keypair|sendTransaction|@solana\/web3\.js|jupiter|jito|paper trade/i);
+    expect(packageJson).not.toMatch(
+      /createWallet|importWallet|secret key|seed phrase|mnemonic|Keypair|sendTransaction|@solana\/web3\.js|jito|paper trade/i,
+    );
+    expect(packageJson).toContain('execution:status');
+    expect(packageJson).not.toMatch(/execution:send|execution:live|execution:watch|execution:trade|execution:buy|execution:sell|execution:jito/);
   });
 });

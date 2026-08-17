@@ -1,3 +1,4 @@
+import { isCanonicalAmountRaw, isCanonicalSolanaAddress } from '../execution/intent.js';
 import { parseTokenMintList } from '../market-data/watchlist.js';
 import {
   ConfigError,
@@ -38,6 +39,9 @@ import {
   DEFAULT_DASHBOARD_PORT,
   DASHBOARD_PORT_MIN,
   DASHBOARD_PORT_MAX,
+  DEFAULT_EXECUTION_PROVIDER_TIMEOUT_MS,
+  EXECUTION_PROVIDER_TIMEOUT_MS_MIN,
+  EXECUTION_PROVIDER_TIMEOUT_MS_MAX,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -119,6 +123,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     performance: loadPerformanceConfig(source),
     research: loadResearchConfig(source),
     dashboard: loadDashboardConfig(source),
+    execution: loadExecutionConfig(source),
   };
 }
 
@@ -296,6 +301,57 @@ function loadDashboardConfig(source: EnvSource): AppConfig['dashboard'] {
       DASHBOARD_PORT_MAX,
     ),
   };
+}
+
+function loadExecutionConfig(source: EnvSource): AppConfig['execution'] {
+  return {
+    takerPublicKey: parseOptionalCanonicalAddress(
+      readOptionalEnv(source, 'EXECUTION_TAKER_PUBKEY'),
+      'EXECUTION_TAKER_PUBKEY',
+    ),
+    inputMint: parseOptionalCanonicalAddress(
+      readOptionalEnv(source, 'EXECUTION_INPUT_MINT'),
+      'EXECUTION_INPUT_MINT',
+    ),
+    outputMint: parseOptionalCanonicalAddress(
+      readOptionalEnv(source, 'EXECUTION_OUTPUT_MINT'),
+      'EXECUTION_OUTPUT_MINT',
+    ),
+    amountRaw: parseOptionalCanonicalAmountRaw(
+      readOptionalEnv(source, 'EXECUTION_AMOUNT_RAW'),
+      'EXECUTION_AMOUNT_RAW',
+    ),
+    providerTimeoutMs: parseIntegerInInclusiveRange(
+      readOptionalEnv(source, 'EXECUTION_PROVIDER_TIMEOUT_MS'),
+      DEFAULT_EXECUTION_PROVIDER_TIMEOUT_MS,
+      'EXECUTION_PROVIDER_TIMEOUT_MS',
+      EXECUTION_PROVIDER_TIMEOUT_MS_MIN,
+      EXECUTION_PROVIDER_TIMEOUT_MS_MAX,
+    ),
+    jupiterApiKeyConfigured: readOptionalEnv(source, 'JUPITER_API_KEY') !== undefined,
+  };
+}
+
+function parseOptionalCanonicalAddress(raw: string | undefined, name: string): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+  if (!isCanonicalSolanaAddress(raw)) {
+    throw new ConfigError(`Invalid ${name}. Expected a valid Solana address.`);
+  }
+  return raw;
+}
+
+function parseOptionalCanonicalAmountRaw(raw: string | undefined, name: string): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+  if (!isCanonicalAmountRaw(raw)) {
+    throw new ConfigError(
+      `Invalid ${name}. Expected a canonical positive decimal integer string in native token units.`,
+    );
+  }
+  return raw;
 }
 
 function parseDatabasePath(raw: string | undefined, fallback: string): string {
