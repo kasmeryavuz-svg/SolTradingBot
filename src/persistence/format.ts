@@ -10,9 +10,10 @@ export function formatCapabilityFooter(): string[] {
     'Token risk scanner: available',
     'Feature engine: available',
     'Strategy evaluator: available',
-    'Backtester: unavailable',
+    'Backtester: available',
+    'Paper trading: unavailable',
     'Trading capability: DISABLED',
-    'Checkpoint: 07',
+    'Checkpoint: 08',
   ];
 }
 

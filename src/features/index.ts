@@ -19,5 +19,8 @@ export { featureSourceIdentity } from './numbers.js';
 export {
   CONCENTRATION_UNAVAILABLE_REASON,
   RISK_REPORT_UNAVAILABLE_REASON,
+  riskDerivedFeatures,
+  riskDerivedFeaturesFromFacts,
+  riskFeatureInputFromReport,
 } from './risk-features.js';
-export { FeatureEngineError, type FeatureInputs, type FeatureValue, type FeatureVector } from './types.js';
+export { FeatureEngineError, type FeatureInputs, type FeatureValue, type FeatureVector, type RiskFeatureInput } from './types.js';

@@ -8,6 +8,9 @@ import { featureSourceIdentity, requireUtcTimestamp } from '../src/features/numb
 import {
   CONCENTRATION_UNAVAILABLE_REASON,
   RISK_REPORT_UNAVAILABLE_REASON,
+  riskDerivedFeatures,
+  riskDerivedFeaturesFromFacts,
+  riskFeatureInputFromReport,
 } from '../src/features/risk-features.js';
 import { FINDING_CODES, TOKEN_2022_PROGRAM_ID } from '../src/risk/constants.js';
 import {
@@ -319,6 +322,35 @@ describe('feature engine historical and risk features', () => {
     );
     expect(featureValue(token2022, 'risk_top1_token_account_concentration_bps').value).not.toBe(0);
     expect(featureValue(token2022, 'risk_age_seconds').value).toBe(300);
+  });
+
+  it('derives identical c06_v1 risk features from a live TokenRiskReport and its projection', () => {
+    const report = sampleRisk({
+      dataCompleteness: 'partial',
+      tokenProgram: 'token_2022',
+      programOwner: TOKEN_2022_PROGRAM_ID,
+      findings: [
+        finding(FINDING_CODES.MINT_AUTHORITY_ACTIVE, 'high'),
+        finding(FINDING_CODES.TOKEN_ACCOUNT_CONCENTRATION_VERY_HIGH, 'critical'),
+        finding(FINDING_CODES.UNCLASSIFIED_TOKEN_EXTENSION_PRESENT, 'info'),
+      ],
+      highestFindingSeverity: 'critical',
+      concentration: null,
+      concentrationUnavailableReason: 'largest token accounts unavailable',
+      checks: [
+        { check: 'mint_account', ok: true, contextSlot: 100, error: null },
+        { check: 'supply', ok: true, contextSlot: 101, error: null },
+        { check: 'largest_accounts', ok: false, contextSlot: null, error: 'unavailable' },
+      ],
+      largestTokenAccounts: [],
+    });
+    const facts = riskFeatureInputFromReport(report);
+    expect(riskDerivedFeatures(report, FEATURE_AS_OF)).toEqual(
+      riskDerivedFeaturesFromFacts(facts, FEATURE_AS_OF),
+    );
+    expect(facts).not.toHaveProperty('extensions');
+    expect(facts).not.toHaveProperty('classified');
+    expect(facts).not.toHaveProperty('rawName');
   });
 
   it('rejects future risk, mismatched tokens, and market collected after asOf', () => {

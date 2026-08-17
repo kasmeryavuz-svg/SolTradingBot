@@ -14,7 +14,7 @@ Do not implement a later checkpoint until the current one is complete.
 | 05 | Token risk scanner | Complete |
 | 06 | Signal and feature engine | Complete |
 | 07 | First strategy | Complete |
-| 08 | Backtester | Not started |
+| 08 | Backtester | Complete |
 | 09 | Paper trading | Not started |
 | 10 | Position management | Not started |
 | 11 | Exit engine | Not started |
@@ -30,6 +30,6 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 07 First strategy (complete after validation)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, and the first experimental s07_v1 entry-candidate classifier
-- **Not implemented:** everything from Checkpoint 08 onward
+- **Active checkpoint:** 08 Backtester (complete after validation)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, and a deterministic read-only historical backtester
+- **Not implemented:** everything from Checkpoint 09 onward

@@ -45,7 +45,7 @@ try {
     const evaluation = evaluateStrategy(vector, { evaluatedAt: collected.generatedAt });
     const recorded = repository.recordStrategyBundle({
       marketSnapshot: collected.inputs.market,
-      riskReport: collected.inputs.risk,
+      riskReport: collected.riskReport,
       featureVector: vector,
       strategyEvaluation: evaluation,
     });

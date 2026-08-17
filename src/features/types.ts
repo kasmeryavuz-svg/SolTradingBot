@@ -1,5 +1,10 @@
 import type { MarketSnapshot } from '../market-data/types.js';
-import type { TokenRiskReport } from '../risk/types.js';
+import type {
+  DataCompleteness,
+  RiskFinding,
+  TokenAccountConcentration,
+  TokenProgramKind,
+} from '../risk/types.js';
 import type { FeatureName } from './definitions.js';
 
 export class FeatureEngineError extends Error {
@@ -19,10 +24,23 @@ export type FeatureValueStatus = (typeof FEATURE_VALUE_STATUSES)[number];
 export type FeatureCompleteness = (typeof FEATURE_COMPLETENESS_VALUES)[number];
 export type FeatureCategory = (typeof FEATURE_CATEGORIES)[number];
 
+/**
+ * Persisted and live facts required to derive c06_v1 risk features.
+ * This is not a TokenRiskReport. Checkpoint 05 did not store every parser field.
+ */
+export type RiskFeatureInput = {
+  tokenMint: string;
+  scannedAt: string;
+  tokenProgram: TokenProgramKind;
+  dataCompleteness: DataCompleteness;
+  findings: readonly RiskFinding[];
+  concentration: TokenAccountConcentration | null;
+};
+
 export type FeatureInputs = {
   market: MarketSnapshot;
   previousMarket: MarketSnapshot | null;
-  risk: TokenRiskReport | null;
+  risk: RiskFeatureInput | null;
   /**
    * Sanitized live-command detail only. Persisted risk-unavailable feature
    * reasons use stable codes, not this transient provider text.

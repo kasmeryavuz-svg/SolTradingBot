@@ -7,6 +7,7 @@ import type { RiskDataProvider } from '../risk/provider.js';
 import type { TokenRiskReport } from '../risk/types.js';
 import { sanitizeErrorText } from '../utils/sanitize-rpc-url.js';
 import { generateFeatureVector } from './engine.js';
+import { riskFeatureInputFromReport } from './risk-features.js';
 import type { FeatureInputs, FeatureVector } from './types.js';
 
 export async function collectLiveFeatureInputs(options: {
@@ -16,7 +17,7 @@ export async function collectLiveFeatureInputs(options: {
   commitment: TokenRiskReport['commitment'];
   previousMarket?: MarketSnapshot | null;
   now?: () => Date;
-}): Promise<{ inputs: FeatureInputs; generatedAt: string }> {
+}): Promise<{ inputs: FeatureInputs; riskReport: TokenRiskReport | null; generatedAt: string }> {
   const riskAttempt = await readLiveRisk(options);
   const market = await options.marketProvider.getSnapshot(options.tokenMint);
   const generatedAt = (options.now ?? (() => new Date()))().toISOString();
@@ -25,10 +26,11 @@ export async function collectLiveFeatureInputs(options: {
     inputs: {
       market,
       previousMarket: options.previousMarket ?? null,
-      risk: riskAttempt.risk,
+      risk: riskAttempt.risk === null ? null : riskFeatureInputFromReport(riskAttempt.risk),
       riskUnavailableReason: riskAttempt.riskUnavailableReason,
       asOf: generatedAt,
     },
+    riskReport: riskAttempt.risk,
     generatedAt,
   };
 }

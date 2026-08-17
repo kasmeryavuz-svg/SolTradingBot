@@ -4,39 +4,40 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 07
+## Current checkpoint: 08
 
 **Current capabilities:**
 
 - TypeScript foundation
 - hard trading safety guard
 - read-only Solana RPC
-- normalized DEX market data
-- automatic Solana token discovery
-- local SQLite persistence
+- market observations
+- discovery
+- SQLite historical data
 - schema migrations
 - historical discovery runs
 - historical market snapshots
 - explicit persistent collector
 - technical token risk scanning
 - deterministic feature engine
-- first deterministic strategy
-- strategy rule explanations
-- historical strategy evaluations
+- deterministic s07_v1 strategy
+- historical point-in-time backtester
 
 ### What this checkpoint is not
 
 - **Blockchain capability: READ ONLY**
-- **SQLite writes: YES**
+- **SQLite operational persistence: YES**
+- **Backtest database access: READ ONLY**
 - **Risk scanner: YES**
 - **Feature engine: YES**
 - **Strategy evaluator: YES**
-- **Backtester: NO**
+- **Backtester: YES (historical event study only)**
 - **Paper trading: NO**
 - **Wallet: NO**
 - **Transaction signing: NO**
-- **Blockchain transaction sending: NO**
+- **Transaction sending: NO**
 - **Position management: NO**
+- **Exit engine: NO**
 - **Real trading: NO**
 
 `ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or paper trade.
@@ -100,17 +101,18 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 07
+Checkpoint: 08
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
 Feature engine: available
 Strategy evaluator: available
-Backtester: unavailable
+Backtester: available
+Paper trading: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, or strategy watchers, and it does **not** write database rows.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, or backtest watchers, and it does **not** write database rows. It does **not** automatically run a backtest.
 
 ## How to check Solana, market data, and discovery
 
@@ -192,9 +194,44 @@ Show stored strategy evaluations for one mint:
 npm run strategy:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 ```
 
-`collect:once`, `collect:watch`, `risk:record`, and `feature:record` do **not** run the strategy automatically. There is no `strategy:watch` and no backtester in this checkpoint.
+`collect:once`, `collect:watch`, `risk:record`, and `feature:record` do **not** run the strategy automatically. There is no `strategy:watch`.
 
 See [docs/CHECKPOINT_07.md](docs/CHECKPOINT_07.md) for a beginner explanation of rules, classifications, and why thresholds are frozen.
+
+## How to run the historical backtester
+
+Checkpoint 08 replays stored market snapshots through frozen `s07_v1`. It is a **fixed-horizon historical strategy event study**, not trading.
+
+Backtest spec `b08_v1`:
+
+- every stored market snapshot is classified independently
+- historical as-of time is `market.collectedAt`
+- 15-minute fixed horizon (`900` seconds)
+- 120-second outcome tolerance
+- same pair only
+- earliest same-pair snapshot in the outcome window
+- `grossForwardReturnPct` is a gross price return
+- no transaction costs, slippage, fees, positions, or paper trading
+
+Replay all stored tokens:
+
+```bash
+npm run backtest:run
+```
+
+Replay one mint:
+
+```bash
+npm run backtest:run -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+`backtest:run` requires `DATABASE_ENABLED=true` and an existing SQLite file. It opens that file **read-only**. It does not create a missing database, run migrations, or write rows. If the file is missing, run `npm run db:init` as a separate command first.
+
+The backtest covers only observations this local bot actually stored. It is not the entire Solana market, all meme coins, or all pair launches. Consecutive `ENTRY_CANDIDATE` events can overlap; they are not executed trades.
+
+A positive average gross forward return on this sample would still **not** mean the strategy is profitable. Execution costs are excluded. Future performance is not established.
+
+See [docs/CHECKPOINT_08.md](docs/CHECKPOINT_08.md) for point-in-time replay, outcome windows, and dataset bias.
 
 ## How to use the local database
 
@@ -265,6 +302,7 @@ src/             Application source code
   risk/          Read-only token risk scan, evaluator, and risk commands
   features/      Deterministic feature engine and feature commands
   strategy/      Experimental s07_v1 entry-candidate classifier and strategy commands
+  backtest/      Read-only historical b08_v1 event study for frozen s07_v1
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -272,4 +310,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a backtester and paper trading. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add paper trading and position management. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
