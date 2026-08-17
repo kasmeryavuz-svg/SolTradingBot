@@ -17,12 +17,12 @@ export function formatCapabilityFooter(): string[] {
     'Performance analytics: available',
     'Strategy benchmark lab: available',
     'Dashboard: available',
-    'Execution preflight engine: available',
-    'Wallet: unavailable',
-    'Signing: unavailable',
+    'Execution preflight: available',
+    'Wallet security boundary: available',
+    'Signing: manual/local only',
     'Transaction broadcast: unavailable',
     'Trading capability: DISABLED',
-    'Checkpoint: 14',
+    'Checkpoint: 15',
   ];
 }
 

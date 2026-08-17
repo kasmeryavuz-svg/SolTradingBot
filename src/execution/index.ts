@@ -74,7 +74,8 @@ export {
   missingPublicExecutionFields,
   requirePublicExecutionIntent,
 } from './service.js';
-export { simulateNormalizedBuild } from './simulator.js';
+export { simulateNormalizedBuild, simulateNormalizedBuildWithFinalCompiled } from './simulator.js';
+export type { ExecutionSimulateArtifacts } from './simulator.js';
 export { compileUnsignedCandidate } from './transaction.js';
 export type {
   ExecutionBuildReport,

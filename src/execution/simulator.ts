@@ -2,7 +2,7 @@ import { COMPUTE_UNIT_HARD_MAX, SOLANA_MAINNET_GENESIS_HASH } from './constants.
 import { calculateFinalComputeLimit } from './compute.js';
 import { classifyPriorityFee, isBlockhashExpired } from './fee.js';
 import { classifyExecutionPreflight } from './classify.js';
-import { compileUnsignedCandidate } from './transaction.js';
+import { compileUnsignedCandidate, type CompiledUnsignedCandidate } from './transaction.js';
 import type {
   ExecutionFeeEvidence,
   ExecutionRpc,
@@ -19,12 +19,32 @@ import {
 } from './identity.js';
 import type { ExecutionIntent } from './types.js';
 
+export type ExecutionSimulateArtifacts = {
+  readonly report: ExecutionSimulateReport;
+  readonly finalCompiled: CompiledUnsignedCandidate;
+};
+
 export async function simulateNormalizedBuild(input: {
   intent: ExecutionIntent;
   build: NormalizedJupiterBuild;
   rpc: ExecutionRpc;
   signal?: AbortSignal;
 }): Promise<ExecutionSimulateReport> {
+  const { report } = await simulateNormalizedBuildWithFinalCompiled(input);
+  return report;
+}
+
+/**
+ * Same e14 simulation as `simulateNormalizedBuild`, plus the exact unsigned
+ * compiled transaction that was used for the second / final simulation.
+ * Checkpoint 15 signs this object. It is not part of the public e14 report.
+ */
+export async function simulateNormalizedBuildWithFinalCompiled(input: {
+  intent: ExecutionIntent;
+  build: NormalizedJupiterBuild;
+  rpc: ExecutionRpc;
+  signal?: AbortSignal;
+}): Promise<ExecutionSimulateArtifacts> {
   const executionIntentFingerprint = fingerprintExecutionIntent(input.intent);
   const jupiterBuildFingerprint = fingerprintJupiterBuild({
     executionDefinitionFingerprint: EXECUTION_DEFINITION_FINGERPRINT,
@@ -161,34 +181,37 @@ export async function simulateNormalizedBuild(input: {
   });
 
   return {
-    specVersion: EXECUTION_SPEC_VERSION,
-    specName: EXECUTION_SPEC_NAME,
-    executionDefinitionFingerprint: EXECUTION_DEFINITION_FINGERPRINT,
-    executionIntentFingerprint,
-    jupiterBuildFingerprint,
-    executionCandidateFingerprint,
-    executionSimulationFingerprint,
-    intent: input.intent,
-    quote: {
-      outAmount: input.build.outAmount,
-      otherAmountThreshold: input.build.otherAmountThreshold,
-      slippageBps: input.build.slippageBps,
-      routeHopCount: input.build.routePlan.length,
-      dexLabels: input.build.routePlan.map((hop) => hop.label),
+    report: {
+      specVersion: EXECUTION_SPEC_VERSION,
+      specName: EXECUTION_SPEC_NAME,
+      executionDefinitionFingerprint: EXECUTION_DEFINITION_FINGERPRINT,
+      executionIntentFingerprint,
+      jupiterBuildFingerprint,
+      executionCandidateFingerprint,
+      executionSimulationFingerprint,
+      intent: input.intent,
+      quote: {
+        outAmount: input.build.outAmount,
+        otherAmountThreshold: input.build.otherAmountThreshold,
+        slippageBps: input.build.slippageBps,
+        routeHopCount: input.build.routePlan.length,
+        dexLabels: input.build.routePlan.map((hop) => hop.label),
+      },
+      computeUnitPriceMicroLamports: input.build.computeUnitPriceMicroLamports,
+      candidate: finalCompiled.candidate,
+      observedGenesisHash,
+      currentBlockHeight: currentBlockHeightBeforeFinal ?? currentBlockHeightAfterFirst,
+      currentBlockHeightAfterFirst,
+      currentBlockHeightBeforeFinal,
+      firstSimulation,
+      finalComputeUnitLimit: computeLimit?.kind === 'ok' ? computeLimit.finalLimit : null,
+      secondSimulation,
+      fees,
+      providerValid: true,
+      status,
+      message: simulateStatusMessage(status),
     },
-    computeUnitPriceMicroLamports: input.build.computeUnitPriceMicroLamports,
-    candidate: finalCompiled.candidate,
-    observedGenesisHash,
-    currentBlockHeight: currentBlockHeightBeforeFinal ?? currentBlockHeightAfterFirst,
-    currentBlockHeightAfterFirst,
-    currentBlockHeightBeforeFinal,
-    firstSimulation,
-    finalComputeUnitLimit: computeLimit?.kind === 'ok' ? computeLimit.finalLimit : null,
-    secondSimulation,
-    fees,
-    providerValid: true,
-    status,
-    message: simulateStatusMessage(status),
+    finalCompiled,
   };
 }
 
