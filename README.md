@@ -35,7 +35,6 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
 - **Dashboard: NO**
-- **Dashboard: NO**
 - **Wallet: NO**
 - **Signer: NO**
 - **Transaction sending: NO**
