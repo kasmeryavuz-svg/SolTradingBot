@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 12
+## Current checkpoint: 12.5
 
 **Current capabilities:**
 
@@ -22,6 +22,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - pm10_v1 simulated position management
 - x11_v1 paper exit engine
 - a12_v1 GROSS paper performance analytics
+- r125_v1 strategy research / benchmark lab
 
 ### What this checkpoint is not
 
@@ -32,7 +33,8 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Position management: YES**
 - **Exit engine: YES**
 - **Performance analytics: YES**
-- **Strategy benchmark lab: NO**
+- **Strategy benchmark lab: YES**
+- **Dashboard: NO**
 - **Dashboard: NO**
 - **Wallet: NO**
 - **Signer: NO**
@@ -48,6 +50,8 @@ pm10_v1 may open a **simulated paper position** from that observation: one curre
 x11_v1 may then **simulate a full close** of that open position using the **exact opening DEX pair**, a 10% stop, a 20% take profit, and a 6-hour maximum hold. Those thresholds are an experimental baseline. They are not optimized, not financial advice, and not evidence of live profitability.
 
 a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated closes already stored in SQLite. Those numbers exclude fees, slippage, and execution. They are not net performance, not a wallet result, and not a forecast. The current local database may have zero closed paper trades; that is not a 0% result.
+
+r125_v1 may then **compare five fixed entry hypotheses** against the same historical SQLite dataset. Those comparisons reuse frozen c06 features, frozen x11 exits, and a12-compatible GROSS math. They do **not** prove a live edge, pick a winner, or optimize thresholds.
 
 Features describe observations. They do **not** decide trades.
 
@@ -108,7 +112,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 12
+Checkpoint: 12.5
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
@@ -119,12 +123,12 @@ Paper trading: available
 Position management: available
 Exit engine: available
 Performance analytics: available
-Strategy benchmark lab: unavailable
+Strategy benchmark lab: available
 Dashboard: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, or performance watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, or `performance:trades`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, or research watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, or `research:trades`.
 
 ## How to check Solana, market data, and discovery
 
@@ -332,9 +336,31 @@ If the local database has no closed paper positions, the report status is `no_cl
 
 These GROSS paper numbers exclude fees, slippage, price impact, MEV, failed transactions, and partial fills. The stored exit price is an observed reference price, not a guaranteed fill. Gross paper results are not evidence of live profitability.
 
-There is no `performance:watch`. Strategy Research / Benchmark Lab is a later phase (12.5), not this checkpoint.
+There is no `performance:watch`.
 
 See [docs/CHECKPOINT_12.md](docs/CHECKPOINT_12.md) for beginner explanations of GROSS PnL, win rate, profit factor, closed-trade drawdown, and winner concentration.
+
+## How to run the strategy research / benchmark lab
+
+Phase 12.5 compares five **fixed** entry hypotheses against the **same** historical SQLite dataset. Spec `r125_v1` reconstructs frozen c06_v1 features point-in-time, uses frozen x11_v1 exits for every candidate, and reuses a12-compatible GROSS paper math. It does **not** send a transaction, write research tables, call the network, or declare a winner.
+
+```bash
+npm run research:catalog
+npm run research:compare
+npm run research:trades -- s07_baseline
+```
+
+`research:catalog` prints the five frozen candidates and their fingerprints. It contains **no** performance numbers.
+
+`research:compare` requires `DATABASE_ENABLED=true` and an existing SQLite file. It opens that file **read-only**. It always uses the full r125 research universe. There is no date picker, token filter, “best period” switch, or threshold flag.
+
+`research:trades` only limits how many completed **research** trades are **printed** for one candidate id. Default `RESEARCH_TRADE_LIMIT=20` (allowed `1..100`). That display bound does not change `research:compare`, the dataset fingerprint, or candidate metrics.
+
+Zero entries, zero completed trades, or many unresolved positions is acceptable. Do not loosen candidate rules to make the report prettier. Do not call the highest historical GROSS PnL a proven strategy.
+
+There is no `research:watch`, `research:optimize`, or `research:live`.
+
+See [docs/CHECKPOINT_12_5.md](docs/CHECKPOINT_12_5.md) and [docs/STRATEGY_RESEARCH_SOURCES.md](docs/STRATEGY_RESEARCH_SOURCES.md).
 
 ## How to use the local database
 
@@ -410,6 +436,7 @@ src/             Application source code
   position/      pm10_v1 simulated single-open-position management (no automatic exits or PnL)
   exit/          x11_v1 experimental paper exit engine (exact opening pair, full close, no PnL)
   performance/   a12_v1 read-only GROSS closed-paper-trade analytics (no stored metric tables)
+  research/      r125_v1 read-only strategy research / benchmark lab (no stored research tables)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -417,4 +444,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a Strategy Research / Benchmark Lab, then a dashboard, then real execution. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Phase 12.5 and Checkpoint 13+ are **not** implemented yet.
+Later checkpoints will add a dashboard, then real execution. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Checkpoint 13+ is **not** implemented yet.

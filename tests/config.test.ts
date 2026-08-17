@@ -79,6 +79,9 @@ describe('loadConfig', () => {
       performance: {
         tradeLimit: 20,
       },
+      research: {
+        tradeLimit: 20,
+      },
     });
   });
 
@@ -332,10 +335,21 @@ describe('loadConfig', () => {
     }).toThrow(/Invalid PERFORMANCE_TRADE_LIMIT/);
   });
 
-  it('rejects a performance trade display limit of zero', () => {
+  it('loads research trade display settings from the environment', () => {
+    const config = loadConfig({ RESEARCH_TRADE_LIMIT: '12' });
+    expect(config.research).toEqual({ tradeLimit: 12 });
+  });
+
+  it('rejects a research trade display limit above the bound', () => {
     expect(() => {
-      loadConfig({ PERFORMANCE_TRADE_LIMIT: '0' });
-    }).toThrow(/Invalid PERFORMANCE_TRADE_LIMIT/);
+      loadConfig({ RESEARCH_TRADE_LIMIT: '101' });
+    }).toThrow(/Invalid RESEARCH_TRADE_LIMIT/);
+  });
+
+  it('rejects a research trade display limit of zero', () => {
+    expect(() => {
+      loadConfig({ RESEARCH_TRADE_LIMIT: '0' });
+    }).toThrow(/Invalid RESEARCH_TRADE_LIMIT/);
   });
 
   it('rejects a paper history limit above the bound', () => {
