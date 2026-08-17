@@ -28,8 +28,10 @@ describe('paper formatter', () => {
     expect(lines).toContain('No order was created.');
     expect(lines).toContain('No position exists.');
     expect(lines).toContain('No blockchain transaction exists.');
-    expect(lines).toContain('Checkpoint: 11');
-    expect(lines).not.toMatch(/\bBUY NOW\b|\bbought\b|purchase executed|order filled|trade opened/i);
+    expect(lines).toContain('Checkpoint: 12');
+    expect(lines).not.toMatch(
+      /\bBUY NOW\b|\bbought\b|purchase executed|order filled|trade opened/i,
+    );
     expect(lines).not.toMatch(/profit|PnL|win rate/i);
   });
 
@@ -42,13 +44,19 @@ describe('paper formatter', () => {
     expect(lines).toContain('NONE');
     expect(lines).toContain('Quantity:');
     expect(lines).toContain('NOT MODELED');
-    expect(lines).toContain('This is a paper observation, not an executable blockchain quote or trade.');
+    expect(lines).toContain(
+      'This is a paper observation, not an executable blockchain quote or trade.',
+    );
     expect(lines).toContain('No wallet, order, position or transaction was created.');
-    expect(lines).not.toMatch(/\bBUY NOW\b|\bbought\b|purchase executed|order filled|trade opened/i);
+    expect(lines).not.toMatch(
+      /\bBUY NOW\b|\bbought\b|purchase executed|order filled|trade opened/i,
+    );
   });
 
   it('prints stored history without recomputing or claiming profitability', () => {
-    const lines = formatPaperHistoryLines('UnknownMint111111111111111111111111111', null).join('\n');
+    const lines = formatPaperHistoryLines('UnknownMint111111111111111111111111111', null).join(
+      '\n',
+    );
     expect(lines).toContain('No paper history found for this mint.');
     expect(lines).not.toMatch(/\bBUY\b|\bSELL\b|PnL|profit/);
   });

@@ -32,6 +32,7 @@ import {
   DEFAULT_PAPER_HISTORY_LIMIT,
   DEFAULT_POSITION_HISTORY_LIMIT,
   DEFAULT_EXIT_HISTORY_LIMIT,
+  DEFAULT_PERFORMANCE_TRADE_LIMIT,
   DEFAULT_RISK_HISTORY_LIMIT,
   DEFAULT_RISK_SCAN_COMMITMENT,
   DEFAULT_RISK_SCAN_TIMEOUT_MS,
@@ -110,6 +111,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     paper: loadPaperConfig(source),
     position: loadPositionConfig(source),
     exit: loadExitConfig(source),
+    performance: loadPerformanceConfig(source),
   };
 }
 
@@ -250,6 +252,17 @@ function loadExitConfig(source: EnvSource): AppConfig['exit'] {
       readOptionalEnv(source, 'EXIT_HISTORY_LIMIT'),
       DEFAULT_EXIT_HISTORY_LIMIT,
       'EXIT_HISTORY_LIMIT',
+      HISTORY_LIMIT_MAX,
+    ),
+  };
+}
+
+function loadPerformanceConfig(source: EnvSource): AppConfig['performance'] {
+  return {
+    tradeLimit: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'PERFORMANCE_TRADE_LIMIT'),
+      DEFAULT_PERFORMANCE_TRADE_LIMIT,
+      'PERFORMANCE_TRADE_LIMIT',
       HISTORY_LIMIT_MAX,
     ),
   };

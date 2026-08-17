@@ -76,6 +76,9 @@ describe('loadConfig', () => {
       exit: {
         historyLimit: 20,
       },
+      performance: {
+        tradeLimit: 20,
+      },
     });
   });
 
@@ -316,6 +319,23 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ EXIT_HISTORY_LIMIT: '101' });
     }).toThrow(/Invalid EXIT_HISTORY_LIMIT/);
+  });
+
+  it('loads performance trade display settings from the environment', () => {
+    const config = loadConfig({ PERFORMANCE_TRADE_LIMIT: '12' });
+    expect(config.performance).toEqual({ tradeLimit: 12 });
+  });
+
+  it('rejects a performance trade display limit above the bound', () => {
+    expect(() => {
+      loadConfig({ PERFORMANCE_TRADE_LIMIT: '101' });
+    }).toThrow(/Invalid PERFORMANCE_TRADE_LIMIT/);
+  });
+
+  it('rejects a performance trade display limit of zero', () => {
+    expect(() => {
+      loadConfig({ PERFORMANCE_TRADE_LIMIT: '0' });
+    }).toThrow(/Invalid PERFORMANCE_TRADE_LIMIT/);
   });
 
   it('rejects a paper history limit above the bound', () => {

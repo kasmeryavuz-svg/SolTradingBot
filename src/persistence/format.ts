@@ -14,9 +14,11 @@ export function formatCapabilityFooter(): string[] {
     'Paper trading: available',
     'Position management: available',
     'Exit engine: available',
-    'Performance analytics: unavailable',
+    'Performance analytics: available',
+    'Strategy benchmark lab: unavailable',
+    'Dashboard: unavailable',
     'Trading capability: DISABLED',
-    'Checkpoint: 11',
+    'Checkpoint: 12',
   ];
 }
 

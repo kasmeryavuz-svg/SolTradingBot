@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 11
+## Current checkpoint: 12
 
 **Current capabilities:**
 
@@ -21,6 +21,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - p09_v1 live paper-entry observation
 - pm10_v1 simulated position management
 - x11_v1 paper exit engine
+- a12_v1 GROSS paper performance analytics
 
 ### What this checkpoint is not
 
@@ -30,7 +31,9 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Paper trading: YES**
 - **Position management: YES**
 - **Exit engine: YES**
-- **Performance analytics: NO**
+- **Performance analytics: YES**
+- **Strategy benchmark lab: NO**
+- **Dashboard: NO**
 - **Wallet: NO**
 - **Signer: NO**
 - **Transaction sending: NO**
@@ -42,7 +45,9 @@ A p09_v1 **paper entry observation** records that frozen `s07_v1` classified a l
 
 pm10_v1 may open a **simulated paper position** from that observation: one current open position per token mint, a fixed **$100** reference notional, and `quantity = 100 / entry price`. That $100 figure is a modeling reference, not real funds, not a bankroll, and not a recommendation for future live size.
 
-x11_v1 may then **simulate a full close** of that open position using the **exact opening DEX pair**, a 10% stop, a 20% take profit, and a 6-hour maximum hold. Those thresholds are an experimental baseline. They are not optimized, not financial advice, and not evidence of profitability. There is still no cash balance and no PnL in this checkpoint.
+x11_v1 may then **simulate a full close** of that open position using the **exact opening DEX pair**, a 10% stop, a 20% take profit, and a 6-hour maximum hold. Those thresholds are an experimental baseline. They are not optimized, not financial advice, and not evidence of live profitability.
+
+a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated closes already stored in SQLite. Those numbers exclude fees, slippage, and execution. They are not net performance, not a wallet result, and not a forecast. The current local database may have zero closed paper trades; that is not a 0% result.
 
 Features describe observations. They do **not** decide trades.
 
@@ -50,7 +55,7 @@ Risk findings are **technical indicators**, not investment recommendations. A re
 
 Writing a SQLite row is a **local file write**. It is not a Solana transaction.
 
-**First observed** means the first time *this database* recorded a mint. It does **not** mean token launch time, mint-creation time, or listing time.
+**First observed** means the first time _this database_ recorded a mint. It does **not** mean token launch time, mint-creation time, or listing time.
 
 If `TRADING_ENABLED=true`, the app will refuse to start. `DATABASE_ENABLED` and `DISCOVERY_ENABLED` do not turn trading on.
 
@@ -103,7 +108,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 11
+Checkpoint: 12
 Blockchain capability: READ ONLY
 Local persistence: available
 Token risk scanner: available
@@ -113,11 +118,13 @@ Backtester: available
 Paper trading: available
 Position management: available
 Exit engine: available
-Performance analytics: unavailable
+Performance analytics: available
+Strategy benchmark lab: unavailable
+Dashboard: unavailable
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, or exit watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, or `exit:step`.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, or performance watchers, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, or `performance:trades`.
 
 ## How to check Solana, market data, and discovery
 
@@ -302,6 +309,33 @@ If there is no current open paper position, `exit:step` is a successful no-op: n
 
 See [docs/CHECKPOINT_11.md](docs/CHECKPOINT_11.md) for exact-pair pricing, inclusive thresholds, decision precedence, zero-price handling, and stale-state protection.
 
+## How to read GROSS paper performance analytics
+
+Checkpoint 12 describes completed simulated paper trades already stored by x11. Spec `a12_v1` computes GROSS paper PnL and returns from immutable SQLite rows. It does **not** fetch a current price, send a transaction, or save analytics tables.
+
+Stored quantity is used for PnL only after a12 proves it equals the frozen pm10_v1 fact `100 / entryPriceUsd` (`Object.is`, no tolerance). Source identities are recomputed from the loaded opening/exit facts using the frozen p09/pm10/x11 builders, then compared to the stored strings. Changing a price, quantity, pair, or timestamp while leaving identity text untouched fails the report.
+
+Analytics numbers canonicalize IEEE `-0` to `+0`. That is not rounding. Dataset fingerprinting still uses semantic identities after that integrity check, never row ids.
+
+`performance:report` and `performance:trades` both validate the complete eligible closed-trade set inside one SQLite deferred read snapshot. `PERFORMANCE_TRADE_LIMIT` only slices the printed trade list.
+
+```bash
+npm run performance:report
+npm run performance:trades
+```
+
+`performance:report` requires `DATABASE_ENABLED=true` and an existing SQLite file. It opens that file **read-only**. It always uses every eligible closed paper trade. There is no date picker, token filter, or “best period” switch.
+
+`performance:trades` only limits how many completed trades are **printed**. Default `PERFORMANCE_TRADE_LIMIT=20` (allowed `1..100`). That display bound does not change the aggregate report.
+
+If the local database has no closed paper positions, the report status is `no_closed_trades`. That is not a 0% return and not a 0% win rate. Do not fabricate live trades to make the report look populated.
+
+These GROSS paper numbers exclude fees, slippage, price impact, MEV, failed transactions, and partial fills. The stored exit price is an observed reference price, not a guaranteed fill. Gross paper results are not evidence of live profitability.
+
+There is no `performance:watch`. Strategy Research / Benchmark Lab is a later phase (12.5), not this checkpoint.
+
+See [docs/CHECKPOINT_12.md](docs/CHECKPOINT_12.md) for beginner explanations of GROSS PnL, win rate, profit factor, closed-trade drawdown, and winner concentration.
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -375,6 +409,7 @@ src/             Application source code
   paper/         p09_v1 live paper-entry observation (no quantity or positions)
   position/      pm10_v1 simulated single-open-position management (no automatic exits or PnL)
   exit/          x11_v1 experimental paper exit engine (exact opening pair, full close, no PnL)
+  performance/   a12_v1 read-only GROSS closed-paper-trade analytics (no stored metric tables)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -382,4 +417,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add performance analytics. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add a Strategy Research / Benchmark Lab, then a dashboard, then real execution. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). Phase 12.5 and Checkpoint 13+ are **not** implemented yet.
