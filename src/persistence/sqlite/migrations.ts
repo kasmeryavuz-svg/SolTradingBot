@@ -10,7 +10,9 @@ export const FEATURE_MIGRATION_VERSION = 3;
 export const FEATURE_MIGRATION_NAME = '003_feature_vectors';
 export const STRATEGY_MIGRATION_VERSION = 4;
 export const STRATEGY_MIGRATION_NAME = '004_strategy_evaluations';
-export const LATEST_SCHEMA_VERSION = STRATEGY_MIGRATION_VERSION;
+export const PAPER_MIGRATION_VERSION = 5;
+export const PAPER_MIGRATION_NAME = '005_paper_evaluations';
+export const LATEST_SCHEMA_VERSION = PAPER_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -329,6 +331,83 @@ CREATE TABLE strategy_rule_results (
   UNIQUE (evaluation_id, ordinal),
   FOREIGN KEY (evaluation_id) REFERENCES strategy_evaluations(id)
 ) STRICT;
+`,
+  },
+  {
+    version: PAPER_MIGRATION_VERSION,
+    name: PAPER_MIGRATION_NAME,
+    sql: `
+CREATE TABLE paper_definitions (
+  paper_spec_version TEXT PRIMARY KEY,
+  paper_spec_name TEXT NOT NULL,
+  feature_set_version TEXT NOT NULL,
+  strategy_version TEXT NOT NULL,
+  strategy_definition_fingerprint TEXT NOT NULL,
+  definition_fingerprint TEXT NOT NULL,
+  first_recorded_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE paper_evaluations (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  strategy_evaluation_id INTEGER NOT NULL,
+  paper_spec_version TEXT NOT NULL,
+  paper_definition_fingerprint TEXT NOT NULL,
+  strategy_definition_fingerprint TEXT NOT NULL,
+  feature_set_version TEXT NOT NULL,
+  as_of TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  market_collected_at TEXT NOT NULL,
+  pair_address TEXT NOT NULL,
+  strategy_decision TEXT NOT NULL CHECK (
+    strategy_decision IN ('entry_candidate', 'no_entry', 'insufficient_data')
+  ),
+  paper_action TEXT NOT NULL CHECK (paper_action IN ('entry_observation', 'no_action')),
+  no_action_reason TEXT CHECK (
+    no_action_reason IS NULL
+    OR no_action_reason IN ('strategy_no_entry', 'strategy_insufficient_data')
+  ),
+  reference_price_usd REAL,
+  simulated_entry_price_usd REAL,
+  execution_model TEXT NOT NULL CHECK (
+    execution_model = 'exact_strategy_market_snapshot_reference_price'
+  ),
+  cost_model TEXT NOT NULL CHECK (cost_model = 'none'),
+  quantity_model TEXT NOT NULL CHECK (quantity_model = 'none'),
+  position_model TEXT NOT NULL CHECK (position_model = 'none'),
+  exit_model TEXT NOT NULL CHECK (exit_model = 'none'),
+  source_identity TEXT NOT NULL UNIQUE,
+  FOREIGN KEY (token_id) REFERENCES tokens(id),
+  FOREIGN KEY (strategy_evaluation_id) REFERENCES strategy_evaluations(id),
+  FOREIGN KEY (paper_spec_version) REFERENCES paper_definitions(paper_spec_version),
+  CHECK (
+    (
+      paper_action = 'entry_observation'
+      AND strategy_decision = 'entry_candidate'
+      AND no_action_reason IS NULL
+      AND reference_price_usd IS NOT NULL
+      AND reference_price_usd > 0
+      AND simulated_entry_price_usd IS NOT NULL
+      AND simulated_entry_price_usd > 0
+      AND simulated_entry_price_usd = reference_price_usd
+    )
+    OR (
+      paper_action = 'no_action'
+      AND (
+        (strategy_decision = 'no_entry' AND no_action_reason = 'strategy_no_entry')
+        OR (
+          strategy_decision = 'insufficient_data'
+          AND no_action_reason = 'strategy_insufficient_data'
+        )
+      )
+      AND reference_price_usd IS NULL
+      AND simulated_entry_price_usd IS NULL
+    )
+  )
+) STRICT;
+
+CREATE INDEX paper_evaluations_token_as_of_id
+  ON paper_evaluations (token_id, as_of DESC, id DESC);
 `,
   },
 ];

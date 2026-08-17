@@ -18,6 +18,17 @@ import {
   strategyEvaluationsSemanticallyEqual,
 } from '../strategy/invariants.js';
 import { StrategyError, type StrategyEvaluation } from '../strategy/types.js';
+import { evaluatePaperAction } from '../paper/evaluator.js';
+import {
+  PAPER_DEFINITION_FINGERPRINT,
+  paperSourceIdentity,
+} from '../paper/identity.js';
+import {
+  assertPaperEvaluationInvariants,
+  paperEvaluationsSemanticallyEqual,
+} from '../paper/invariants.js';
+import { PaperError, type PaperEvaluation } from '../paper/types.js';
+import { PAPER_SPEC_NAME, PAPER_SPEC_VERSION } from '../paper/constants.js';
 import { PersistenceError } from './types.js';
 
 export function requireFiniteOrNull(value: number | null, field: string): number | null {
@@ -151,6 +162,56 @@ export function assertPersistableStrategyEvaluation(
     throw new PersistenceError(
       'Strategy evaluation does not match a fresh s07_v1 evaluation of the supplied feature vector.',
     );
+  }
+}
+
+export function assertPersistablePaperEvaluation(
+  evaluation: PaperEvaluation,
+  sources: {
+    marketSnapshot: MarketSnapshot;
+    featureVector: FeatureVector;
+    strategyEvaluation: StrategyEvaluation;
+  },
+): void {
+  try {
+    assertPersistableStrategyEvaluation(sources.strategyEvaluation, sources.featureVector);
+    assertPaperEvaluationInvariants(evaluation, sources);
+  } catch (error: unknown) {
+    if (error instanceof FeatureEngineError || error instanceof StrategyError || error instanceof PaperError) {
+      throw new PersistenceError(error.message, { cause: error });
+    }
+    throw error;
+  }
+
+  if (evaluation.paperSpecVersion !== PAPER_SPEC_VERSION || evaluation.paperSpecName !== PAPER_SPEC_NAME) {
+    throw new PersistenceError('Paper evaluation spec does not match p09_v1.');
+  }
+  if (evaluation.paperDefinitionFingerprint !== PAPER_DEFINITION_FINGERPRINT) {
+    throw new PersistenceError('Paper definition fingerprint does not match the current p09_v1 definition.');
+  }
+
+  const recomputed = evaluatePaperAction(sources);
+  if (
+    !paperEvaluationsSemanticallyEqual(evaluation, recomputed) ||
+    evaluation.evaluatedAt !== recomputed.evaluatedAt
+  ) {
+    throw new PersistenceError(
+      'Paper evaluation does not match a fresh p09_v1 evaluation of the supplied strategy bundle.',
+    );
+  }
+
+  const expectedIdentity = paperSourceIdentity({
+    paperSpecVersion: PAPER_SPEC_VERSION,
+    paperDefinitionFingerprint: PAPER_DEFINITION_FINGERPRINT,
+    strategySourceIdentity: recomputed.strategySourceIdentity,
+  });
+  const actualIdentity = paperSourceIdentity({
+    paperSpecVersion: evaluation.paperSpecVersion,
+    paperDefinitionFingerprint: evaluation.paperDefinitionFingerprint,
+    strategySourceIdentity: evaluation.strategySourceIdentity,
+  });
+  if (actualIdentity !== expectedIdentity) {
+    throw new PersistenceError('Paper source identity does not match the canonical evaluation identity.');
   }
 }
 

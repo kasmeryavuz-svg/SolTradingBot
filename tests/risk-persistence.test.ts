@@ -198,8 +198,8 @@ describe('risk persistence', () => {
         repository.initialize();
         repository.initialize();
 
-        expect(repository.getStats().schemaVersion).toBe(4);
-        expect(repository.getTableCounts().schemaMigrations).toBe(4);
+        expect(repository.getStats().schemaVersion).toBe(5);
+        expect(repository.getTableCounts().schemaMigrations).toBe(5);
         expect(repository.getStats().tokenCount).toBe(tokenCount);
         expect(repository.getToken(WRAPPED_SOL_MINT)?.mint).toBe(WRAPPED_SOL_MINT);
 

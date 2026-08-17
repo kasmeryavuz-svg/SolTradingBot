@@ -10,6 +10,7 @@ import type {
   TokenRiskReport,
 } from '../risk/types.js';
 import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../strategy/types.js';
+import type { PaperEvaluation } from '../paper/types.js';
 
 export class PersistenceError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -46,6 +47,7 @@ export type PersistenceStats = {
   riskScanCount: number;
   featureVectorCount: number;
   strategyEvaluationCount: number;
+  paperEvaluationCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -193,4 +195,55 @@ export type StoredStrategyEvaluationSummary = {
 export type TokenStrategyHistory = {
   token: StoredToken;
   evaluations: StoredStrategyEvaluationSummary[];
+};
+
+export type PaperBundle = StrategyBundle & {
+  paperEvaluation: PaperEvaluation;
+};
+
+export type RecordedPaperBundle = {
+  paperEvaluationId: number;
+  strategyEvaluationId: number;
+  vectorId: number;
+  tokenMint: string;
+  sourceIdentity: string;
+  inserted: boolean;
+  strategyInserted: boolean;
+  featureInserted: boolean;
+  marketInserted: boolean;
+  riskInserted: boolean;
+  tokenInserted: boolean;
+  paperDefinitionInserted: boolean;
+};
+
+export type StoredPaperEvaluationSummary = {
+  id: number;
+  strategyEvaluationId: number;
+  tokenMint: string;
+  paperSpecVersion: string;
+  paperSpecName: string;
+  paperDefinitionFingerprint: string;
+  strategyVersion: string;
+  strategyDefinitionFingerprint: string;
+  strategyDecision: StrategyDecision;
+  featureSetVersion: string;
+  asOf: string;
+  evaluatedAt: string;
+  pairAddress: string;
+  marketCollectedAt: string;
+  paperAction: PaperEvaluation['paperAction'];
+  noActionReason: PaperEvaluation['noActionReason'];
+  referencePriceUsd: number | null;
+  simulatedEntryPriceUsd: number | null;
+  executionModel: PaperEvaluation['executionModel'];
+  costModel: PaperEvaluation['costModel'];
+  quantityModel: PaperEvaluation['quantityModel'];
+  positionModel: PaperEvaluation['positionModel'];
+  exitModel: PaperEvaluation['exitModel'];
+  sourceIdentity: string;
+};
+
+export type TokenPaperHistory = {
+  token: StoredToken;
+  evaluations: StoredPaperEvaluationSummary[];
 };

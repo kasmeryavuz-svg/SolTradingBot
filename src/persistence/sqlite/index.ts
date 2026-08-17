@@ -12,5 +12,7 @@ export {
   RISK_MIGRATION_VERSION,
   STRATEGY_MIGRATION_NAME,
   STRATEGY_MIGRATION_VERSION,
+  PAPER_MIGRATION_NAME,
+  PAPER_MIGRATION_VERSION,
 } from './migrations.js';
 export { createSqlitePersistenceRepository, SqlitePersistenceRepository } from './repository.js';
