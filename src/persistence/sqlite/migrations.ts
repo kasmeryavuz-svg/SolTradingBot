@@ -3,6 +3,9 @@ import { PersistenceError } from '../types.js';
 
 export const INITIAL_MIGRATION_VERSION = 1;
 export const INITIAL_MIGRATION_NAME = '001_initial_persistence';
+export const RISK_MIGRATION_VERSION = 2;
+export const RISK_MIGRATION_NAME = '002_token_risk_scans';
+export const LATEST_SCHEMA_VERSION = RISK_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -104,9 +107,96 @@ CREATE TABLE market_snapshots (
 ) STRICT;
 `,
   },
+  {
+    version: RISK_MIGRATION_VERSION,
+    name: RISK_MIGRATION_NAME,
+    sql: `
+CREATE TABLE risk_scans (
+  id INTEGER PRIMARY KEY,
+  token_id INTEGER NOT NULL,
+  scanned_at TEXT NOT NULL,
+  commitment TEXT NOT NULL CHECK (commitment IN ('confirmed', 'finalized')),
+  token_program TEXT NOT NULL CHECK (token_program IN ('spl_token', 'token_2022')),
+  program_owner TEXT NOT NULL,
+  mint_context_slot INTEGER NOT NULL,
+  supply_context_slot INTEGER,
+  largest_accounts_context_slot INTEGER,
+  decimals INTEGER NOT NULL CHECK (decimals >= 0 AND decimals <= 255),
+  supply_raw TEXT,
+  mint_authority TEXT,
+  freeze_authority TEXT,
+  top1_bps INTEGER CHECK (top1_bps IS NULL OR (top1_bps >= 0 AND top1_bps <= 10000)),
+  top5_bps INTEGER CHECK (top5_bps IS NULL OR (top5_bps >= 0 AND top5_bps <= 10000)),
+  top10_bps INTEGER CHECK (top10_bps IS NULL OR (top10_bps >= 0 AND top10_bps <= 10000)),
+  top20_bps INTEGER CHECK (top20_bps IS NULL OR (top20_bps >= 0 AND top20_bps <= 10000)),
+  largest_accounts_count INTEGER NOT NULL CHECK (largest_accounts_count >= 0 AND largest_accounts_count <= 20),
+  data_completeness TEXT NOT NULL CHECK (data_completeness IN ('complete', 'partial')),
+  highest_finding_severity TEXT NOT NULL CHECK (
+    highest_finding_severity IN ('none', 'info', 'medium', 'high', 'critical')
+  ),
+  UNIQUE (token_id, scanned_at),
+  FOREIGN KEY (token_id) REFERENCES tokens(id)
+) STRICT;
+
+CREATE INDEX risk_scans_token_scanned_at_idx ON risk_scans (token_id, scanned_at DESC);
+
+CREATE TABLE risk_scan_checks (
+  scan_id INTEGER NOT NULL,
+  check_name TEXT NOT NULL CHECK (check_name IN ('mint_account', 'supply', 'largest_accounts')),
+  ok INTEGER NOT NULL CHECK (ok IN (0, 1)),
+  context_slot INTEGER,
+  error TEXT,
+  PRIMARY KEY (scan_id, check_name),
+  FOREIGN KEY (scan_id) REFERENCES risk_scans(id)
+) STRICT;
+
+CREATE TABLE risk_scan_extensions (
+  scan_id INTEGER NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  extension_name TEXT NOT NULL,
+  authority TEXT,
+  program_id TEXT,
+  state TEXT,
+  transfer_fee_basis_points INTEGER CHECK (
+    transfer_fee_basis_points IS NULL
+    OR (transfer_fee_basis_points >= 0 AND transfer_fee_basis_points <= 10000)
+  ),
+  maximum_fee_raw TEXT,
+  parsed INTEGER NOT NULL CHECK (parsed IN (0, 1)),
+  PRIMARY KEY (scan_id, ordinal),
+  FOREIGN KEY (scan_id) REFERENCES risk_scans(id)
+) STRICT;
+
+CREATE TABLE risk_top_token_accounts (
+  scan_id INTEGER NOT NULL,
+  rank INTEGER NOT NULL CHECK (rank >= 1 AND rank <= 20),
+  token_account TEXT NOT NULL,
+  amount_raw TEXT NOT NULL,
+  share_bps INTEGER CHECK (share_bps IS NULL OR (share_bps >= 0 AND share_bps <= 10000)),
+  PRIMARY KEY (scan_id, rank),
+  UNIQUE (scan_id, token_account),
+  FOREIGN KEY (scan_id) REFERENCES risk_scans(id)
+) STRICT;
+
+CREATE TABLE risk_findings (
+  scan_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('authority', 'token_extension', 'concentration', 'data_quality')),
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'medium', 'high', 'critical')),
+  confidence TEXT NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  PRIMARY KEY (scan_id, code),
+  FOREIGN KEY (scan_id) REFERENCES risk_scans(id)
+) STRICT;
+`,
+  },
 ];
 
-export function applyMigrations(database: DatabaseSync): number {
+export function applyMigrations(
+  database: DatabaseSync,
+  options: { targetVersion?: number } = {},
+): number {
   database.exec(`
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
@@ -123,6 +213,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   );
 
   for (const migration of MIGRATIONS) {
+    if (options.targetVersion !== undefined && migration.version > options.targetVersion) {
+      continue;
+    }
+
     if (applied.has(migration.version)) {
       continue;
     }

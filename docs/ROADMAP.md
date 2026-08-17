@@ -11,7 +11,7 @@ Do not implement a later checkpoint until the current one is complete.
 | 02 | Live market data | Complete |
 | 03 | Meme-coin discovery | Complete |
 | 04 | Database | Complete |
-| 05 | Token risk scanner | Not started |
+| 05 | Token risk scanner | Complete |
 | 06 | Signal and feature engine | Not started |
 | 07 | First strategy | Not started |
 | 08 | Backtester | Not started |
@@ -30,6 +30,6 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 04 Database / persistence (complete)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, and local SQLite historical persistence
-- **Not implemented:** everything from Checkpoint 05 onward
+- **Active checkpoint:** 05 Token risk scanner (complete)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, and technical token risk scanning
+- **Not implemented:** everything from Checkpoint 06 onward

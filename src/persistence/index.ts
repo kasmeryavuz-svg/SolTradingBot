@@ -8,9 +8,12 @@ export {
   PersistenceError,
   type PersistenceIntegrity,
   type PersistenceStats,
+  type RecordedRiskScan,
   type RecordedRun,
   type StoredObservation,
+  type StoredRiskScanSummary,
   type StoredSourceResult,
   type StoredToken,
   type TokenHistory,
+  type TokenRiskHistory,
 } from './types.js';

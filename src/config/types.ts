@@ -1,10 +1,12 @@
 export const NODE_ENV_VALUES = ['development', 'test', 'production'] as const;
 export const LOG_LEVEL_VALUES = ['debug', 'info', 'warn', 'error'] as const;
 export const SOLANA_NETWORK_VALUES = ['mainnet-beta', 'devnet', 'testnet'] as const;
+export const RISK_COMMITMENT_VALUES = ['confirmed', 'finalized'] as const;
 
 export type NodeEnv = (typeof NODE_ENV_VALUES)[number];
 export type LogLevel = (typeof LOG_LEVEL_VALUES)[number];
 export type SolanaNetwork = (typeof SOLANA_NETWORK_VALUES)[number];
+export type RiskCommitment = (typeof RISK_COMMITMENT_VALUES)[number];
 
 export type SolanaConfig = {
   network: SolanaNetwork;
@@ -34,6 +36,12 @@ export type DatabaseConfig = {
   busyTimeoutMs: number;
 };
 
+export type RiskConfig = {
+  timeoutMs: number;
+  commitment: RiskCommitment;
+  historyLimit: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -42,6 +50,7 @@ export type AppConfig = {
   marketData: MarketDataConfig;
   discovery: DiscoveryConfig;
   database: DatabaseConfig;
+  risk: RiskConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

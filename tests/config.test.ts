@@ -56,6 +56,11 @@ describe('loadConfig', () => {
         path: DEFAULT_DATABASE_PATH,
         busyTimeoutMs: DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
       },
+      risk: {
+        timeoutMs: 10_000,
+        commitment: 'confirmed',
+        historyLimit: 20,
+      },
     });
   });
 
@@ -211,6 +216,48 @@ describe('loadConfig', () => {
     expect(() => {
       loadConfig({ DISCOVERY_MAX_CANDIDATES: '101' });
     }).toThrow(/Invalid DISCOVERY_MAX_CANDIDATES/);
+  });
+
+  it('loads risk scanner defaults', () => {
+    const config = loadConfig({});
+
+    expect(config.risk).toEqual({
+      timeoutMs: 10_000,
+      commitment: 'confirmed',
+      historyLimit: 20,
+    });
+  });
+
+  it('loads risk scanner settings from the environment', () => {
+    const config = loadConfig({
+      RISK_SCAN_TIMEOUT_MS: '8000',
+      RISK_SCAN_COMMITMENT: 'finalized',
+      RISK_HISTORY_LIMIT: '12',
+    });
+
+    expect(config.risk).toEqual({
+      timeoutMs: 8000,
+      commitment: 'finalized',
+      historyLimit: 12,
+    });
+  });
+
+  it('rejects an invalid risk timeout', () => {
+    expect(() => {
+      loadConfig({ RISK_SCAN_TIMEOUT_MS: '0' });
+    }).toThrow(/Invalid RISK_SCAN_TIMEOUT_MS/);
+  });
+
+  it('rejects processed as a risk commitment', () => {
+    expect(() => {
+      loadConfig({ RISK_SCAN_COMMITMENT: 'processed' });
+    }).toThrow(/Invalid RISK_SCAN_COMMITMENT/);
+  });
+
+  it('rejects a risk history limit above the bound', () => {
+    expect(() => {
+      loadConfig({ RISK_HISTORY_LIMIT: '101' });
+    }).toThrow(/Invalid RISK_HISTORY_LIMIT/);
   });
 
   it('does not read the process environment', () => {

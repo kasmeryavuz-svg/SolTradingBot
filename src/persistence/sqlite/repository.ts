@@ -2,19 +2,38 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { DatabaseConfig } from '../../config/types.js';
 import type { DiscoveryCandidate, DiscoveryRunResult, DiscoverySource } from '../../discovery/types.js';
 import type { MarketSnapshot } from '../../market-data/types.js';
+import type {
+  HighestFindingSeverity,
+  RiskCheckName,
+  RiskCheckResult,
+  RiskFinding,
+  RiskFindingCategory,
+  RiskFindingSeverity,
+  RiskConfidence,
+  TokenExtensionObservation,
+  TokenProgramKind,
+  TokenRiskReport,
+} from '../../risk/types.js';
 import { clampHistoryLimit } from '../limits.js';
 import type { PersistenceRepository } from '../repository.js';
 import type {
   PersistenceIntegrity,
   PersistenceStats,
+  RecordedRiskScan,
   RecordedRun,
   StoredObservation,
+  StoredRiskScanSummary,
   StoredSourceResult,
   StoredToken,
   TokenHistory,
+  TokenRiskHistory,
 } from '../types.js';
 import { PersistenceError } from '../types.js';
-import { assertPersistableCandidate, assertPersistableSnapshot } from '../validate.js';
+import {
+  assertPersistableCandidate,
+  assertPersistableRiskReport,
+  assertPersistableSnapshot,
+} from '../validate.js';
 import { openSqliteDatabase, readPragmaValue } from './database.js';
 import { applyMigrations, currentSchemaVersion } from './migrations.js';
 import { interpretIntegrityPragmas } from './integrity.js';
@@ -53,6 +72,20 @@ type Statements = {
   countObservationSources: StatementSync;
   countLinks: StatementSync;
   countMigrations: StatementSync;
+  insertRiskScan: StatementSync;
+  insertRiskCheck: StatementSync;
+  insertRiskExtension: StatementSync;
+  insertRiskAccount: StatementSync;
+  insertRiskFinding: StatementSync;
+  countRiskScans: StatementSync;
+  countRiskChecks: StatementSync;
+  countRiskExtensions: StatementSync;
+  countRiskAccounts: StatementSync;
+  countRiskFindings: StatementSync;
+  riskHistory: StatementSync;
+  riskChecks: StatementSync;
+  riskExtensions: StatementSync;
+  riskFindings: StatementSync;
 };
 
 export class SqlitePersistenceRepository implements PersistenceRepository {
@@ -88,6 +121,60 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     });
   }
 
+  recordRiskReport(report: TokenRiskReport): RecordedRiskScan {
+    return this.transact(() => this.persistRiskReport(report));
+  }
+
+  recordRiskReportAndAbort(report: TokenRiskReport): void {
+    this.transact(() => {
+      this.persistRiskReport(report);
+      throw new PersistenceError('Test-forced write failure.');
+    });
+  }
+
+  recordRiskReportAndAbortAfterChild(report: TokenRiskReport): void {
+    this.transact(() => {
+      assertPersistableRiskReport(report);
+      const statements = this.requireStatements();
+      const token = this.upsertToken(report.tokenMint, report.scannedAt, report.scannedAt);
+      const inserted = statements.insertRiskScan.run(
+        token.id,
+        report.scannedAt,
+        report.commitment,
+        report.tokenProgram,
+        report.programOwner,
+        report.mintContextSlot,
+        report.supplyContextSlot,
+        report.largestAccountsContextSlot,
+        report.decimals,
+        report.supplyRaw,
+        report.mintAuthority,
+        report.freezeAuthority,
+        report.concentration?.top1Bps ?? null,
+        report.concentration?.top5Bps ?? null,
+        report.concentration?.top10Bps ?? null,
+        report.concentration?.top20Bps ?? null,
+        report.largestTokenAccounts.length,
+        report.dataCompleteness,
+        report.highestFindingSeverity,
+      );
+      const scanId = Number(inserted.lastInsertRowid);
+      const check = report.checks[0];
+      if (check === undefined) {
+        throw new PersistenceError('Risk report is missing checks.');
+      }
+
+      statements.insertRiskCheck.run(
+        scanId,
+        check.check,
+        check.ok ? 1 : 0,
+        check.contextSlot,
+        check.error,
+      );
+      throw new PersistenceError('Test-forced write failure after child insert.');
+    });
+  }
+
   recordMarketSnapshots(snapshots: readonly MarketSnapshot[]): number {
     return this.transact(() => {
       let written = 0;
@@ -108,6 +195,11 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     discoveryObservationSources: number;
     discoveryLinks: number;
     marketSnapshots: number;
+    riskScans: number;
+    riskScanChecks: number;
+    riskScanExtensions: number;
+    riskTopTokenAccounts: number;
+    riskFindings: number;
     schemaMigrations: number;
   } {
     const statements = this.requireStatements();
@@ -119,6 +211,11 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       discoveryObservationSources: asNumber(statements.countObservationSources.get()?.['count']),
       discoveryLinks: asNumber(statements.countLinks.get()?.['count']),
       marketSnapshots: asNumber(statements.countSnapshots.get()?.['count']),
+      riskScans: asNumber(statements.countRiskScans.get()?.['count']),
+      riskScanChecks: asNumber(statements.countRiskChecks.get()?.['count']),
+      riskScanExtensions: asNumber(statements.countRiskExtensions.get()?.['count']),
+      riskTopTokenAccounts: asNumber(statements.countRiskAccounts.get()?.['count']),
+      riskFindings: asNumber(statements.countRiskFindings.get()?.['count']),
       schemaMigrations: asNumber(statements.countMigrations.get()?.['count']),
     };
   }
@@ -150,6 +247,7 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
       discoveryRunCount: asNumber(statements.countRuns.get()?.['count']),
       discoveryObservationCount: asNumber(statements.countObservations.get()?.['count']),
       marketSnapshotCount: asNumber(statements.countSnapshots.get()?.['count']),
+      riskScanCount: asNumber(statements.countRiskScans.get()?.['count']),
       earliestObservationAt: asNullableString(bounds?.['earliest']),
       latestObservationAt: asNullableString(bounds?.['latest']),
     };
@@ -172,6 +270,35 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     return this.requireStatements()
       .sourceResultsForRun.all(runId)
       .map((row) => mapSourceResultRow(row));
+  }
+
+  getRiskHistory(tokenMint: string, limit: number): TokenRiskHistory | null {
+    const token = this.getToken(tokenMint);
+    if (token === null) {
+      return null;
+    }
+
+    const statements = this.requireStatements();
+    const scans = statements.riskHistory.all(token.id, clampHistoryLimit(limit)).map((row) => {
+      const scanId = asNumber(row['id']);
+      return {
+        id: scanId,
+        scannedAt: asString(row['scanned_at']),
+        tokenProgram: asString(row['token_program']) as TokenProgramKind,
+        mintAuthority: asNullableString(row['mint_authority']),
+        freezeAuthority: asNullableString(row['freeze_authority']),
+        supplyRaw: asNullableString(row['supply_raw']),
+        top1Bps: asNullableNumber(row['top1_bps']),
+        top5Bps: asNullableNumber(row['top5_bps']),
+        highestFindingSeverity: asString(row['highest_finding_severity']) as HighestFindingSeverity,
+        findingCodes: this.readRiskFindings(scanId).map((finding) => finding.code),
+        checks: this.readRiskChecks(scanId),
+        extensions: this.readRiskExtensions(scanId),
+        findings: this.readRiskFindings(scanId),
+      } satisfies StoredRiskScanSummary;
+    });
+
+    return { token, scans };
   }
 
   getMarketHistory(tokenMint: string, limit: number): TokenHistory | null {
@@ -200,6 +327,87 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
 
   close(): void {
     this.database.close();
+  }
+
+  private persistRiskReport(report: TokenRiskReport): RecordedRiskScan {
+    assertPersistableRiskReport(report);
+    const statements = this.requireStatements();
+    const token = this.upsertToken(report.tokenMint, report.scannedAt, report.scannedAt);
+    const inserted = statements.insertRiskScan.run(
+      token.id,
+      report.scannedAt,
+      report.commitment,
+      report.tokenProgram,
+      report.programOwner,
+      report.mintContextSlot,
+      report.supplyContextSlot,
+      report.largestAccountsContextSlot,
+      report.decimals,
+      report.supplyRaw,
+      report.mintAuthority,
+      report.freezeAuthority,
+      report.concentration?.top1Bps ?? null,
+      report.concentration?.top5Bps ?? null,
+      report.concentration?.top10Bps ?? null,
+      report.concentration?.top20Bps ?? null,
+      report.largestTokenAccounts.length,
+      report.dataCompleteness,
+      report.highestFindingSeverity,
+    );
+    const scanId = Number(inserted.lastInsertRowid);
+
+    for (const check of report.checks) {
+      statements.insertRiskCheck.run(
+        scanId,
+        check.check,
+        check.ok ? 1 : 0,
+        check.contextSlot,
+        check.error,
+      );
+    }
+
+    for (const [ordinal, extension] of report.extensions.entries()) {
+      statements.insertRiskExtension.run(
+        scanId,
+        ordinal,
+        extension.name,
+        extension.authority,
+        extension.programId,
+        extension.state,
+        extension.transferFeeBasisPoints,
+        extension.maximumFeeRaw,
+        extension.parsed ? 1 : 0,
+      );
+    }
+
+    for (const account of report.largestTokenAccounts) {
+      statements.insertRiskAccount.run(
+        scanId,
+        account.rank,
+        account.tokenAccount,
+        account.amountRaw,
+        account.shareBps,
+      );
+    }
+
+    for (const finding of report.findings) {
+      statements.insertRiskFinding.run(
+        scanId,
+        finding.code,
+        finding.category,
+        finding.severity,
+        finding.confidence,
+        finding.title,
+        finding.description,
+      );
+    }
+
+    return {
+      scanId,
+      tokenMint: report.tokenMint,
+      scannedAt: report.scannedAt,
+      tokenInserted: token.inserted,
+    };
   }
 
   private persistDiscoveryRun(result: DiscoveryRunResult): RecordedRun {
@@ -346,6 +554,50 @@ export class SqlitePersistenceRepository implements PersistenceRepository {
     return Number(result.changes) > 0 ? 1 : 0;
   }
 
+  private readRiskChecks(scanId: number): RiskCheckResult[] {
+    return this.requireStatements()
+      .riskChecks.all(scanId)
+      .map((row) => ({
+        check: asString(row['check_name']) as RiskCheckName,
+        ok: asNumber(row['ok']) === 1,
+        contextSlot: asNullableNumber(row['context_slot']),
+        error: asNullableString(row['error']),
+      }));
+  }
+
+  private readRiskExtensions(scanId: number): TokenExtensionObservation[] {
+    return this.requireStatements()
+      .riskExtensions.all(scanId)
+      .map((row) => ({
+        name: asString(row['extension_name']),
+        rawName: asString(row['extension_name']),
+        authority: asNullableString(row['authority']),
+        programId: asNullableString(row['program_id']),
+        state: asNullableString(row['state']),
+        transferFeeBasisPoints: asNullableNumber(row['transfer_fee_basis_points']),
+        maximumFeeRaw: asNullableString(row['maximum_fee_raw']),
+        olderTransferFeeBasisPoints: null,
+        newerTransferFeeBasisPoints: null,
+        olderMaximumFeeRaw: null,
+        newerMaximumFeeRaw: null,
+        parsed: asNumber(row['parsed']) === 1,
+        classified: true,
+      }));
+  }
+
+  private readRiskFindings(scanId: number): RiskFinding[] {
+    return this.requireStatements()
+      .riskFindings.all(scanId)
+      .map((row) => ({
+        code: asString(row['code']),
+        category: asString(row['category']) as RiskFindingCategory,
+        severity: asString(row['severity']) as RiskFindingSeverity,
+        confidence: asString(row['confidence']) as RiskConfidence,
+        title: asString(row['title']),
+        description: asString(row['description']),
+      }));
+  }
+
   private readObservationSources(observationId: number): DiscoverySource[] {
     return this.requireStatements()
       .observationSources.all(observationId)
@@ -440,6 +692,67 @@ function prepareStatements(database: DatabaseSync): Statements {
     ),
     countLinks: database.prepare('SELECT COUNT(*) AS count FROM discovery_links'),
     countMigrations: database.prepare('SELECT COUNT(*) AS count FROM schema_migrations'),
+    insertRiskScan: database.prepare(
+      `INSERT INTO risk_scans (
+        token_id, scanned_at, commitment, token_program, program_owner, mint_context_slot,
+        supply_context_slot, largest_accounts_context_slot, decimals, supply_raw, mint_authority,
+        freeze_authority, top1_bps, top5_bps, top10_bps, top20_bps, largest_accounts_count,
+        data_completeness, highest_finding_severity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    insertRiskCheck: database.prepare(
+      'INSERT INTO risk_scan_checks (scan_id, check_name, ok, context_slot, error) VALUES (?, ?, ?, ?, ?)',
+    ),
+    insertRiskExtension: database.prepare(
+      `INSERT INTO risk_scan_extensions (
+        scan_id, ordinal, extension_name, authority, program_id, state,
+        transfer_fee_basis_points, maximum_fee_raw, parsed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    insertRiskAccount: database.prepare(
+      `INSERT INTO risk_top_token_accounts (scan_id, rank, token_account, amount_raw, share_bps)
+       VALUES (?, ?, ?, ?, ?)`,
+    ),
+    insertRiskFinding: database.prepare(
+      `INSERT INTO risk_findings (scan_id, code, category, severity, confidence, title, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    countRiskScans: database.prepare('SELECT COUNT(*) AS count FROM risk_scans'),
+    countRiskChecks: database.prepare('SELECT COUNT(*) AS count FROM risk_scan_checks'),
+    countRiskExtensions: database.prepare('SELECT COUNT(*) AS count FROM risk_scan_extensions'),
+    countRiskAccounts: database.prepare('SELECT COUNT(*) AS count FROM risk_top_token_accounts'),
+    countRiskFindings: database.prepare('SELECT COUNT(*) AS count FROM risk_findings'),
+    riskHistory: database.prepare(
+      `SELECT id, scanned_at, token_program, mint_authority, freeze_authority, supply_raw,
+              top1_bps, top5_bps, highest_finding_severity
+       FROM risk_scans
+       WHERE token_id = ?
+       ORDER BY scanned_at DESC, id DESC
+       LIMIT ?`,
+    ),
+    riskChecks: database.prepare(
+      `SELECT check_name, ok, context_slot, error
+       FROM risk_scan_checks
+       WHERE scan_id = ?
+       ORDER BY CASE check_name
+         WHEN 'mint_account' THEN 0
+         WHEN 'supply' THEN 1
+         ELSE 2
+       END`,
+    ),
+    riskExtensions: database.prepare(
+      `SELECT extension_name, authority, program_id, state, transfer_fee_basis_points,
+              maximum_fee_raw, parsed
+       FROM risk_scan_extensions
+       WHERE scan_id = ?
+       ORDER BY ordinal ASC`,
+    ),
+    riskFindings: database.prepare(
+      `SELECT code, category, severity, confidence, title, description
+       FROM risk_findings
+       WHERE scan_id = ?
+       ORDER BY code ASC`,
+    ),
     observationBounds: database.prepare(
       'SELECT MIN(first_observed_at) AS earliest, MAX(last_observed_at) AS latest FROM tokens',
     ),

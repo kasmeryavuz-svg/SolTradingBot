@@ -14,7 +14,13 @@ import {
   interpretIntegrityPragmas,
   openSqliteDatabase,
 } from '../src/persistence/sqlite/index.js';
-import { INITIAL_MIGRATION_NAME, INITIAL_MIGRATION_VERSION } from '../src/persistence/sqlite/migrations.js';
+import {
+  INITIAL_MIGRATION_NAME,
+  INITIAL_MIGRATION_VERSION,
+  LATEST_SCHEMA_VERSION,
+  RISK_MIGRATION_NAME,
+  RISK_MIGRATION_VERSION,
+} from '../src/persistence/sqlite/migrations.js';
 import {
   createSqlitePersistenceRepository,
   PersistenceError,
@@ -112,18 +118,22 @@ function runResult(overrides: Partial<DiscoveryRunResult> = {}): DiscoveryRunRes
 }
 
 describe('SQLite persistence', () => {
-  it('initializes and records schema version 1 once', () => {
+  it('initializes and records the latest schema version once', () => {
     const repository = openMemoryRepo();
     const first = repository.getStats();
     repository.initialize();
     const second = repository.getStats();
 
-    expect(first.schemaVersion).toBe(INITIAL_MIGRATION_VERSION);
-    expect(second.schemaVersion).toBe(INITIAL_MIGRATION_VERSION);
+    expect(first.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+    expect(second.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
     expect(INITIAL_MIGRATION_NAME).toBe('001_initial_persistence');
+    expect(INITIAL_MIGRATION_VERSION).toBe(1);
+    expect(RISK_MIGRATION_NAME).toBe('002_token_risk_scans');
+    expect(RISK_MIGRATION_VERSION).toBe(2);
     expect(first.foreignKeysEnabled).toBe(true);
     expect(first.integrity.ok).toBe(true);
-    expect(repository.getTableCounts().schemaMigrations).toBe(1);
+    expect(first.riskScanCount).toBe(0);
+    expect(repository.getTableCounts().schemaMigrations).toBe(2);
   });
 
   it('inserts one token row and updates observation bounds', () => {
