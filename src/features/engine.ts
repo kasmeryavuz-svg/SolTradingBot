@@ -18,7 +18,7 @@ import {
   unavailableHistoricalFeatures,
 } from './historical-features.js';
 import { requireSolanaChain, requireUtcTimestamp } from './numbers.js';
-import { riskDerivedFeatures } from './risk-features.js';
+import { riskDerivedFeaturesFromFacts } from './risk-features.js';
 import { FeatureEngineError } from './types.js';
 import type { FeatureInputs, FeatureValue, FeatureVector } from './types.js';
 
@@ -77,7 +77,7 @@ export function generateFeatureVector(
     ),
     liquidityToMarketCap(inputs.market.liquidityUsd, inputs.market.marketCapUsd),
     ...historicalValues(inputs),
-    ...riskDerivedFeatures(inputs.risk, inputs.asOf),
+    ...riskDerivedFeaturesFromFacts(inputs.risk, inputs.asOf),
   ];
 
   assertRegistryCoverage(values);

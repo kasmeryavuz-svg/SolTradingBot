@@ -144,14 +144,17 @@ describe('strategy commands', () => {
     );
   });
 
-  it('does not add a strategy watcher, backtester, or auto-wire collector/risk/feature commands', () => {
+  it('does not add a strategy watcher or auto-wire collector/risk/feature commands', () => {
     const packageJson = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
     expect(packageJson).toContain('strategy:check');
     expect(packageJson).toContain('strategy:record');
     expect(packageJson).toContain('strategy:history');
     expect(packageJson).not.toContain('strategy:watch');
     expect(packageJson).not.toContain('strategy:backtest');
-    expect(packageJson).not.toContain('backtest');
+    expect(packageJson).toContain('backtest:run');
+    expect(packageJson).not.toContain('backtest:record');
+    expect(packageJson).not.toContain('backtest:history');
+    expect(packageJson).not.toContain('backtest:optimize');
 
     const collector = readFileSync(new URL('../src/collector/once.ts', import.meta.url), 'utf8');
     const collectorWatch = readFileSync(new URL('../src/collector/watch.ts', import.meta.url), 'utf8');
@@ -172,7 +175,7 @@ describe('strategy commands', () => {
     expect(history).not.toMatch(/evaluateStrategy|fetch\(|createReadOnlySolanaRpc|dexscreener/i);
   });
 
-  it('has no executable wallet, signing, swap, paper-trade, or backtest capability', () => {
+  it('has no executable wallet, signing, swap, or paper-trade capability in strategy/core', () => {
     const files = [
       '../src/strategy/evaluator.ts',
       '../src/strategy/live.ts',
@@ -181,11 +184,12 @@ describe('strategy commands', () => {
       '../src/strategy/history.ts',
       '../src/core/app.ts',
       '../src/core/safety.ts',
-      '../package.json',
     ];
     for (const file of files) {
       const source = readFileSync(new URL(file, import.meta.url), 'utf8');
       expect(source).not.toMatch(/createWallet|importWallet|secret key|seed phrase|mnemonic|Keypair|sendTransaction|@solana\/web3\.js|jupiter|jito|paper trade|backtest/i);
     }
+    const packageJson = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    expect(packageJson).not.toMatch(/createWallet|importWallet|secret key|seed phrase|mnemonic|Keypair|sendTransaction|@solana\/web3\.js|jupiter|jito|paper trade/i);
   });
 });

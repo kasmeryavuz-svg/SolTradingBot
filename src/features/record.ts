@@ -43,7 +43,7 @@ try {
     );
     const recorded = repository.recordFeatureBundle({
       marketSnapshot: collected.inputs.market,
-      riskReport: collected.inputs.risk,
+      riskReport: collected.riskReport,
       featureVector: vector,
     });
 
