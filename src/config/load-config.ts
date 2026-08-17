@@ -27,12 +27,17 @@ import {
   DEFAULT_SOLANA_NETWORK,
   DEFAULT_SOLANA_RPC_TIMEOUT_MS,
   DEFAULT_SOLANA_RPC_URL,
+  DEFAULT_RISK_HISTORY_LIMIT,
+  DEFAULT_RISK_SCAN_COMMITMENT,
+  DEFAULT_RISK_SCAN_TIMEOUT_MS,
   DEFAULT_TRADING_ENABLED,
   DISCOVERY_MAX_CANDIDATES_LIMIT,
+  HISTORY_LIMIT_MAX,
 } from './defaults.js';
 import {
   LOG_LEVEL_VALUES,
   NODE_ENV_VALUES,
+  RISK_COMMITMENT_VALUES,
   SOLANA_NETWORK_VALUES,
   type AppConfig,
   type EnvSource,
@@ -94,6 +99,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     },
     discovery: loadDiscoveryConfig(source),
     database: loadDatabaseConfig(source),
+    risk: loadRiskConfig(source),
   };
 }
 
@@ -158,6 +164,28 @@ function loadDatabaseConfig(source: EnvSource): AppConfig['database'] {
       readOptionalEnv(source, 'DATABASE_BUSY_TIMEOUT_MS'),
       DEFAULT_DATABASE_BUSY_TIMEOUT_MS,
       'DATABASE_BUSY_TIMEOUT_MS',
+    ),
+  };
+}
+
+function loadRiskConfig(source: EnvSource): AppConfig['risk'] {
+  return {
+    timeoutMs: parsePositiveInteger(
+      readOptionalEnv(source, 'RISK_SCAN_TIMEOUT_MS'),
+      DEFAULT_RISK_SCAN_TIMEOUT_MS,
+      'RISK_SCAN_TIMEOUT_MS',
+    ),
+    commitment: parseEnumValue(
+      readOptionalEnv(source, 'RISK_SCAN_COMMITMENT'),
+      RISK_COMMITMENT_VALUES,
+      DEFAULT_RISK_SCAN_COMMITMENT,
+      'RISK_SCAN_COMMITMENT',
+    ),
+    historyLimit: parseBoundedPositiveInteger(
+      readOptionalEnv(source, 'RISK_HISTORY_LIMIT'),
+      DEFAULT_RISK_HISTORY_LIMIT,
+      'RISK_HISTORY_LIMIT',
+      HISTORY_LIMIT_MAX,
     ),
   };
 }

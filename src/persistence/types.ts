@@ -1,5 +1,12 @@
 import type { DiscoverySource, MarketDataStatus } from '../discovery/types.js';
 import type { MarketSnapshot } from '../market-data/types.js';
+import type {
+  HighestFindingSeverity,
+  RiskCheckResult,
+  RiskFinding,
+  TokenExtensionObservation,
+  TokenProgramKind,
+} from '../risk/types.js';
 
 export class PersistenceError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -33,6 +40,7 @@ export type PersistenceStats = {
   discoveryRunCount: number;
   discoveryObservationCount: number;
   marketSnapshotCount: number;
+  riskScanCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -75,4 +83,32 @@ export type TokenHistory = {
 export type HistoryLimit = {
   requested: number;
   applied: number;
+};
+
+export type RecordedRiskScan = {
+  scanId: number;
+  tokenMint: string;
+  scannedAt: string;
+  tokenInserted: boolean;
+};
+
+export type StoredRiskScanSummary = {
+  id: number;
+  scannedAt: string;
+  tokenProgram: TokenProgramKind;
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
+  supplyRaw: string | null;
+  top1Bps: number | null;
+  top5Bps: number | null;
+  highestFindingSeverity: HighestFindingSeverity;
+  findingCodes: string[];
+  checks: RiskCheckResult[];
+  extensions: TokenExtensionObservation[];
+  findings: RiskFinding[];
+};
+
+export type TokenRiskHistory = {
+  token: StoredToken;
+  scans: StoredRiskScanSummary[];
 };

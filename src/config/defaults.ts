@@ -26,3 +26,7 @@ export const MEMORY_DATABASE_PATH = ':memory:';
 export const DEFAULT_DATABASE_BUSY_TIMEOUT_MS = 5_000;
 export const DEFAULT_HISTORY_LIMIT = 20;
 export const HISTORY_LIMIT_MAX = 100;
+
+export const DEFAULT_RISK_SCAN_TIMEOUT_MS = 10_000;
+export const DEFAULT_RISK_SCAN_COMMITMENT = 'confirmed';
+export const DEFAULT_RISK_HISTORY_LIMIT = 20;

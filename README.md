@@ -4,7 +4,7 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 04
+## Current checkpoint: 05
 
 **Current capabilities:**
 
@@ -16,23 +16,29 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - local SQLite persistence
 - schema migrations
 - historical discovery runs
-- historical source-health records
-- historical candidate observations
 - historical market snapshots
 - explicit persistent collector
-- database status/history inspection
+- technical token risk scanning
+- mint authority inspection
+- freeze authority inspection
+- Token-2022 extension inspection
+- top token-account concentration
+- historical risk reports
 
 ### What this checkpoint is not
 
 - **Blockchain capability: READ ONLY**
-- **Local database writes: YES**
+- **Local SQLite writes: YES**
 - **Wallet: NO**
 - **Transaction signing: NO**
 - **Blockchain transaction sending: NO**
-- **Risk scanner: NO**
+- **Risk scanner: YES**
 - **Strategy: NO**
+- **Signals: NO**
 - **Paper trading: NO**
 - **Real trading: NO**
+
+Risk findings are **technical indicators**, not investment recommendations. A report with no findings does **not** prove a token is safe.
 
 Writing a SQLite row is a **local file write**. It is not a Solana transaction.
 
@@ -40,13 +46,13 @@ Writing a SQLite row is a **local file write**. It is not a Solana transaction.
 
 If `TRADING_ENABLED=true`, the app will refuse to start. `DATABASE_ENABLED` and `DISCOVERY_ENABLED` do not turn trading on.
 
-## What is persistence?
+## What is a risk scan?
 
-The bot can already discover tokens and read market snapshots. Without a database, that information disappears when the process exits.
+The bot can already discover tokens and store market snapshots. Checkpoint 05 inspects on-chain mint facts: authorities, Token-2022 extensions, supply, and the largest **token accounts**.
 
-Checkpoint 04 stores those facts in a local SQLite file so we can later ask: when did we first see this mint, which sources reported it, and how did its stored snapshots change over time?
+`getTokenLargestAccounts` does not return beneficial owners. A large account may be a DEX vault, a program, or something else.
 
-See [docs/CHECKPOINT_04.md](docs/CHECKPOINT_04.md) for a beginner explanation.
+See [docs/CHECKPOINT_05.md](docs/CHECKPOINT_05.md) for a beginner explanation.
 
 ## How to install dependencies
 
@@ -89,13 +95,14 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 04
+Checkpoint: 05
 Blockchain capability: READ ONLY
 Local persistence: available
+Token risk scanner: available
 Trading capability: disabled
 ```
 
-`npm run dev` does **not** start market, discovery, or collector watchers, and it does **not** write database rows.
+`npm run dev` does **not** start market, discovery, collector, or risk watchers, and it does **not** write database rows.
 
 ## How to check Solana, market data, and discovery
 
@@ -108,6 +115,28 @@ npm run market:watch
 npm run discovery:check
 npm run discovery:watch
 ```
+
+## How to scan token risk
+
+Read-only scan (no database required):
+
+```bash
+npm run risk:check -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Scan and persist one report (`DATABASE_ENABLED=true`):
+
+```bash
+npm run risk:record -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+Show stored risk history for one mint:
+
+```bash
+npm run risk:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+The collector does **not** automatically risk-scan every discovered candidate.
 
 ## How to use the local database
 
@@ -175,6 +204,7 @@ src/             Application source code
   discovery/     Read-only public-feed candidate discovery
   persistence/   SQLite repository, migrations, and db commands
   collector/     Discover + persist orchestration (no SQL)
+  risk/          Read-only token risk scan, evaluator, and risk commands
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls)
@@ -182,4 +212,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Later checkpoints will add a risk scanner and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.
+Later checkpoints will add signals and strategies. Those pieces are listed in [docs/ROADMAP.md](docs/ROADMAP.md). They are **not** implemented yet.

@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 04 adds local SQLite persistence — blockchain writes and trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 05 adds a read-only token risk scanner — blockchain writes and trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -23,7 +23,10 @@
     "db:status": "tsx src/persistence/commands/status.ts",
     "db:history": "tsx src/persistence/commands/history.ts",
     "collect:once": "tsx src/collector/once.ts",
-    "collect:watch": "tsx src/collector/watch.ts"
+    "collect:watch": "tsx src/collector/watch.ts",
+    "risk:check": "tsx src/risk/check.ts",
+    "risk:record": "tsx src/risk/record.ts",
+    "risk:history": "tsx src/risk/history.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

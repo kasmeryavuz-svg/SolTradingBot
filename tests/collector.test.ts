@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { USDC_MINT, WRAPPED_SOL_MINT } from '../src/config/index.js';
 import type { DiscoveryConfig } from '../src/config/types.js';
@@ -193,6 +194,20 @@ describe('collector', () => {
     expect(repository.getStats().marketSnapshotCount).toBe(1);
   });
 
+  it('does not automatically run the risk scanner', () => {
+    const files = [
+      'src/collector/service.ts',
+      'src/collector/once.ts',
+      'src/collector/watch.ts',
+      'src/collector/watch-loop.ts',
+    ];
+
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      expect(source).not.toMatch(/scanTokenRisk|recordRiskReport|createSolanaRiskDataProvider/);
+    }
+  });
+
   it('rejects collector commands when trading is enabled or persistence is disabled', () => {
     expect(() => {
       prepareCollectorCommand({ TRADING_ENABLED: 'true' });
@@ -224,7 +239,7 @@ describe('collector', () => {
       signal: controller.signal,
       write: (line) => {
         lines.push(line);
-        if (line.includes('Checkpoint: 04') && cycles >= 2) {
+        if (line.includes('Checkpoint: 05') && cycles >= 2) {
           controller.abort();
         }
       },
