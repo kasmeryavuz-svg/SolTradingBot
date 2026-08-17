@@ -19,8 +19,8 @@ Do not implement a later checkpoint until the current one is complete.
 | 10         | Position management               | Complete                  |
 | 11         | Exit engine                       | Complete                  |
 | 12         | Performance analytics             | Complete                  |
-| 12.5       | Strategy Research / Benchmark Lab | Complete after validation |
-| 13         | Dashboard                         | Not started               |
+| 12.5       | Strategy Research / Benchmark Lab | Complete                  |
+| 13         | Dashboard                         | Complete after validation |
 | 14         | Real execution engine             | Not started               |
 | 15         | Wallet security                   | Not started               |
 | 16         | Tiny live trading                 | Not started               |
@@ -31,21 +31,21 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 12.5 Strategy Research / Benchmark Lab (complete after validation)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, and an r125_v1 read-only historical strategy research / benchmark lab
-- **Not implemented:** everything from Checkpoint 13 onward
+- **Active checkpoint:** 13 Dashboard (complete after validation)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, an r125_v1 read-only historical strategy research / benchmark lab, and a d13_v1 local loopback-only read-only observability dashboard
+- **Not implemented:** everything from Checkpoint 14 onward
 
-## What Phase 12.5 did
+## What Checkpoint 13 did
 
-Phase 12.5 creates a **fixed historical candidate comparison lab**. Five pre-registered entry hypotheses run against the same SQLite research universe, reconstruct frozen c06_v1 features point-in-time, share frozen x11_v1 exits, and reuse a12-compatible GROSS paper mathematics.
+Checkpoint 13 is a **local read-only observability interface**. It visualizes already-stored SQLite evidence, runtime paper state, a12 GROSS performance, and r125 research coverage.
 
-It does **not** prove profitability. It does **not** optimize parameters. It does **not** select a strategy for live trading.
+It does **not** execute trades. It does **not** hold a wallet. It does **not** change strategy thresholds. It does **not** call Solana or DEX Screener.
 
-## Planned next checkpoint: 13 Dashboard
+## Planned next checkpoint: 14 Real execution engine
 
-This phase is **not** implemented in Phase 12.5.
+This phase is **not** implemented in Checkpoint 13.
 
-Checkpoint 13 can visualize stored history and research reports. It must not become a live trading console.
+Checkpoint 14 is where a real execution engine would live. The dashboard must not grow buy/sell buttons in anticipation of that work.
 
 ## Checkpoint 17 still owns optimization
 

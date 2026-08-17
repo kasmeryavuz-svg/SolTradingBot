@@ -70,6 +70,10 @@ export type ResearchConfig = {
   tradeLimit: number;
 };
 
+export type DashboardConfig = {
+  port: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -86,6 +90,7 @@ export type AppConfig = {
   exit: ExitConfig;
   performance: PerformanceConfig;
   research: ResearchConfig;
+  dashboard: DashboardConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

@@ -265,7 +265,7 @@ describe('collector', () => {
       signal: controller.signal,
       write: (line) => {
         lines.push(line);
-        if (line.includes('Checkpoint: 12.5') && cycles >= 2) {
+        if (line.includes('Checkpoint: 13') && cycles >= 2) {
           controller.abort();
         }
       },

@@ -94,6 +94,23 @@ export function parseBoundedPositiveInteger(
   return parsed;
 }
 
+export function parseIntegerInInclusiveRange(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const parsed = parsePositiveInteger(raw, fallback, name);
+  if (parsed < minimum || parsed > maximum) {
+    throw new ConfigError(
+      `Invalid ${name}. Expected an integer from ${String(minimum)} to ${String(maximum)}.`,
+    );
+  }
+
+  return parsed;
+}
+
 export function parseHttpUrl(raw: string | undefined, fallback: string, name: string): string {
   const value = raw ?? fallback;
 
