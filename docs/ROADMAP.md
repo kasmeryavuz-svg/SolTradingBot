@@ -15,8 +15,8 @@ Do not implement a later checkpoint until the current one is complete.
 | 06 | Signal and feature engine | Complete |
 | 07 | First strategy | Complete |
 | 08 | Backtester | Complete |
-| 09 | Paper trading | Complete after validation |
-| 10 | Position management | Not started |
+| 09 | Paper trading | Complete |
+| 10 | Position management | Complete after validation |
 | 11 | Exit engine | Not started |
 | 12 | Performance analytics | Not started |
 | 13 | Dashboard | Not started |
@@ -30,6 +30,6 @@ Do not implement a later checkpoint until the current one is complete.
 
 ## Current status
 
-- **Active checkpoint:** 09 Paper trading (complete after validation)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, and a p09_v1 live paper-entry observation layer
-- **Not implemented:** everything from Checkpoint 10 onward
+- **Active checkpoint:** 10 Position management (complete after validation)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, and pm10_v1 simulated single-open-position management with a fixed $100 reference notional
+- **Not implemented:** everything from Checkpoint 11 onward

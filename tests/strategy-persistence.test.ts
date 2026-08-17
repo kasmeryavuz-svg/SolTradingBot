@@ -10,7 +10,7 @@ import {
   PersistenceError,
   SqlitePersistenceRepository,
 } from '../src/persistence/index.js';
-import { applyMigrations, openSqliteDatabase } from '../src/persistence/sqlite/index.js';
+import { applyMigrations, LATEST_SCHEMA_VERSION, openSqliteDatabase } from '../src/persistence/sqlite/index.js';
 import {
   FEATURE_MIGRATION_NAME,
   INITIAL_MIGRATION_NAME,
@@ -97,8 +97,8 @@ describe('strategy persistence migration', () => {
       try {
         repository.initialize();
         repository.initialize();
-        expect(repository.getStats().schemaVersion).toBe(5);
-        expect(repository.getTableCounts().schemaMigrations).toBe(5);
+        expect(repository.getStats().schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+        expect(repository.getTableCounts().schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
         expect(repository.getToken(WRAPPED_SOL_MINT)?.mint).toBe(WRAPPED_SOL_MINT);
         expect(repository.getStats().discoveryRunCount).toBe(1);
         expect(repository.getStats().featureVectorCount).toBe(1);

@@ -54,6 +54,10 @@ export type PaperConfig = {
   historyLimit: number;
 };
 
+export type PositionConfig = {
+  historyLimit: number;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -66,6 +70,7 @@ export type AppConfig = {
   features: FeatureConfig;
   strategy: StrategyConfig;
   paper: PaperConfig;
+  position: PositionConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

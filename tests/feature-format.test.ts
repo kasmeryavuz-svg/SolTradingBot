@@ -14,7 +14,7 @@ describe('feature formatter', () => {
     );
     expect(withoutDisclaimer).not.toMatch(/\bBUY\b|\bSELL\b|RECOMMENDED|bullish|bearish|good setup|winner/);
     expect(lines).not.toMatch(/NaN|Infinity/);
-    expect(lines).toContain('Checkpoint: 09');
+    expect(lines).toContain('Checkpoint: 10');
   });
 
   it('shows unavailable features as n/a with a reason', () => {

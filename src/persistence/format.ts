@@ -12,9 +12,10 @@ export function formatCapabilityFooter(): string[] {
     'Strategy evaluator: available',
     'Backtester: available',
     'Paper trading: available',
-    'Position management: unavailable',
+    'Position management: available',
+    'Exit engine: unavailable',
     'Trading capability: DISABLED',
-    'Checkpoint: 09',
+    'Checkpoint: 10',
   ];
 }
 
@@ -52,6 +53,9 @@ export function formatStatusLines(path: string, stats: PersistenceStats): string
     `Feature vectors: ${String(stats.featureVectorCount)}`,
     `Strategy evaluations: ${String(stats.strategyEvaluationCount)}`,
     `Paper evaluations: ${String(stats.paperEvaluationCount)}`,
+    `Position evaluations: ${String(stats.positionEvaluationCount)}`,
+    `Paper positions: ${String(stats.paperPositionCount)}`,
+    `Open paper positions: ${String(stats.openPaperPositionCount)}`,
     '',
     `Earliest observation: ${stats.earliestObservationAt ?? 'n/a'}`,
     `Latest observation: ${stats.latestObservationAt ?? 'n/a'}`,

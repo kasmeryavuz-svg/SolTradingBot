@@ -29,7 +29,19 @@ import {
 } from '../paper/invariants.js';
 import { PaperError, type PaperEvaluation } from '../paper/types.js';
 import { PAPER_SPEC_NAME, PAPER_SPEC_VERSION } from '../paper/constants.js';
+import { evaluatePositionAction } from '../position/evaluator.js';
+import {
+  POSITION_DEFINITION_FINGERPRINT,
+  positionEvaluationSourceIdentity,
+} from '../position/identity.js';
+import {
+  assertPositionEvaluationInvariants,
+  positionEvaluationsSemanticallyEqual,
+} from '../position/invariants.js';
+import { PositionError, type PositionEvaluation } from '../position/types.js';
+import { POSITION_SPEC_NAME, POSITION_SPEC_VERSION } from '../position/constants.js';
 import { PersistenceError } from './types.js';
+import type { StoredOpenPaperPosition } from './types.js';
 
 export function requireFiniteOrNull(value: number | null, field: string): number | null {
   if (value === null) {
@@ -212,6 +224,69 @@ export function assertPersistablePaperEvaluation(
   });
   if (actualIdentity !== expectedIdentity) {
     throw new PersistenceError('Paper source identity does not match the canonical evaluation identity.');
+  }
+}
+
+export function assertPersistablePositionEvaluation(
+  evaluation: PositionEvaluation,
+  sources: {
+    marketSnapshot: MarketSnapshot;
+    featureVector: FeatureVector;
+    strategyEvaluation: StrategyEvaluation;
+    paperEvaluation: PaperEvaluation;
+    priorOpenPosition: StoredOpenPaperPosition | null;
+  },
+): void {
+  try {
+    assertPersistablePaperEvaluation(sources.paperEvaluation, {
+      marketSnapshot: sources.marketSnapshot,
+      featureVector: sources.featureVector,
+      strategyEvaluation: sources.strategyEvaluation,
+    });
+    assertPositionEvaluationInvariants(evaluation, {
+      paperEvaluation: sources.paperEvaluation,
+      currentOpenPosition: sources.priorOpenPosition,
+    });
+  } catch (error: unknown) {
+    if (
+      error instanceof FeatureEngineError ||
+      error instanceof StrategyError ||
+      error instanceof PaperError ||
+      error instanceof PositionError
+    ) {
+      throw new PersistenceError(error.message, { cause: error });
+    }
+    throw error;
+  }
+
+  if (evaluation.positionSpecVersion !== POSITION_SPEC_VERSION || evaluation.positionSpecName !== POSITION_SPEC_NAME) {
+    throw new PersistenceError('Position evaluation spec does not match pm10_v1.');
+  }
+  if (evaluation.positionDefinitionFingerprint !== POSITION_DEFINITION_FINGERPRINT) {
+    throw new PersistenceError('Position definition fingerprint does not match the current pm10_v1 definition.');
+  }
+
+  const recomputed = evaluatePositionAction({
+    paperEvaluation: sources.paperEvaluation,
+    currentOpenPosition: sources.priorOpenPosition,
+  });
+  if (
+    !positionEvaluationsSemanticallyEqual(evaluation, recomputed) ||
+    evaluation.evaluatedAt !== recomputed.evaluatedAt
+  ) {
+    throw new PersistenceError(
+      'Position evaluation does not match a fresh pm10_v1 evaluation of the supplied paper bundle.',
+    );
+  }
+
+  const expectedIdentity = positionEvaluationSourceIdentity({
+    positionSpecVersion: POSITION_SPEC_VERSION,
+    positionDefinitionFingerprint: POSITION_DEFINITION_FINGERPRINT,
+    paperSourceIdentity: recomputed.paperSourceIdentity,
+    priorOpenPositionSourceIdentity: recomputed.priorOpenPositionSourceIdentity,
+  });
+  if (evaluation.sourceIdentity !== expectedIdentity) {
+    throw new PersistenceError('Position source identity does not match the canonical evaluation identity.');
   }
 }
 

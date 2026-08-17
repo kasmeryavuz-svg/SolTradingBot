@@ -11,6 +11,7 @@ import type {
 } from '../risk/types.js';
 import type { StrategyDecision, StrategyEvaluation, StrategyRuleResult } from '../strategy/types.js';
 import type { PaperEvaluation } from '../paper/types.js';
+import type { OpenPaperPosition, PositionEvaluation } from '../position/types.js';
 
 export class PersistenceError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -48,6 +49,9 @@ export type PersistenceStats = {
   featureVectorCount: number;
   strategyEvaluationCount: number;
   paperEvaluationCount: number;
+  positionEvaluationCount: number;
+  paperPositionCount: number;
+  openPaperPositionCount: number;
   earliestObservationAt: string | null;
   latestObservationAt: string | null;
 };
@@ -246,4 +250,65 @@ export type StoredPaperEvaluationSummary = {
 export type TokenPaperHistory = {
   token: StoredToken;
   evaluations: StoredPaperEvaluationSummary[];
+};
+
+export type PositionBundle = PaperBundle & {
+  priorOpenPosition: StoredOpenPaperPosition | null;
+  positionEvaluation: PositionEvaluation;
+};
+
+export type RecordedPositionBundle = {
+  positionEvaluationId: number;
+  paperEvaluationId: number;
+  strategyEvaluationId: number;
+  vectorId: number;
+  paperPositionId: number | null;
+  openPositionCreated: boolean;
+  tokenMint: string;
+  sourceIdentity: string;
+  inserted: boolean;
+  paperInserted: boolean;
+  strategyInserted: boolean;
+  featureInserted: boolean;
+  marketInserted: boolean;
+  riskInserted: boolean;
+  tokenInserted: boolean;
+  paperDefinitionInserted: boolean;
+  positionDefinitionInserted: boolean;
+};
+
+export type StoredOpenPaperPosition = OpenPaperPosition & {
+  id: number;
+  positionEvaluationId: number;
+  openingPaperEvaluationId: number;
+};
+
+export type StoredPositionEvaluationSummary = {
+  id: number;
+  paperEvaluationId: number;
+  tokenMint: string;
+  positionSpecVersion: string;
+  positionSpecName: string;
+  positionDefinitionFingerprint: string;
+  paperSpecVersion: string;
+  paperDefinitionFingerprint: string;
+  paperSourceIdentity: string;
+  asOf: string;
+  evaluatedAt: string;
+  paperAction: PositionEvaluation['paperAction'];
+  paperNoActionReason: PositionEvaluation['paperNoActionReason'];
+  priorOpenPositionId: number | null;
+  priorOpenPositionSourceIdentity: string | null;
+  positionAction: PositionEvaluation['positionAction'];
+  positionReason: PositionEvaluation['positionReason'];
+  entryPriceUsd: number | null;
+  entryNotionalUsd: number | null;
+  quantityTokens: number | null;
+  positionSourceIdentity: string | null;
+  sourceIdentity: string;
+};
+
+export type TokenPositionHistory = {
+  token: StoredToken;
+  evaluations: StoredPositionEvaluationSummary[];
 };

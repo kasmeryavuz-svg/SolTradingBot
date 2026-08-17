@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 09 adds a live paper-entry observation layer on frozen s07_v1 — blockchain writes and trading are not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Checkpoint 10 adds simulated paper position management on frozen p09_v1 — blockchain writes and trading are not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -35,7 +35,10 @@
     "strategy:history": "tsx src/strategy/history.ts",
     "backtest:run": "tsx src/backtest/run.ts",
     "paper:step": "tsx src/paper/step.ts",
-    "paper:history": "tsx src/paper/history.ts"
+    "paper:history": "tsx src/paper/history.ts",
+    "position:step": "tsx src/position/step.ts",
+    "position:status": "tsx src/position/status.ts",
+    "position:history": "tsx src/position/history.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

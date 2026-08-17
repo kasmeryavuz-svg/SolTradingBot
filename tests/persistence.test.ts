@@ -26,6 +26,8 @@ import {
   STRATEGY_MIGRATION_VERSION,
   PAPER_MIGRATION_NAME,
   PAPER_MIGRATION_VERSION,
+  POSITION_MIGRATION_NAME,
+  POSITION_MIGRATION_VERSION,
 } from '../src/persistence/sqlite/migrations.js';
 import {
   createSqlitePersistenceRepository,
@@ -142,12 +144,17 @@ describe('SQLite persistence', () => {
     expect(STRATEGY_MIGRATION_VERSION).toBe(4);
     expect(PAPER_MIGRATION_NAME).toBe('005_paper_evaluations');
     expect(PAPER_MIGRATION_VERSION).toBe(5);
+    expect(POSITION_MIGRATION_NAME).toBe('006_position_management');
+    expect(POSITION_MIGRATION_VERSION).toBe(6);
     expect(first.foreignKeysEnabled).toBe(true);
     expect(first.integrity.ok).toBe(true);
     expect(first.riskScanCount).toBe(0);
     expect(first.featureVectorCount).toBe(0);
     expect(first.strategyEvaluationCount).toBe(0);
     expect(first.paperEvaluationCount).toBe(0);
+    expect(first.positionEvaluationCount).toBe(0);
+    expect(first.paperPositionCount).toBe(0);
+    expect(first.openPaperPositionCount).toBe(0);
     expect(repository.getTableCounts().schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
   });
 
