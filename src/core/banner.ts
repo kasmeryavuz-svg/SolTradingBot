@@ -11,7 +11,7 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 18');
+  console.log('Checkpoint: 19');
   console.log('Blockchain capability: READ ONLY by default');
   console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
   console.log('Token risk scanner: available');
@@ -29,6 +29,8 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
   console.log('Wallet security: available');
   console.log('Manual tiny-live broadcaster: available');
   console.log('Wallet intelligence: available');
+  console.log('Advanced models / ML: available');
+  console.log('ML live integration: unavailable');
   console.log('Automatic wallet following: unavailable');
   console.log('Copy trading: unavailable');
   console.log('Automatic live trading: unavailable');

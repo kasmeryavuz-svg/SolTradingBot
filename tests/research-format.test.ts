@@ -100,7 +100,7 @@ describe('research formatting', () => {
     expect(catalog).toContain('flow_confirmed_momentum_v1');
     expect(catalog).toContain('runner_friendly_momentum_v1');
     expect(catalog).not.toMatch(/GROSS paper PnL|Win rate|profit factor/i);
-    expect(catalog).toContain('Checkpoint: 18');
+    expect(catalog).toContain('Checkpoint: 19');
 
     const compare = formatResearchCompareLines(
       buildResearchCompareReport(makeResearchDataset([allEntrySnapshot()])),
@@ -120,7 +120,7 @@ describe('research formatting', () => {
     );
     expect(compare).toContain('r125 does not apply a numeric sample-adequacy threshold');
     expect(compare).not.toMatch(/limited historical sample/);
-    expect(compare).toContain('Checkpoint: 18');
+    expect(compare).toContain('Checkpoint: 19');
     expect(compare).toContain('Strategy benchmark lab: available');
   });
 });

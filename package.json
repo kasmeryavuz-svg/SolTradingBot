@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 18 adds a read-only public-on-chain wallet intelligence layer. Automatic trading is not implemented.",
+    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 19 adds a read-only purged walk-forward supervised ML research lab. Automatic trading is not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -69,7 +69,13 @@
     "wallet-intel:inspect": "tsx src/wallet-intelligence/inspect.ts",
     "wallet-intel:scan": "tsx src/wallet-intelligence/scan.ts",
     "wallet-intel:latest": "tsx src/wallet-intelligence/latest.ts",
-    "wallet-intel:history": "tsx src/wallet-intelligence/history-command.ts"
+    "wallet-intel:history": "tsx src/wallet-intelligence/history-command.ts",
+    "ml:status": "tsx src/ml/status.ts",
+    "ml:features": "tsx src/ml/features-command.ts",
+    "ml:data": "tsx src/ml/data.ts",
+    "ml:run": "tsx src/ml/run.ts",
+    "ml:folds": "tsx src/ml/folds-command.ts",
+    "ml:candidate": "tsx src/ml/candidate-command.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

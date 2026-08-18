@@ -4,11 +4,13 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 18
+## Current checkpoint: 19
 
-**Checkpoint 18 is a read-only public-on-chain wallet intelligence layer.** It analyzes public token-account holders and capped wallet-history evidence. It does **not** identify people, score wallets, compute PnL, copy trades, or send transactions. It does **not** connect those features to strategy execution or the Checkpoint 16 broadcaster.
+**Checkpoint 19 is a read-only purged walk-forward supervised machine-learning research lab.** It asks whether frozen point-in-time c06 features contain out-of-sample information about later cost-adjusted x11 trade outcomes. It does **not** optimize until something wins, does **not** connect predictions to live execution, and does **not** claim that AI predicts meme coins reliably.
 
-Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP18 does not call it.
+Checkpoint 18 remains a read-only public-on-chain wallet intelligence layer. Wallet-intelligence features are **not** ML model inputs in ml19_v1, because most historical market observations do not have uniformly point-in-time holder scans.
+
+Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP19 does not call it. `npm run dev` does not train a model.
 
 **Current capabilities:**
 
@@ -33,6 +35,7 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - l16_v1 manual single-shot tiny mainnet RPC broadcaster
 - o17_v1 anchored walk-forward / cost-stress strategy-optimization lab
 - wi18_v1 public-on-chain holder-cohort wallet intelligence
+- ml19_v1 purged walk-forward regularized logistic research lab
 
 ### What this checkpoint is not
 
@@ -46,6 +49,8 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - **Strategy benchmark lab: YES**
 - **Strategy optimization lab: YES (read-only walk-forward research; no live promotion)**
 - **Wallet intelligence: YES (public holder-cohort evidence; no score, no PnL, no copy trading)**
+- **Advanced models / ML: YES (read-only research lab; no live integration)**
+- **ML live integration: NO**
 - **Dashboard: YES (local, read-only, frozen d13 — no live controls)**
 - **Execution preflight: YES (terminal-only, unsigned until an explicit wallet or live command)**
 - **Wallet security boundary: YES (interactive memory signer, hidden TTY only)**
@@ -76,6 +81,8 @@ r125_v1 may then **compare five fixed entry hypotheses** against the same histor
 o17_v1 may then **run an anchored chronological walk-forward** over a frozen catalog of 8 entries and 5 exits, with LOW/BASE/STRESS all-in friction *assumptions*. TRAIN may select. TEST/OOS may only measure. Promotion language is only `NO_PROMOTION_INSUFFICIENT_DATA`, `NO_PROMOTION_FAILED_ROBUSTNESS`, or `ELIGIBLE_FOR_FORWARD_PAPER_VALIDATION`. The last one is **not** live approval and does **not** edit s07 or the paper engine.
 
 Checkpoint 18 then **describes public holder-cohort evidence** for one mint. `getTokenLargestAccounts` returns **token accounts**, not wallets. Several of those accounts may share one owner; CP18 aggregates inside the observed top-20 set only and does **not** claim that aggregate is the owner’s complete balance. Observed wallet age is first observed activity under the configured history provider, **not** wallet creation time. A bidirectional token-balance change is **not** a guaranteed swap. There is no smart-money score, no wallet PnL, and no copy trading. These features are not wired into s07, r125, o17, paper, or `live:execute`.
+
+Checkpoint 19 then **fits one frozen L2-regularized logistic model** on purged chronological TRAIN folds and **only measures** TEST. Labels are BASE-cost (200/200 bps) x11 outcomes: positive if net PnL > 0. The decision threshold is frozen at 0.65. Allowed statuses are only `NO_MODEL_PROMOTION_INSUFFICIENT_DATA`, `NO_MODEL_PROMOTION_FAILED_VALIDATION`, or `ELIGIBLE_FOR_FORWARD_PAPER_MODEL_VALIDATION`. The last one still does **not** edit s07, enable paper, or call `live:execute`. A young database is expected to be insufficient. That is not a test failure and is not a reason to loosen gates.
 
 Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener. That dashboard stays frozen in Checkpoint 14. It has no BUILD / SIMULATE / SIGN / SEND buttons.
 
@@ -142,7 +149,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 18
+Checkpoint: 19
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -160,6 +167,8 @@ Execution preflight: available
 Wallet security: available
 Manual tiny-live broadcaster: available
 Wallet intelligence: available
+Advanced models / ML: available
+ML live integration: unavailable
 Automatic wallet following: unavailable
 Copy trading: unavailable
 Automatic live trading: unavailable
@@ -602,6 +611,57 @@ There is no `wallet-intel:copy`, `wallet-intel:trade`, `wallet-intel:buy`, `wall
 
 See [docs/CHECKPOINT_18.md](docs/CHECKPOINT_18.md) and [docs/WALLET_INTELLIGENCE_SOURCES.md](docs/WALLET_INTELLIGENCE_SOURCES.md).
 
+## How to run the ML research lab
+
+Checkpoint 19 is a **read-only supervised learning lab**. Spec `ml19_v1`. It does not trade.
+
+```bash
+npm run ml:status
+npm run ml:features
+npm run ml:data
+npm run ml:run
+npm run ml:folds
+npm run ml:candidate
+```
+
+`ml:status` and `ml:features` need no database and no network. They print identity, the frozen c06 feature list, and the transformed dimension. Feature output contains **no** performance numbers.
+
+`ml:data`, `ml:run`, `ml:folds`, and `ml:candidate` require `DATABASE_ENABLED=true` and an existing SQLite file opened **read-only**. They reuse the exact conservative r125/o17 snapshot universe. Wallet-intelligence scans may appear as readiness diagnostics in `ml:data`. They are **not** model inputs.
+
+**Supervised learning** here means: each decision sample has frozen point-in-time **features** (numbers describing the market at time T) and a later **label** (did the frozen x11 path make money after BASE costs?). The computer fits a linear model that maps features to a **predicted probability** of a positive label.
+
+A **feature** is one c06 number or boolean known at T. A mint address is not a feature. A future price is not a feature.
+
+A **label** is 1 if BASE-cost net PnL > 0 after the frozen 10% stop / 20% take / 6h hold path, else 0. If the outcome cannot be resolved without inventing a close, the sample is **CENSORED**. Censored rows are not used for training or classification metrics. They remain in the model-signal universe and can be threshold-selected; that selected censoring is reported and gated.
+
+The s07+x11 baseline is compared on the **same chronological TEST observation interval** as ML. s07 keeps its own frozen entry rules. It does not get an earlier `latestEntryInclusive` cutoff. Late TEST signals that cannot finish inside the fold are opened and then censored.
+
+**TRAIN vs TEST:** TRAIN may fit medians, means, standard deviations, and logistic coefficients. TEST may only receive those frozen objects and be scored. TEST never chooses a threshold, a regularizer, or a different model.
+
+**Why a random split is wrong for trading:** prices are ordered in time. Mixing future rows into TRAIN leaks information a live trader would not have had.
+
+**Why point-in-time matters:** a feature reconstructed with later data is cheating. c06 uses only the current snapshot, an earlier same-pair snapshot, and a risk scan at or before T.
+
+**Why purging is needed:** a TRAIN label whose outcome window reaches into TEST has seen TEST-period prices. Those rows are removed from TRAIN.
+
+**What logistic regression does:** it learns one weight per transformed feature plus an intercept, then outputs a probability. The weights are **associations inside this linear model**, not causal effects, and not proof that a feature “causes profit.”
+
+**A predicted probability is not a guarantee.** 0.80 does not mean the next trade wins.
+
+**AUC** (ROC-AUC) is the chance that a random positive sample scores higher than a random negative, with ties counting as 0.5. **Log loss** penalizes confident wrong probabilities. **Brier score** is mean squared error of probabilities. **Calibration** compares predicted probabilities with observed frequencies in five fixed bins.
+
+**Why cost-adjusted labels matter:** a gross winner can be a net loser after 200 bps in and 200 bps out. Training on GROSS would answer the wrong question.
+
+**Why wallet intelligence is not used yet:** most historical market snapshots do not have holder scans collected at or before those snapshots. Joining a later scan would leak the future.
+
+**Why ML is research-only:** even a strong out-of-sample lab result describes **this sample** under frozen assumptions. It is not live profitability, not a deployed model, and not permission to edit s07.
+
+A young database is expected to finish as `NO_MODEL_PROMOTION_INSUFFICIENT_DATA`. Do not loosen the frozen minima to force a result.
+
+There is no `ml:live`, `ml:trade`, `ml:deploy`, `ml:auto`, `ml:optimize`, or `ml:paper-enable`.
+
+See [docs/CHECKPOINT_19.md](docs/CHECKPOINT_19.md) and [docs/ML_RESEARCH_SOURCES.md](docs/ML_RESEARCH_SOURCES.md).
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -683,6 +743,7 @@ src/             Application source code
   wallet/        w15_v1 interactive in-memory signer (hidden TTY, no persist, no send)
   live/          l16_v1 manual tiny WSOL→USDC RPC broadcaster (one send, no automation)
   wallet-intelligence/ wi18_v1 public holder-cohort evidence (no signing, no copy trade, no live wiring)
+  ml/            ml19_v1 purged walk-forward logistic research lab (read-only, no live, no DB writes)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
@@ -690,4 +751,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 19 will focus advanced models / ML. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. Wallet intelligence is evidence only. It does not follow wallets or activate live broadcast.
+Checkpoint 20 will focus production deployment. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** started. Checkpoint 19 ML is research-only: it does not edit s07, enable paper, or call `live:execute`. Wallet intelligence remains evidence only. It does not follow wallets or activate live broadcast.
