@@ -202,7 +202,7 @@ describe('actual local database smoke', () => {
     afterRepo.initialize();
     const after = afterRepo.getStats();
     afterRepo.close();
-    expect(after.schemaVersion).toBe(8);
+    expect(after.schemaVersion).toBe(9);
     expect(after.tokenCount).toBe(before.tokenCount);
     expect(after.marketSnapshotCount).toBe(before.marketSnapshotCount);
     expect(after.riskScanCount).toBe(before.riskScanCount);

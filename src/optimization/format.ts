@@ -40,7 +40,7 @@ export function formatOptimizationStatusLines(): string[] {
     `Walk-forward folds: ${String(WALK_FORWARD_FOLD_COUNT)}`,
     'Cost scenarios: LOW / BASE / STRESS (research assumptions, not measured execution cost)',
     `Schema: ${String(REQUIRED_SCHEMA_VERSION)}`,
-    'Migration 009: absent',
+    'Migration 009: unused by o17',
     'Live integration: NONE',
     'No wallet. No signing. No send. No Jupiter. No Solana RPC. No DB writes.',
     '',
@@ -109,7 +109,7 @@ export function formatOptimizationDataLines(input: {
     `Dataset fingerprint: ${dataset.optimizationDatasetFingerprint}`,
     `Research dataset fingerprint: ${dataset.researchDatasetFingerprint}`,
     `Schema: ${String(dataset.schemaVersion)}`,
-    `Migration 009: ${dataset.migration009Present ? 'PRESENT (illegal)' : 'absent'}`,
+    `Migration 009: ${dataset.migration009Present ? 'present (wallet intelligence; unused by o17)' : 'absent'}`,
     '',
     'Segment snapshot / token counts',
   ];

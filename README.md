@@ -4,11 +4,11 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 17
+## Current checkpoint: 18
 
-**Checkpoint 17 is a read-only strategy-optimization research lab.** It does **not** send transactions and does **not** connect strategy signals to the Checkpoint 16 broadcaster.
+**Checkpoint 18 is a read-only public-on-chain wallet intelligence layer.** It analyzes public token-account holders and capped wallet-history evidence. It does **not** identify people, score wallets, compute PnL, copy trades, or send transactions. It does **not** connect those features to strategy execution or the Checkpoint 16 broadcaster.
 
-Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP17 does not call it.
+Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP18 does not call it.
 
 **Current capabilities:**
 
@@ -32,6 +32,7 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - w15_v1 interactive in-memory signer security boundary
 - l16_v1 manual single-shot tiny mainnet RPC broadcaster
 - o17_v1 anchored walk-forward / cost-stress strategy-optimization lab
+- wi18_v1 public-on-chain holder-cohort wallet intelligence
 
 ### What this checkpoint is not
 
@@ -44,12 +45,14 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
 - **Strategy optimization lab: YES (read-only walk-forward research; no live promotion)**
+- **Wallet intelligence: YES (public holder-cohort evidence; no score, no PnL, no copy trading)**
 - **Dashboard: YES (local, read-only, frozen d13 — no live controls)**
 - **Execution preflight: YES (terminal-only, unsigned until an explicit wallet or live command)**
 - **Wallet security boundary: YES (interactive memory signer, hidden TTY only)**
 - **Signing: YES (manual/local only)**
 - **Manual tiny-live broadcast: YES (WSOL→USDC only, ≤0.001 SOL/attempt, ≤0.002 SOL/day, ≤2 attempts/day)**
 - **Automatic live trading: NO**
+- **Copy trading / automatic wallet following: NO**
 - **Jito: NO**
 - **Arbitrary meme-coin live entry: NO**
 - **Dashboard execution: NO**
@@ -71,6 +74,8 @@ a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated
 r125_v1 may then **compare five fixed entry hypotheses** against the same historical SQLite dataset. Those comparisons reuse frozen c06 features, frozen x11 exits, and a12-compatible GROSS math. They do **not** prove a live edge, pick a winner, or optimize thresholds.
 
 o17_v1 may then **run an anchored chronological walk-forward** over a frozen catalog of 8 entries and 5 exits, with LOW/BASE/STRESS all-in friction *assumptions*. TRAIN may select. TEST/OOS may only measure. Promotion language is only `NO_PROMOTION_INSUFFICIENT_DATA`, `NO_PROMOTION_FAILED_ROBUSTNESS`, or `ELIGIBLE_FOR_FORWARD_PAPER_VALIDATION`. The last one is **not** live approval and does **not** edit s07 or the paper engine.
+
+Checkpoint 18 then **describes public holder-cohort evidence** for one mint. `getTokenLargestAccounts` returns **token accounts**, not wallets. Several of those accounts may share one owner; CP18 aggregates inside the observed top-20 set only and does **not** claim that aggregate is the owner’s complete balance. Observed wallet age is first observed activity under the configured history provider, **not** wallet creation time. A bidirectional token-balance change is **not** a guaranteed swap. There is no smart-money score, no wallet PnL, and no copy trading. These features are not wired into s07, r125, o17, paper, or `live:execute`.
 
 Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener. That dashboard stays frozen in Checkpoint 14. It has no BUILD / SIMULATE / SIGN / SEND buttons.
 
@@ -137,7 +142,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 17
+Checkpoint: 18
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -154,6 +159,9 @@ Dashboard: available
 Execution preflight: available
 Wallet security: available
 Manual tiny-live broadcaster: available
+Wallet intelligence: available
+Automatic wallet following: unavailable
+Copy trading: unavailable
 Automatic live trading: unavailable
 Jito: unavailable
 Dashboard live controls: unavailable
@@ -161,7 +169,7 @@ Signing: manual/local only
 Trading capability: MANUAL / HARD-CAPPED ONLY
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, optimization, dashboard, execution, wallet, or live commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `optimization:run`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, `wallet:sign-preflight`, `live:preview`, or `live:execute`. It does **not** prompt for a wallet secret and it does **not** send.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, optimization, dashboard, execution, wallet, live, or wallet-intelligence network commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `optimization:run`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, `wallet:sign-preflight`, `live:preview`, `live:execute`, `wallet-intel:holders`, `wallet-intel:inspect`, or `wallet-intel:scan`. It does **not** prompt for a wallet secret and it does **not** send.
 
 ## How to check Solana, market data, and discovery
 
@@ -563,6 +571,37 @@ Do **not** run `live:execute` in automated tests or during implementation. The f
 
 See [docs/CHECKPOINT_16.md](docs/CHECKPOINT_16.md) and [docs/LIVE_EXECUTION_SOURCES.md](docs/LIVE_EXECUTION_SOURCES.md).
 
+## How to use public wallet intelligence
+
+Checkpoint 18 can inspect public holder-cohort evidence for **one** Solana mint. Spec `wi18_v1`. It is **not** copy trading and **not** identity attribution.
+
+Top token accounts are not top wallets. Owner aggregates are inside the observed top-20 token-account set only. Observed age is not wallet creation time. Bidirectional token-balance changes are not guaranteed swaps. There is no score and no wallet PnL.
+
+```bash
+npm run wallet-intel:status
+npm run wallet-intel:holders -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+npm run wallet-intel:inspect -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+npm run wallet-intel:scan -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+npm run wallet-intel:latest -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+npm run wallet-intel:history -- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+`wallet-intel:status` is local only: no network, no database write.
+
+Network commands are mainnet-only and need `HELIUS_API_KEY` in `.env` (the key, not a URL). Put a placeholder only. Never commit a real key. Never paste a key into chat.
+
+`wallet-intel:holders` resolves the largest token accounts and owners. It does not fetch wallet history and does not write SQLite.
+
+`wallet-intel:inspect` runs the full scan pipeline and prints the report without writing SQLite.
+
+`wallet-intel:scan` runs that same pipeline once, then persists that exact result atomically. It requires `DATABASE_ENABLED=true` and schema 9 (`npm run db:init`). `TRADING_ENABLED` and `LIVE_BROADCAST_ENABLED` are irrelevant.
+
+`wallet-intel:latest` and `wallet-intel:history` are SQLite read-only. No network.
+
+There is no `wallet-intel:copy`, `wallet-intel:trade`, `wallet-intel:buy`, `wallet-intel:follow`, or `wallet-intel:send`. Discovery, collector, strategy, paper, and live do **not** run wallet intelligence automatically.
+
+See [docs/CHECKPOINT_18.md](docs/CHECKPOINT_18.md) and [docs/WALLET_INTELLIGENCE_SOURCES.md](docs/WALLET_INTELLIGENCE_SOURCES.md).
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -643,6 +682,7 @@ src/             Application source code
   execution/     e14_v1 Jupiter V2 unsigned swap preflight engine (no wallet, no sign, no send)
   wallet/        w15_v1 interactive in-memory signer (hidden TTY, no persist, no send)
   live/          l16_v1 manual tiny WSOL→USDC RPC broadcaster (one send, no automation)
+  wallet-intelligence/ wi18_v1 public holder-cohort evidence (no signing, no copy trade, no live wiring)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
@@ -650,4 +690,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 18 will focus wallet intelligence. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. o17 promotion means forward paper validation only. It does not activate strategy automation or live broadcast.
+Checkpoint 19 will focus advanced models / ML. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. Wallet intelligence is evidence only. It does not follow wallets or activate live broadcast.

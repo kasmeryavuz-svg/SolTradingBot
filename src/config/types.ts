@@ -83,6 +83,10 @@ export type ExecutionConfig = {
   jupiterApiKeyConfigured: boolean;
 };
 
+export type WalletIntelligenceConfig = {
+  heliusApiKey: string | null;
+};
+
 export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
@@ -102,6 +106,7 @@ export type AppConfig = {
   research: ResearchConfig;
   dashboard: DashboardConfig;
   execution: ExecutionConfig;
+  walletIntelligence: WalletIntelligenceConfig;
 };
 
 export type EnvSource = Record<string, string | undefined>;

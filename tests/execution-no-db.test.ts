@@ -49,7 +49,7 @@ describe('execution does not write the database', () => {
     });
 
     expect(repository.getTableCounts()).toEqual(before);
-    expect(before.schemaMigrations).toBe(8);
+    expect(before.schemaMigrations).toBe(9);
     expect(before.tokens).toBe(0);
     expect(before.marketSnapshots).toBe(0);
     expect(before.riskScans).toBe(0);

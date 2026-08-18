@@ -392,7 +392,7 @@ describe('sqlite historical source', () => {
     const path = tempDbPath();
     const before = seedHistoricalDb(path);
     expect(before.schemaMigrations).toBe(LATEST_SCHEMA_VERSION);
-    expect(COMPATIBLE_SCHEMA_VERSIONS).toEqual([4, 5, 6, 7, 8]);
+    expect(COMPATIBLE_SCHEMA_VERSIONS).toEqual([4, 5, 6, 7, 8, 9]);
     expect(REQUIRED_SCHEMA_VERSION).toBe(4);
 
     const config = prepareBacktestCommand({
@@ -406,7 +406,7 @@ describe('sqlite historical source', () => {
 
     const afterRepo = openWriteRepo(path);
     expect(afterRepo.getTableCounts()).toEqual(before);
-    expect(afterRepo.getStats().schemaVersion).toBe(8);
+    expect(afterRepo.getStats().schemaVersion).toBe(9);
   });
 
   it('accepts schema 6 and does not migrate it', () => {

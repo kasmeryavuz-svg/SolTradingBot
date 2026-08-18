@@ -35,7 +35,7 @@ function readTree(root: string): string {
 }
 
 describe('optimization hostile audit prep', () => {
-  it('reproves frozen upstream fingerprints and schema 8 with no migration 009', () => {
+  it('reproves frozen upstream fingerprints and schema 9 with frozen 001-008', () => {
     expect(STRATEGY_DEFINITION_FINGERPRINT).toBe(
       'b4560629e6a58331e9046f13bad78b73b3bdc1bb7349fc6173ba158b4db067cd',
     );
@@ -75,12 +75,15 @@ describe('optimization hostile audit prep', () => {
     expect(COST_DEFINITION_FINGERPRINT).toBe(
       'da3674208672b3f7c630ac0d3dc9e8cc0818c639fd5e69c62d9d87203757a523',
     );
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(8)).toBe(
       'e4c5ee0d56a8ffe5d916da3bd68d3792f48ac4ffbcce004ababa983d792747d0',
     );
-    expect(readFileSync(join(process.cwd(), 'src/persistence/sqlite/migrations.ts'), 'utf8')).not.toMatch(
-      /009_|\bversion:\s*9\b/,
+    expect(migrationSqlDigest(9)).toBe(
+      'f9f12785034c3181350b279a20e6baa7676fd8c48fb19dd02ce9ead922d12720',
+    );
+    expect(readFileSync(join(process.cwd(), 'src/persistence/sqlite/migrations.ts'), 'utf8')).toMatch(
+      /009_wallet_intelligence/,
     );
   });
 

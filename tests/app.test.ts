@@ -13,7 +13,7 @@ describe('startup banner', () => {
     vi.restoreAllMocks();
   });
 
-  it('prints the Checkpoint 17 capability status', async () => {
+  it('prints the Checkpoint 18 capability status', async () => {
     const lines: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((message: unknown) => {
       lines.push(String(message));
@@ -40,7 +40,7 @@ describe('startup banner', () => {
       'Version: 2.1.0',
       'Health: ok',
       '',
-      'Checkpoint: 17',
+      'Checkpoint: 18',
       'Blockchain capability: READ ONLY by default',
       'Local persistence: available',
       'Token risk scanner: available',
@@ -57,6 +57,9 @@ describe('startup banner', () => {
       'Execution preflight: available',
       'Wallet security: available',
       'Manual tiny-live broadcaster: available',
+      'Wallet intelligence: available',
+      'Automatic wallet following: unavailable',
+      'Copy trading: unavailable',
       'Automatic live trading: unavailable',
       'Jito: unavailable',
       'Dashboard live controls: unavailable',

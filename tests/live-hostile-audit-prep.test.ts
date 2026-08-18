@@ -15,8 +15,8 @@ function readTree(root: string, extensions: readonly string[]): string {
 }
 
 describe('live hostile audit prep', () => {
-  it('freezes schema 8 and historical migration digests 001-007', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+  it('freezes schema 9 and historical migration digests 001-008', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(1)).toBe('7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a');
     expect(migrationSqlDigest(2)).toBe('c80bbcc691b4eb36c75a3a5fae303f694241152d2ab79679ec8328f9b267071e');
     expect(migrationSqlDigest(3)).toBe('891ed1347be25bcda40cc2219208789fd3af117f91d9d140367c241c087ece1c');

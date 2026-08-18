@@ -16,7 +16,7 @@ function readTree(root: string, extensions: readonly string[]): string {
 
 describe('wallet hostile audit prep', () => {
   it('keeps frozen migration hashes 001-007 and allows live migration 008', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(1)).toBe(
       '7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a',
     );

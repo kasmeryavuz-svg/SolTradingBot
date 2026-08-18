@@ -18,7 +18,9 @@ export const EXIT_MIGRATION_VERSION = 7;
 export const EXIT_MIGRATION_NAME = '007_exit_engine';
 export const LIVE_MIGRATION_VERSION = 8;
 export const LIVE_MIGRATION_NAME = '008_live_execution_attempts';
-export const LATEST_SCHEMA_VERSION = LIVE_MIGRATION_VERSION;
+export const WALLET_INTELLIGENCE_MIGRATION_VERSION = 9;
+export const WALLET_INTELLIGENCE_MIGRATION_NAME = '009_wallet_intelligence';
+export const LATEST_SCHEMA_VERSION = WALLET_INTELLIGENCE_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -782,6 +784,196 @@ CREATE INDEX live_execution_attempts_taker_created
   ON live_execution_attempts (taker_address, created_at_ms);
 CREATE INDEX live_execution_attempts_taker_risk
   ON live_execution_attempts (taker_address, broadcast_risk_at_ms);
+`,
+  },
+  {
+    version: WALLET_INTELLIGENCE_MIGRATION_VERSION,
+    name: WALLET_INTELLIGENCE_MIGRATION_NAME,
+    sql: `
+CREATE TABLE wallet_intelligence_scans (
+  id INTEGER PRIMARY KEY,
+  spec_version TEXT NOT NULL CHECK (spec_version = 'wi18_v1'),
+  spec_fingerprint TEXT NOT NULL CHECK (
+    length(spec_fingerprint) = 64 AND spec_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  token_mint TEXT NOT NULL CHECK (length(token_mint) > 0),
+  token_program TEXT NOT NULL CHECK (token_program IN ('spl_token', 'token_2022')),
+  mint_decimals INTEGER NOT NULL CHECK (mint_decimals >= 0 AND mint_decimals <= 255),
+  scan_started_at_ms INTEGER NOT NULL CHECK (scan_started_at_ms >= 0),
+  holder_context_slot INTEGER NOT NULL CHECK (holder_context_slot >= 0),
+  holder_resolution_context_slot INTEGER NOT NULL CHECK (
+    holder_resolution_context_slot >= 0
+    AND holder_resolution_context_slot >= holder_context_slot
+  ),
+  owner_classification_context_slot INTEGER NOT NULL CHECK (
+    owner_classification_context_slot >= 0
+    AND owner_classification_context_slot >= holder_resolution_context_slot
+  ),
+  top_token_accounts_observed INTEGER NOT NULL CHECK (top_token_accounts_observed >= 0 AND top_token_accounts_observed <= 20),
+  unique_owners_observed INTEGER NOT NULL CHECK (unique_owners_observed >= 0),
+  system_wallet_candidates_observed INTEGER NOT NULL CHECK (system_wallet_candidates_observed >= 0),
+  program_or_executable_owners_observed INTEGER NOT NULL CHECK (program_or_executable_owners_observed >= 0),
+  unknown_owners_observed INTEGER NOT NULL CHECK (unknown_owners_observed >= 0),
+  analyzed_wallet_count INTEGER NOT NULL CHECK (analyzed_wallet_count >= 0 AND analyzed_wallet_count <= 10),
+  history_window_start_ms INTEGER NOT NULL CHECK (history_window_start_ms >= 0),
+  history_window_end_ms INTEGER NOT NULL CHECK (history_window_end_ms >= history_window_start_ms),
+  history_tx_cap INTEGER NOT NULL CHECK (history_tx_cap = 200),
+  history_censored_wallet_count INTEGER NOT NULL CHECK (history_censored_wallet_count >= 0),
+  observed_fresh_7d_count INTEGER NOT NULL CHECK (observed_fresh_7d_count >= 0),
+  observed_young_30d_count INTEGER NOT NULL CHECK (observed_young_30d_count >= 0),
+  observed_established_30d_plus_count INTEGER NOT NULL CHECK (observed_established_30d_plus_count >= 0),
+  observed_age_unknown_count INTEGER NOT NULL CHECK (observed_age_unknown_count >= 0),
+  observed_fresh_7d_fraction_bps INTEGER NOT NULL CHECK (
+    observed_fresh_7d_fraction_bps >= 0 AND observed_fresh_7d_fraction_bps <= 10000
+  ),
+  observed_young_30d_fraction_bps INTEGER NOT NULL CHECK (
+    observed_young_30d_fraction_bps >= 0 AND observed_young_30d_fraction_bps <= 10000
+  ),
+  program_or_executable_observed_top20_balance_bps INTEGER NOT NULL CHECK (
+    program_or_executable_observed_top20_balance_bps >= 0
+    AND program_or_executable_observed_top20_balance_bps <= 10000
+  ),
+  unknown_observed_top20_balance_bps INTEGER NOT NULL CHECK (
+    unknown_observed_top20_balance_bps >= 0 AND unknown_observed_top20_balance_bps <= 10000
+  ),
+  median_observed_history_tx_count_30d REAL,
+  median_active_days_observed_30d REAL,
+  median_unique_mints_touched_30d REAL,
+  scan_fingerprint TEXT NOT NULL UNIQUE CHECK (
+    length(scan_fingerprint) = 64 AND scan_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0)
+) STRICT;
+
+CREATE INDEX wallet_intelligence_scans_mint_created
+  ON wallet_intelligence_scans (token_mint, created_at_ms DESC, id DESC);
+
+CREATE TABLE wallet_intelligence_holder_observations (
+  scan_id INTEGER NOT NULL,
+  rank INTEGER NOT NULL CHECK (rank >= 1 AND rank <= 20),
+  token_account TEXT NOT NULL CHECK (length(token_account) > 0),
+  amount_raw TEXT NOT NULL CHECK (
+    amount_raw = '0'
+    OR (
+      amount_raw NOT GLOB '*[^0-9]*'
+      AND amount_raw NOT GLOB '0*'
+    )
+  ),
+  decimals INTEGER NOT NULL CHECK (decimals >= 0 AND decimals <= 255),
+  owner_address TEXT,
+  owner_kind TEXT NOT NULL CHECK (owner_kind IN (
+    'SYSTEM_OWNED_NON_EXECUTABLE',
+    'PROGRAM_OWNED_OR_EXECUTABLE',
+    'ACCOUNT_MISSING',
+    'UNKNOWN'
+  )),
+  owner_account_program TEXT,
+  owner_executable INTEGER CHECK (owner_executable IS NULL OR owner_executable IN (0, 1)),
+  PRIMARY KEY (scan_id, rank),
+  UNIQUE (scan_id, token_account),
+  FOREIGN KEY (scan_id) REFERENCES wallet_intelligence_scans(id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE wallet_intelligence_wallet_profiles (
+  scan_id INTEGER NOT NULL,
+  wallet_address TEXT NOT NULL CHECK (length(wallet_address) > 0),
+  observed_top20_aggregate_raw_amount TEXT NOT NULL CHECK (
+    observed_top20_aggregate_raw_amount = '0'
+    OR (
+      observed_top20_aggregate_raw_amount NOT GLOB '*[^0-9]*'
+      AND observed_top20_aggregate_raw_amount NOT GLOB '0*'
+    )
+  ),
+  observed_top20_balance_share_bps INTEGER NOT NULL CHECK (
+    observed_top20_balance_share_bps >= 0 AND observed_top20_balance_share_bps <= 10000
+  ),
+  top20_token_account_count_owned INTEGER NOT NULL CHECK (top20_token_account_count_owned >= 1),
+  best_top20_rank INTEGER NOT NULL CHECK (best_top20_rank >= 1 AND best_top20_rank <= 20),
+  owner_kind TEXT NOT NULL CHECK (owner_kind = 'SYSTEM_OWNED_NON_EXECUTABLE'),
+  first_observed_activity_slot INTEGER CHECK (
+    first_observed_activity_slot IS NULL OR first_observed_activity_slot >= 0
+  ),
+  first_observed_activity_at_ms INTEGER CHECK (
+    first_observed_activity_at_ms IS NULL OR first_observed_activity_at_ms >= 0
+  ),
+  observed_age_class TEXT NOT NULL CHECK (observed_age_class IN (
+    'OBSERVED_FRESH_7D',
+    'OBSERVED_YOUNG_30D',
+    'OBSERVED_ESTABLISHED_30D_PLUS',
+    'UNKNOWN'
+  )),
+  history_window_start_ms INTEGER NOT NULL CHECK (history_window_start_ms >= 0),
+  history_window_end_ms INTEGER NOT NULL CHECK (history_window_end_ms >= history_window_start_ms),
+  history_transactions_observed INTEGER NOT NULL CHECK (history_transactions_observed >= 0),
+  history_censored INTEGER NOT NULL CHECK (history_censored IN (0, 1)),
+  active_days_observed_30d INTEGER NOT NULL CHECK (active_days_observed_30d >= 0),
+  unique_mints_with_balance_change_30d INTEGER NOT NULL CHECK (unique_mints_with_balance_change_30d >= 0),
+  unique_mints_touched_30d_json TEXT NOT NULL,
+  positive_token_delta_tx_count_30d INTEGER NOT NULL CHECK (positive_token_delta_tx_count_30d >= 0),
+  negative_token_delta_tx_count_30d INTEGER NOT NULL CHECK (negative_token_delta_tx_count_30d >= 0),
+  bidirectional_token_delta_tx_count_30d INTEGER NOT NULL CHECK (bidirectional_token_delta_tx_count_30d >= 0),
+  target_mint_positive_delta_tx_count_30d INTEGER NOT NULL CHECK (target_mint_positive_delta_tx_count_30d >= 0),
+  target_mint_negative_delta_tx_count_30d INTEGER NOT NULL CHECK (target_mint_negative_delta_tx_count_30d >= 0),
+  target_mint_net_raw_delta_30d TEXT NOT NULL CHECK (
+    target_mint_net_raw_delta_30d = '0'
+    OR (
+      target_mint_net_raw_delta_30d NOT GLOB '-*'
+      AND target_mint_net_raw_delta_30d NOT GLOB '*[^0-9]*'
+      AND target_mint_net_raw_delta_30d NOT GLOB '0*'
+    )
+    OR (
+      target_mint_net_raw_delta_30d GLOB '-*'
+      AND substr(target_mint_net_raw_delta_30d, 2) NOT GLOB '*[^0-9]*'
+      AND substr(target_mint_net_raw_delta_30d, 2) NOT GLOB '0*'
+      AND length(substr(target_mint_net_raw_delta_30d, 2)) > 0
+    )
+  ),
+  incomplete_delta_tx_count_30d INTEGER NOT NULL CHECK (incomplete_delta_tx_count_30d >= 0),
+  history_evidence_sha256 TEXT NOT NULL CHECK (
+    length(history_evidence_sha256) = 64 AND history_evidence_sha256 NOT GLOB '*[^0-9a-f]*'
+  ),
+  profile_fingerprint TEXT NOT NULL CHECK (
+    length(profile_fingerprint) = 64 AND profile_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  PRIMARY KEY (scan_id, wallet_address),
+  FOREIGN KEY (scan_id) REFERENCES wallet_intelligence_scans(id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER wallet_intelligence_scans_no_update
+BEFORE UPDATE ON wallet_intelligence_scans
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_scans is immutable after insert');
+END;
+
+CREATE TRIGGER wallet_intelligence_scans_no_delete
+BEFORE DELETE ON wallet_intelligence_scans
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_scans is immutable after insert');
+END;
+
+CREATE TRIGGER wallet_intelligence_holders_no_update
+BEFORE UPDATE ON wallet_intelligence_holder_observations
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_holder_observations is immutable after insert');
+END;
+
+CREATE TRIGGER wallet_intelligence_holders_no_delete
+BEFORE DELETE ON wallet_intelligence_holder_observations
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_holder_observations is immutable after insert');
+END;
+
+CREATE TRIGGER wallet_intelligence_profiles_no_update
+BEFORE UPDATE ON wallet_intelligence_wallet_profiles
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_wallet_profiles is immutable after insert');
+END;
+
+CREATE TRIGGER wallet_intelligence_profiles_no_delete
+BEFORE DELETE ON wallet_intelligence_wallet_profiles
+BEGIN
+  SELECT RAISE(ABORT, 'wallet_intelligence_wallet_profiles is immutable after insert');
+END;
 `,
   },
 ];
