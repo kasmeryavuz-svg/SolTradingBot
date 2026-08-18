@@ -22,6 +22,8 @@ export function formatCapabilityFooter(): string[] {
     'Wallet security: available',
     'Manual tiny-live broadcaster: available',
     'Wallet intelligence: available',
+    'Advanced models / ML: available',
+    'ML live integration: unavailable',
     'Automatic wallet following: unavailable',
     'Copy trading: unavailable',
     'Automatic live trading: unavailable',
@@ -29,7 +31,7 @@ export function formatCapabilityFooter(): string[] {
     'Dashboard live controls: unavailable',
     'Signing: manual/local only',
     'Trading capability: MANUAL / HARD-CAPPED ONLY',
-    'Checkpoint: 18',
+    'Checkpoint: 19',
   ];
 }
 
