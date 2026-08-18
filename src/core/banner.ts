@@ -11,7 +11,7 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 16');
+  console.log('Checkpoint: 17');
   console.log('Blockchain capability: READ ONLY by default');
   console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
   console.log('Token risk scanner: available');
@@ -23,6 +23,7 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
   console.log('Exit engine: available');
   console.log('Performance analytics: available');
   console.log('Strategy benchmark lab: available');
+  console.log('Strategy optimization lab: available');
   console.log('Dashboard: available');
   console.log('Execution preflight: available');
   console.log('Wallet security: available');

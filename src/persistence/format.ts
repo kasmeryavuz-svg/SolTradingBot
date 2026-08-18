@@ -16,6 +16,7 @@ export function formatCapabilityFooter(): string[] {
     'Exit engine: available',
     'Performance analytics: available',
     'Strategy benchmark lab: available',
+    'Strategy optimization lab: available',
     'Dashboard: available',
     'Execution preflight: available',
     'Wallet security: available',
@@ -25,7 +26,7 @@ export function formatCapabilityFooter(): string[] {
     'Dashboard live controls: unavailable',
     'Signing: manual/local only',
     'Trading capability: MANUAL / HARD-CAPPED ONLY',
-    'Checkpoint: 16',
+    'Checkpoint: 17',
   ];
 }
 

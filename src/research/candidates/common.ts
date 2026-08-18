@@ -216,7 +216,7 @@ export function evaluateInclusiveRange(
   return { code, status: 'fail', observed: String(value), reason: copy.fail };
 }
 
-function evaluateBlockingRiskFindings(vector: FeatureVector): ResearchRuleEvidence[] {
+export function evaluateBlockingRiskFindings(vector: FeatureVector): ResearchRuleEvidence[] {
   return BLOCKING_RISK_FEATURES.map((name) => evaluateRequiredBlockingRiskFalse(vector, name));
 }
 
