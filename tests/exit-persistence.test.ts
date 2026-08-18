@@ -280,8 +280,8 @@ describe('exit persistence migration', () => {
         repository.initialize();
         repository.initialize();
         const stats = repository.getStats();
-        expect(stats.schemaVersion).toBe(7);
-        expect(repository.getTableCounts().schemaMigrations).toBe(7);
+        expect(stats.schemaVersion).toBe(8);
+        expect(repository.getTableCounts().schemaMigrations).toBe(8);
         expect(stats.paperPositionCount).toBe(1);
         expect(stats.openPaperPositionCount).toBe(1);
         expect(stats.exitEvaluationCount).toBe(0);

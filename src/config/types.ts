@@ -87,6 +87,7 @@ export type AppConfig = {
   nodeEnv: NodeEnv;
   logLevel: LogLevel;
   tradingEnabled: boolean;
+  liveBroadcastEnabled: boolean;
   solana: SolanaConfig;
   marketData: MarketDataConfig;
   discovery: DiscoveryConfig;

@@ -28,14 +28,14 @@ export function formatWalletStatusLines(report: WalletStatusReport): string[] {
         : abbreviatePublicKey(report.configuredTakerPublicKey)
     }`,
     'Signing capability: manual/local only',
-    'Broadcast capability: unavailable',
+    'Wallet module broadcast capability: unavailable',
     'Jito send: unavailable',
     'Dashboard signing: unavailable',
     `TRADING_ENABLED: ${report.tradingEnabled ? 'true' : 'false'}`,
     '',
     'Checkpoint 15 signing is security-validation only.',
     'TRADING_ENABLED must remain false.',
-    'Broadcast is unavailable until Checkpoint 16.',
+    'Live broadcast, when enabled, is owned exclusively by l16',
   ];
 }
 

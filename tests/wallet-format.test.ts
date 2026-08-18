@@ -29,7 +29,8 @@ describe('wallet formatters', () => {
     expect(text).toContain('Secret persisted: NO');
     expect(text).toContain('Env private key: NOT SUPPORTED');
     expect(text).toContain('File private key: NOT SUPPORTED');
-    expect(text).toContain('Broadcast capability: unavailable');
+    expect(text).toContain('Wallet module broadcast capability: unavailable');
+    expect(text).toContain('Live broadcast, when enabled, is owned exclusively by l16');
     expect(text).toContain('Jito send: unavailable');
     expect(text).toContain('Dashboard signing: unavailable');
     expect(text).not.toContain('SUPER_SECRET_JUP_KEY_123');

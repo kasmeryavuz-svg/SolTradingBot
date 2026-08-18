@@ -64,8 +64,8 @@ function openWriteRepo(path: string): SqlitePersistenceRepository {
 }
 
 describe('performance sqlite source', () => {
-  it('keeps migrations 001-007 frozen and does not add 008', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(7);
+  it('keeps migrations 001-007 frozen after live schema 8', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(8);
     expect(migrationSqlDigest(1)).toBe(
       '7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a',
     );
@@ -87,7 +87,7 @@ describe('performance sqlite source', () => {
     expect(migrationSqlDigest(7)).toBe(
       'd049cf6a2ba8b041f703fe15ab13f1b687a347e4eab6b2b8587a84cd67b404fa',
     );
-    expect(() => migrationSqlDigest(8)).toThrow(/Unknown migration version: 8/);
+    expect(migrationSqlDigest(8)).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('rejects schema 6 because immutable exit evidence does not exist', () => {
@@ -109,7 +109,7 @@ describe('performance sqlite source', () => {
   it('accepts an empty schema 7 database as no_closed_trades', () => {
     const path = tempDbPath();
     const repository = openWriteRepo(path);
-    expect(repository.getStats().schemaVersion).toBe(7);
+    expect(repository.getStats().schemaVersion).toBe(8);
     repository.close();
     openRepos.pop();
 
@@ -184,7 +184,7 @@ describe('performance sqlite source', () => {
 
     const after = openWriteRepo(path);
     expect(after.getTableCounts()).toEqual(before);
-    expect(after.getStats().schemaVersion).toBe(7);
+    expect(after.getStats().schemaVersion).toBe(8);
   });
 
   it('enables query_only and refuses INSERT, UPDATE, and DELETE', () => {

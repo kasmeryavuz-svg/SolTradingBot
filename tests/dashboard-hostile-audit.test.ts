@@ -377,7 +377,7 @@ describe('dashboard hostile data semantics', () => {
     const writable = openSqliteDatabase({ path, busyTimeoutMs: 1000 });
     try {
       writable.exec(
-        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (8, '008_future', '2026-08-17T00:00:00.000Z')",
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (9, '009_future', '2026-08-17T00:00:00.000Z')",
       );
       writable.exec('ALTER TABLE market_snapshots DROP COLUMN token_name');
     } finally {
@@ -388,11 +388,11 @@ describe('dashboard hostile data semantics', () => {
       FIXED_CLOCK,
     ).buildSnapshot();
     expect(snapshot.database.data?.status).toBe('incompatible');
-    expect(snapshot.database.data?.schemaVersion).toBe(8);
+    expect(snapshot.database.data?.schemaVersion).toBe(9);
     expect(snapshot.performance.state).toBe('unavailable');
     const versions = openSqliteDatabase({ path, busyTimeoutMs: 1000 });
     expect(Number(versions.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()?.['version'])).toBe(
-      8,
+      9,
     );
     versions.close();
   });

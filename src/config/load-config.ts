@@ -29,6 +29,7 @@ import {
   DEFAULT_SOLANA_NETWORK,
   DEFAULT_SOLANA_RPC_TIMEOUT_MS,
   DEFAULT_SOLANA_RPC_URL,
+  DEFAULT_LIVE_BROADCAST_ENABLED,
   DEFAULT_FEATURE_HISTORY_LIMIT,
   DEFAULT_STRATEGY_HISTORY_LIMIT,
   DEFAULT_PAPER_HISTORY_LIMIT,
@@ -76,6 +77,11 @@ export function loadConfig(source: EnvSource): AppConfig {
       readOptionalEnv(source, 'TRADING_ENABLED'),
       DEFAULT_TRADING_ENABLED,
       'TRADING_ENABLED',
+    ),
+    liveBroadcastEnabled: parseBooleanFlag(
+      readOptionalEnv(source, 'LIVE_BROADCAST_ENABLED'),
+      DEFAULT_LIVE_BROADCAST_ENABLED,
+      'LIVE_BROADCAST_ENABLED',
     ),
     solana: {
       network: parseEnumValue(

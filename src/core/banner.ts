@@ -5,13 +5,13 @@ import type { SolanaHealthResult } from '../solana/types.js';
 export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult): void {
   console.log('Meme Trading Bot');
   console.log(`Mode: ${config.nodeEnv}`);
-  console.log('Trading capability: disabled');
+  console.log('Trading capability: MANUAL / HARD-CAPPED ONLY');
   console.log('');
   for (const line of formatSolanaStatusLines(solana)) {
     console.log(line);
   }
   console.log('');
-  console.log('Checkpoint: 15');
+  console.log('Checkpoint: 16');
   console.log('Blockchain capability: READ ONLY by default');
   console.log(`Local persistence: ${config.database.enabled ? 'available' : 'disabled'}`);
   console.log('Token risk scanner: available');
@@ -25,8 +25,11 @@ export function printStartupBanner(config: AppConfig, solana: SolanaHealthResult
   console.log('Strategy benchmark lab: available');
   console.log('Dashboard: available');
   console.log('Execution preflight: available');
-  console.log('Wallet security boundary: available');
+  console.log('Wallet security: available');
+  console.log('Manual tiny-live broadcaster: available');
+  console.log('Automatic live trading: unavailable');
+  console.log('Jito: unavailable');
+  console.log('Dashboard live controls: unavailable');
   console.log('Signing: manual/local only');
-  console.log('Transaction broadcast: unavailable');
-  console.log('Trading capability: disabled');
+  console.log('Trading capability: MANUAL / HARD-CAPPED ONLY');
 }

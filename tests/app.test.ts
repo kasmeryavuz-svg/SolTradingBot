@@ -13,7 +13,7 @@ describe('startup banner', () => {
     vi.restoreAllMocks();
   });
 
-  it('prints the Checkpoint 15 capability status', async () => {
+  it('prints the Checkpoint 16 capability status', async () => {
     const lines: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((message: unknown) => {
       lines.push(String(message));
@@ -31,7 +31,7 @@ describe('startup banner', () => {
     expect(lines).toEqual([
       'Meme Trading Bot',
       'Mode: development',
-      'Trading capability: disabled',
+      'Trading capability: MANUAL / HARD-CAPPED ONLY',
       '',
       'Solana:',
       'Network: mainnet-beta',
@@ -40,7 +40,7 @@ describe('startup banner', () => {
       'Version: 2.1.0',
       'Health: ok',
       '',
-      'Checkpoint: 15',
+      'Checkpoint: 16',
       'Blockchain capability: READ ONLY by default',
       'Local persistence: available',
       'Token risk scanner: available',
@@ -54,10 +54,13 @@ describe('startup banner', () => {
       'Strategy benchmark lab: available',
       'Dashboard: available',
       'Execution preflight: available',
-      'Wallet security boundary: available',
+      'Wallet security: available',
+      'Manual tiny-live broadcaster: available',
+      'Automatic live trading: unavailable',
+      'Jito: unavailable',
+      'Dashboard live controls: unavailable',
       'Signing: manual/local only',
-      'Transaction broadcast: unavailable',
-      'Trading capability: disabled',
+      'Trading capability: MANUAL / HARD-CAPPED ONLY',
     ]);
   });
 });

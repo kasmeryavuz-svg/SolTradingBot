@@ -16,7 +16,7 @@ export const FROZEN_S07_V1_DEFINITION_FINGERPRINT =
   'b4560629e6a58331e9046f13bad78b73b3bdc1bb7349fc6173ba158b4db067cd';
 
 export const REQUIRED_SCHEMA_VERSION = 4;
-export const COMPATIBLE_SCHEMA_VERSIONS = [4, 5, 6, 7] as const;
+export const COMPATIBLE_SCHEMA_VERSIONS = [4, 5, 6, 7, 8] as const;
 
 if (STRATEGY_DEFINITION_FINGERPRINT !== FROZEN_S07_V1_DEFINITION_FINGERPRINT) {
   throw new Error('Checkpoint 08 requires the frozen s07_v1 strategy definition fingerprint.');
