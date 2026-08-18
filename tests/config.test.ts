@@ -97,6 +97,9 @@ describe('loadConfig', () => {
         providerTimeoutMs: 5000,
         jupiterApiKeyConfigured: false,
       },
+      walletIntelligence: {
+        heliusApiKey: null,
+      },
     });
   });
 
@@ -465,6 +468,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ LIVE_BROADCAST_ENABLED: 'yes' })).toThrow(/Invalid LIVE_BROADCAST_ENABLED/);
     expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'TRUE' }).liveBroadcastEnabled).toBe(true);
     expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'TRUE ' }).liveBroadcastEnabled).toBe(true);
+  });
+
+  it('loads HELIUS_API_KEY into runtime config without requiring it', () => {
+    expect(loadConfig({}).walletIntelligence.heliusApiKey).toBeNull();
+    expect(loadConfig({ HELIUS_API_KEY: 'super-secret-helius-key-123' }).walletIntelligence.heliusApiKey).toBe(
+      'super-secret-helius-key-123',
+    );
   });
 
   it('does not read the process environment', () => {

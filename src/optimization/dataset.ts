@@ -45,7 +45,7 @@ export function researchDatasetToOptimizationDataset(
     marketSnapshots: research.marketSnapshots,
     riskReports: research.riskReports,
     schemaVersion,
-    migration009Present: false,
+    migration009Present: schemaVersion >= 9,
   };
 }
 
@@ -60,9 +60,9 @@ export function executeLoadOptimizationDataset(config: AppConfig): OptimizationD
         throw new OptimizationError('Optimization commands require PRAGMA query_only = ON.');
       }
       const schemaVersion = currentSchemaVersion(database);
-      if (schemaVersion !== REQUIRED_SCHEMA_VERSION) {
+      if (schemaVersion < REQUIRED_SCHEMA_VERSION || schemaVersion > 9) {
         throw new OptimizationError(
-          `Checkpoint 17 requires schema ${String(REQUIRED_SCHEMA_VERSION)}. Found ${String(schemaVersion)}. Migration 009 must not exist.`,
+          `Checkpoint 17 requires schema ${String(REQUIRED_SCHEMA_VERSION)} or 9. Found ${String(schemaVersion)}. Wallet-intelligence tables on schema 9 are unused by o17.`,
         );
       }
       const forbiddenTable = database
@@ -78,10 +78,6 @@ export function executeLoadOptimizationDataset(config: AppConfig): OptimizationD
         .get();
       if (forbiddenTable !== undefined) {
         throw new OptimizationError('Optimization result tables must not exist.');
-      }
-      const migration009 = database.prepare('SELECT version FROM schema_migrations WHERE version = 9').get();
-      if (migration009 !== undefined) {
-        throw new OptimizationError('schema_migrations must not contain version 9.');
       }
       return researchDatasetToOptimizationDataset(source.loadResearchDataset(), schemaVersion);
     });

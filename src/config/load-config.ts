@@ -130,6 +130,7 @@ export function loadConfig(source: EnvSource): AppConfig {
     research: loadResearchConfig(source),
     dashboard: loadDashboardConfig(source),
     execution: loadExecutionConfig(source),
+    walletIntelligence: loadWalletIntelligenceConfig(source),
   };
 }
 
@@ -335,6 +336,12 @@ function loadExecutionConfig(source: EnvSource): AppConfig['execution'] {
       EXECUTION_PROVIDER_TIMEOUT_MS_MAX,
     ),
     jupiterApiKeyConfigured: readOptionalEnv(source, 'JUPITER_API_KEY') !== undefined,
+  };
+}
+
+function loadWalletIntelligenceConfig(source: EnvSource): AppConfig['walletIntelligence'] {
+  return {
+    heliusApiKey: readOptionalEnv(source, 'HELIUS_API_KEY') ?? null,
   };
 }
 

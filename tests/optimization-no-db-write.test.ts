@@ -49,8 +49,8 @@ describe('optimization does not write the production database', () => {
     openRepos.pop();
     const config = prepareOptimizationCommand({ DATABASE_ENABLED: 'true', DATABASE_PATH: path });
     const dataset = executeLoadOptimizationDataset(config);
-    expect(dataset.schemaVersion).toBe(8);
-    expect(dataset.migration009Present).toBe(false);
+    expect(dataset.schemaVersion).toBe(9);
+    expect(dataset.migration009Present).toBe(true);
     const database = openReadOnlyResearchDatabase({ path, busyTimeoutMs: 1000 });
     expect(String(Object.values(database.prepare('PRAGMA query_only').get() ?? {})[0] ?? '')).toBe('1');
     expect(() => {

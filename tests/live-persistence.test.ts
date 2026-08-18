@@ -20,8 +20,8 @@ afterEach(() => {
 });
 
 describe('live persistence', () => {
-  it('uses schema 8 and frozen historical digests 001-007', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+  it('uses schema 9 and frozen historical digests 001-008', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(1)).toBe('7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a');
     expect(migrationSqlDigest(7)).toBe('d049cf6a2ba8b041f703fe15ab13f1b687a347e4eab6b2b8587a84cd67b404fa');
     expect(migrationSqlDigest(8)).toBe(

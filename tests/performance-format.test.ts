@@ -22,7 +22,7 @@ describe('performance formatter', () => {
       'It is NOT portfolio drawdown, equity drawdown, account drawdown, or capital drawdown.',
     );
     expect(lines).toContain('This is not a strategy optimization rule.');
-    expect(lines).toContain('Checkpoint: 17');
+    expect(lines).toContain('Checkpoint: 18');
     expect(lines).not.toMatch(
       /Strategy is profitable|Strategy has an edge|Expected profit is|Safe to go live/i,
     );

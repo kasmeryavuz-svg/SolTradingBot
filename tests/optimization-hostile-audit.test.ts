@@ -857,7 +857,7 @@ describe('hostile read-only sqlite and import graph', () => {
     expect(normalized.some((file) => file.includes('/src/live/'))).toBe(false);
     expect(normalized.some((file) => file.includes('/src/wallet/'))).toBe(false);
     expect(normalized.some((file) => file.includes('/src/execution/rpc'))).toBe(false);
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(8)).toBe(
       'e4c5ee0d56a8ffe5d916da3bd68d3792f48ac4ffbcce004ababa983d792747d0',
     );

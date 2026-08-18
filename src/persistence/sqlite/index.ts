@@ -20,6 +20,8 @@ export {
   EXIT_MIGRATION_VERSION,
   LIVE_MIGRATION_NAME,
   LIVE_MIGRATION_VERSION,
+  WALLET_INTELLIGENCE_MIGRATION_NAME,
+  WALLET_INTELLIGENCE_MIGRATION_VERSION,
   migrationSql,
 } from './migrations.js';
 export { createSqlitePersistenceRepository, SqlitePersistenceRepository } from './repository.js';

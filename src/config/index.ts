@@ -59,6 +59,7 @@ export type {
   ResearchConfig,
   DashboardConfig,
   ExecutionConfig,
+  WalletIntelligenceConfig,
   RiskCommitment,
   RiskConfig,
   SolanaConfig,

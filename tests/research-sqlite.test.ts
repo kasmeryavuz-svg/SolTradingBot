@@ -62,8 +62,8 @@ function openWriteRepo(path: string): SqlitePersistenceRepository {
 }
 
 describe('research sqlite source', () => {
-  it('keeps migrations 001-007 frozen after live schema 8', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(8);
+  it('keeps migrations 001-008 frozen after wallet-intelligence schema 9', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(migrationSqlDigest(1)).toBe(
       '7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a',
     );
@@ -103,7 +103,7 @@ describe('research sqlite source', () => {
   it('accepts schema 7 and future extra columns', () => {
     const path = tempDbPath();
     const repository = openWriteRepo(path);
-    expect(repository.getStats().schemaVersion).toBe(8);
+    expect(repository.getStats().schemaVersion).toBe(9);
     repository.close();
     openRepos.pop();
 
