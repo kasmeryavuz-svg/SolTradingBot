@@ -4,11 +4,11 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 16
+## Current checkpoint: 17
 
-**Checkpoint 16 introduces code capable of transmitting real funds.**
+**Checkpoint 17 is a read-only strategy-optimization research lab.** It does **not** send transactions and does **not** connect strategy signals to the Checkpoint 16 broadcaster.
 
-That capability is **manual, hard-capped, and single-shot**. It is not an automatic trading bot.
+Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP17 does not call it.
 
 **Current capabilities:**
 
@@ -31,6 +31,7 @@ That capability is **manual, hard-capped, and single-shot**. It is not an automa
 - e14_v1 Jupiter V2 unsigned swap preflight engine
 - w15_v1 interactive in-memory signer security boundary
 - l16_v1 manual single-shot tiny mainnet RPC broadcaster
+- o17_v1 anchored walk-forward / cost-stress strategy-optimization lab
 
 ### What this checkpoint is not
 
@@ -42,6 +43,7 @@ That capability is **manual, hard-capped, and single-shot**. It is not an automa
 - **Exit engine: YES**
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
+- **Strategy optimization lab: YES (read-only walk-forward research; no live promotion)**
 - **Dashboard: YES (local, read-only, frozen d13 — no live controls)**
 - **Execution preflight: YES (terminal-only, unsigned until an explicit wallet or live command)**
 - **Wallet security boundary: YES (interactive memory signer, hidden TTY only)**
@@ -67,6 +69,8 @@ x11_v1 may then **simulate a full close** of that open position using the **exac
 a12_v1 may then **describe GROSS paper PnL and returns** for completed simulated closes already stored in SQLite. Those numbers exclude fees, slippage, and execution. They are not net performance, not a wallet result, and not a forecast. The current local database may have zero closed paper trades; that is not a 0% result.
 
 r125_v1 may then **compare five fixed entry hypotheses** against the same historical SQLite dataset. Those comparisons reuse frozen c06 features, frozen x11 exits, and a12-compatible GROSS math. They do **not** prove a live edge, pick a winner, or optimize thresholds.
+
+o17_v1 may then **run an anchored chronological walk-forward** over a frozen catalog of 8 entries and 5 exits, with LOW/BASE/STRESS all-in friction *assumptions*. TRAIN may select. TEST/OOS may only measure. Promotion language is only `NO_PROMOTION_INSUFFICIENT_DATA`, `NO_PROMOTION_FAILED_ROBUSTNESS`, or `ELIGIBLE_FOR_FORWARD_PAPER_VALIDATION`. The last one is **not** live approval and does **not** edit s07 or the paper engine.
 
 Checkpoint 13 adds a **local loopback-only read-only observability dashboard**. It visualizes already-stored market observations, runtime paper state, a12 GROSS performance, r125 research, and database health. It does **not** buy, sell, start collectors, change thresholds, or talk to Solana / DEX Screener. That dashboard stays frozen in Checkpoint 14. It has no BUILD / SIMULATE / SIGN / SEND buttons.
 
@@ -133,7 +137,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 16
+Checkpoint: 17
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -145,6 +149,7 @@ Position management: available
 Exit engine: available
 Performance analytics: available
 Strategy benchmark lab: available
+Strategy optimization lab: available
 Dashboard: available
 Execution preflight: available
 Wallet security: available
@@ -156,7 +161,7 @@ Signing: manual/local only
 Trading capability: MANUAL / HARD-CAPPED ONLY
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, execution, wallet, or live commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, `wallet:sign-preflight`, `live:preview`, or `live:execute`. It does **not** prompt for a wallet secret and it does **not** send.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, optimization, dashboard, execution, wallet, or live commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `optimization:run`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, `wallet:sign-preflight`, `live:preview`, or `live:execute`. It does **not** prompt for a wallet secret and it does **not** send.
 
 ## How to check Solana, market data, and discovery
 
@@ -390,6 +395,48 @@ There is no `research:watch`, `research:optimize`, or `research:live`.
 
 See [docs/CHECKPOINT_12_5.md](docs/CHECKPOINT_12_5.md) and [docs/STRATEGY_RESEARCH_SOURCES.md](docs/STRATEGY_RESEARCH_SOURCES.md).
 
+## How to run strategy optimization research
+
+Checkpoint 17 is a **controlled walk-forward lab**. Spec `o17_v1`. It answers whether frozen entry/exit hypotheses survive chronological out-of-sample testing and conservative friction assumptions. It does **not** prove future profitability.
+
+```bash
+npm run optimization:status
+npm run optimization:catalog
+npm run optimization:data
+npm run optimization:run
+npm run optimization:folds
+```
+
+`optimization:status` and `optimization:catalog` need no database. They print identity, the frozen 8×5 catalog, and cost assumptions. Catalog output contains **no** performance numbers and does **not** rank candidates.
+
+`optimization:data`, `optimization:run`, and `optimization:folds` require `DATABASE_ENABLED=true` and an existing SQLite file opened **read-only**. They reuse the exact conservative r125 universe (including exclusion of snapshots referenced by `exit_evaluations`). There is no date picker, token filter, or threshold flag.
+
+Output distinguishes three readiness flags: time partitions constructible, walk-forward evaluable, and promotion data sufficient. Partitions can exist while evaluation is impossible.
+
+**TRAIN** may select one entry (against frozen `x11_baseline`) then one exit. **TEST/OOS** only measures that frozen pair plus two controls (`s07+x11` and `quality_control+x11`). OOS never re-ranks. Aggregate selected OOS is the walk-forward **selection methodology**, not one frozen strategy unless every fold picked the same pair.
+
+Quantity = `$100 / gross reference entry price`. Effective cash outlay under LOW/BASE/STRESS **may exceed $100**. Triggers stay on the GROSS path. Frozen `x11_baseline` keeps observed-take fills; new o17 exits use target-take fills. Stage B is not a perfectly normalized execution comparison.
+
+The 24h fold cutoff is the maximum configured clock window inside the fold. It does not guarantee a closing observation.
+
+**TRAIN** may select one entry (against frozen `x11_baseline`) then one exit. **TEST/OOS** only measures that frozen pair plus two controls (`s07+x11` and `quality_control+x11`). OOS never re-ranks.
+
+Cost scenarios (LOW 75/75 bps, BASE 200/200, STRESS 500/500) are **all-in research allowances**, not measured historical execution cost. Gross PnL is never overwritten by net.
+
+Partial/moonbag exits are tested on **observed snapshots only**. There is no interpolated high/low path and no assumed 2x/5x/10x remainder.
+
+Allowed final statuses:
+
+- `NO_PROMOTION_INSUFFICIENT_DATA`
+- `NO_PROMOTION_FAILED_ROBUSTNESS`
+- `ELIGIBLE_FOR_FORWARD_PAPER_VALIDATION`
+
+The last one is a candidate for a **future paper period**. It does **not** edit s07, enable paper automatically, or approve live trading.
+
+There is no `optimization:live`, `optimization:auto`, `optimization:watch`, `optimization:deploy`, `optimization:send`, or `optimization:paper-promote`.
+
+See [docs/CHECKPOINT_17.md](docs/CHECKPOINT_17.md) and [docs/STRATEGY_OPTIMIZATION_SOURCES.md](docs/STRATEGY_OPTIMIZATION_SOURCES.md).
+
 ## How to open the local observability dashboard
 
 Checkpoint 13 serves a **local read-only** browser UI over stored evidence. Spec `d13_v1`. It is **not** a trading console.
@@ -591,6 +638,7 @@ src/             Application source code
   exit/          x11_v1 experimental paper exit engine (exact opening pair, full close, no PnL)
   performance/   a12_v1 read-only GROSS closed-paper-trade analytics (no stored metric tables)
   research/      r125_v1 read-only strategy research / benchmark lab (no stored research tables)
+  optimization/  o17_v1 read-only anchored walk-forward strategy-optimization lab (no stored result tables)
   dashboard/     d13_v1 local loopback-only read-only observability dashboard (no stored dashboard tables)
   execution/     e14_v1 Jupiter V2 unsigned swap preflight engine (no wallet, no sign, no send)
   wallet/        w15_v1 interactive in-memory signer (hidden TTY, no persist, no send)
@@ -602,4 +650,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 17 will focus strategy optimization and evidence. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. l16 does not activate strategy automation.
+Checkpoint 18 will focus wallet intelligence. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. o17 promotion means forward paper validation only. It does not activate strategy automation or live broadcast.

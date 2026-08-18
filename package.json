@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 16 adds a manual single-shot tiny mainnet RPC broadcaster. Automatic trading is not implemented.",
+    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 17 adds a read-only anchored walk-forward strategy-optimization research lab. Automatic trading is not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -46,6 +46,11 @@
     "research:catalog": "tsx src/research/run-catalog.ts",
     "research:compare": "tsx src/research/run-compare.ts",
     "research:trades": "tsx src/research/run-trades.ts",
+    "optimization:status": "tsx src/optimization/status.ts",
+    "optimization:catalog": "tsx src/optimization/run-catalog.ts",
+    "optimization:data": "tsx src/optimization/data.ts",
+    "optimization:run": "tsx src/optimization/run.ts",
+    "optimization:folds": "tsx src/optimization/folds-command.ts",
     "dashboard:start": "tsx src/dashboard/run.ts",
     "execution:status": "tsx src/execution/status.ts",
     "execution:build": "tsx src/execution/build.ts",
