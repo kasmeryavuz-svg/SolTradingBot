@@ -18,11 +18,14 @@ export function formatCapabilityFooter(): string[] {
     'Strategy benchmark lab: available',
     'Dashboard: available',
     'Execution preflight: available',
-    'Wallet security boundary: available',
+    'Wallet security: available',
+    'Manual tiny-live broadcaster: available',
+    'Automatic live trading: unavailable',
+    'Jito: unavailable',
+    'Dashboard live controls: unavailable',
     'Signing: manual/local only',
-    'Transaction broadcast: unavailable',
-    'Trading capability: DISABLED',
-    'Checkpoint: 15',
+    'Trading capability: MANUAL / HARD-CAPPED ONLY',
+    'Checkpoint: 16',
   ];
 }
 

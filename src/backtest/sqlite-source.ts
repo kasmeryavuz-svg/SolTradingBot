@@ -87,7 +87,7 @@ export class SqliteBacktestDataSource implements BacktestHistoricalDataSource {
 
     if (!(COMPATIBLE_SCHEMA_VERSIONS as readonly number[]).includes(version)) {
       throw new BacktestError(
-        `Database schema version is ${String(version)}, but Checkpoint 08 requires schema ${String(REQUIRED_SCHEMA_VERSION)}, 5, 6, or 7. Run npm run db:init outside the backtest command if initialization is needed.`,
+        `Database schema version is ${String(version)}, but Checkpoint 08 requires schema ${String(REQUIRED_SCHEMA_VERSION)}, 5, 6, 7, or 8. Run npm run db:init outside the backtest command if initialization is needed.`,
       );
     }
   }

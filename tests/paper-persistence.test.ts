@@ -181,8 +181,8 @@ describe('paper persistence migration', () => {
         repository.initialize();
         repository.initialize();
         const stats = repository.getStats();
-        expect(stats.schemaVersion).toBe(7);
-        expect(repository.getTableCounts().schemaMigrations).toBe(7);
+        expect(stats.schemaVersion).toBe(8);
+        expect(repository.getTableCounts().schemaMigrations).toBe(8);
         expect(stats.tokenCount).toBe(1);
         expect(stats.discoveryRunCount).toBe(1);
         expect(stats.marketSnapshotCount).toBe(1);

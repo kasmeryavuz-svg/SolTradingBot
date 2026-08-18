@@ -7,6 +7,7 @@ import {
   DEFAULT_DATABASE_PATH,
   DEFAULT_MARKET_DATA_POLL_INTERVAL_MS,
   DEFAULT_MARKET_DATA_TIMEOUT_MS,
+  DEFAULT_LIVE_BROADCAST_ENABLED,
   DEFAULT_TRADING_ENABLED,
   USDC_MINT,
   WRAPPED_SOL_MINT,
@@ -14,11 +15,13 @@ import {
 } from '../src/config/index.js';
 
 describe('loadConfig', () => {
-  it('defaults TRADING_ENABLED to false', () => {
+  it('defaults TRADING_ENABLED and LIVE_BROADCAST_ENABLED to false', () => {
     const config = loadConfig({});
 
     expect(DEFAULT_TRADING_ENABLED).toBe(false);
+    expect(DEFAULT_LIVE_BROADCAST_ENABLED).toBe(false);
     expect(config.tradingEnabled).toBe(false);
+    expect(config.liveBroadcastEnabled).toBe(false);
   });
 
   it('loads valid development configuration', () => {
@@ -32,6 +35,7 @@ describe('loadConfig', () => {
       nodeEnv: 'development',
       logLevel: 'info',
       tradingEnabled: false,
+      liveBroadcastEnabled: false,
       solana: {
         network: 'mainnet-beta',
         rpcTimeoutMs: 10_000,
@@ -452,6 +456,15 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ EXECUTION_PROVIDER_TIMEOUT_MS: '499' })).toThrow(
       /Invalid EXECUTION_PROVIDER_TIMEOUT_MS/,
     );
+  });
+
+  it('parses LIVE_BROADCAST_ENABLED as an exact boolean and never defaults true', () => {
+    expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'true' }).liveBroadcastEnabled).toBe(true);
+    expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'false' }).liveBroadcastEnabled).toBe(false);
+    expect(() => loadConfig({ LIVE_BROADCAST_ENABLED: '1' })).toThrow(/Invalid LIVE_BROADCAST_ENABLED/);
+    expect(() => loadConfig({ LIVE_BROADCAST_ENABLED: 'yes' })).toThrow(/Invalid LIVE_BROADCAST_ENABLED/);
+    expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'TRUE' }).liveBroadcastEnabled).toBe(true);
+    expect(loadConfig({ LIVE_BROADCAST_ENABLED: 'TRUE ' }).liveBroadcastEnabled).toBe(true);
   });
 
   it('does not read the process environment', () => {

@@ -47,7 +47,7 @@ describe('dashboard service snapshot', () => {
     });
     const snapshot = new DashboardService(config, FIXED_CLOCK).buildSnapshot();
     expect(snapshot.database.state).toBe('available');
-    expect(snapshot.database.data?.schemaVersion).toBe(7);
+    expect(snapshot.database.data?.schemaVersion).toBe(8);
     expect(snapshot.market.state).toBe('empty');
     expect(snapshot.runtimePaper.state).toBe('empty');
     expect(snapshot.performance.state).toBe('empty');

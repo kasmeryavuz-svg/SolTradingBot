@@ -104,8 +104,8 @@ describe('execution security', () => {
     expect(formatExecutionSimulateLines).toBeTypeOf('function');
   });
 
-  it('keeps schema 7 and frozen migration hashes 001-007', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(7);
+  it('keeps frozen migration hashes 001-007 and allows live migration 008', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(8);
     expect(migrationSqlDigest(1)).toBe(
       '7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a',
     );
@@ -127,9 +127,10 @@ describe('execution security', () => {
     expect(migrationSqlDigest(7)).toBe(
       'd049cf6a2ba8b041f703fe15ab13f1b687a347e4eab6b2b8587a84cd67b404fa',
     );
-    expect(() => migrationSqlDigest(8)).toThrow(/Unknown migration version: 8/);
+    expect(migrationSqlDigest(8)).toMatch(/^[a-f0-9]{64}$/);
     const migrations = readFileSync(join(process.cwd(), 'src/persistence/sqlite/migrations.ts'), 'utf8');
-    expect(migrations).not.toMatch(/008_|MIGRATION_VERSION = 8|version: 8/);
+    expect(migrations).toMatch(/008_live_execution_attempts/);
+    expect(migrations).not.toMatch(/CREATE TABLE wallets|wallet_keys|signed_transactions/);
   });
 
   it('keeps the dashboard observation-only with no execution actions', () => {

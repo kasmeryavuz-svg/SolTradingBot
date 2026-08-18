@@ -4,7 +4,11 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 15
+## Current checkpoint: 16
+
+**Checkpoint 16 introduces code capable of transmitting real funds.**
+
+That capability is **manual, hard-capped, and single-shot**. It is not an automatic trading bot.
 
 **Current capabilities:**
 
@@ -26,6 +30,7 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - d13_v1 local read-only observability dashboard
 - e14_v1 Jupiter V2 unsigned swap preflight engine
 - w15_v1 interactive in-memory signer security boundary
+- l16_v1 manual single-shot tiny mainnet RPC broadcaster
 
 ### What this checkpoint is not
 
@@ -37,12 +42,19 @@ It is being built in small, safe checkpoints so you can learn as you go. You do 
 - **Exit engine: YES**
 - **Performance analytics: YES**
 - **Strategy benchmark lab: YES**
-- **Dashboard: YES (local, read-only, frozen d13)**
-- **Execution preflight: YES (terminal-only, unsigned until an explicit wallet command)**
+- **Dashboard: YES (local, read-only, frozen d13 — no live controls)**
+- **Execution preflight: YES (terminal-only, unsigned until an explicit wallet or live command)**
 - **Wallet security boundary: YES (interactive memory signer, hidden TTY only)**
-- **Signing: YES (manual/local only; no broadcast)**
-- **Transaction sending: NO**
-- **Real trading: NO**
+- **Signing: YES (manual/local only)**
+- **Manual tiny-live broadcast: YES (WSOL→USDC only, ≤0.001 SOL/attempt, ≤0.002 SOL/day, ≤2 attempts/day)**
+- **Automatic live trading: NO**
+- **Jito: NO**
+- **Arbitrary meme-coin live entry: NO**
+- **Dashboard execution: NO**
+
+`live:execute` can send **one** standard Solana RPC transaction after every l16 gate. It cannot run continuously, cannot retry automatically, and cannot trade strategy signals.
+
+An RPC `sendTransaction` success is **not** chain confirmation. A client timeout is **not** proof the transaction was unsent. Use `live:reconcile` with the stored expected txid. Do not resend.
 
 `ENTRY_CANDIDATE` is a strategy classification only. It does **not** create an order, buy, sell, or blockchain trade.
 
@@ -112,7 +124,7 @@ You should see something like:
 ```text
 Meme Trading Bot
 Mode: development
-Trading capability: disabled
+Trading capability: MANUAL / HARD-CAPPED ONLY
 
 Solana:
 Network: mainnet-beta
@@ -121,7 +133,7 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 15
+Checkpoint: 16
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -135,13 +147,16 @@ Performance analytics: available
 Strategy benchmark lab: available
 Dashboard: available
 Execution preflight: available
-Wallet security boundary: available
+Wallet security: available
+Manual tiny-live broadcaster: available
+Automatic live trading: unavailable
+Jito: unavailable
+Dashboard live controls: unavailable
 Signing: manual/local only
-Transaction broadcast: unavailable
-Trading capability: disabled
+Trading capability: MANUAL / HARD-CAPPED ONLY
 ```
 
-`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, execution, or wallet commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, or `wallet:sign-preflight`. It does **not** prompt for a wallet secret.
+`npm run dev` does **not** start market, discovery, collector, risk, feature, strategy, backtest, paper, position, exit, performance, research, dashboard, execution, wallet, or live commands, and it does **not** write database rows. It does **not** automatically run `paper:step`, `position:step`, `exit:step`, `performance:report`, `performance:trades`, `research:catalog`, `research:compare`, `research:trades`, `dashboard:start`, `execution:build`, `execution:simulate`, `wallet:verify`, `wallet:sign-test`, `wallet:sign-preflight`, `live:preview`, or `live:execute`. It does **not** prompt for a wallet secret and it does **not** send.
 
 ## How to check Solana, market data, and discovery
 
@@ -465,9 +480,41 @@ Never paste a private key into source, chat, `.env`, or `npm run` arguments. She
 
 The interactive-memory backend is a local controlled signer. It is not unattended production custody. A later Keychain / KMS / HSM backend can replace it without changing strategy or execution logic.
 
-Checkpoint 16 owns broadcast. There is no `wallet:send`, `wallet:broadcast`, `wallet:export`, or `wallet:generate`.
+There is no `wallet:send`, `wallet:broadcast`, `wallet:export`, or `wallet:generate`. Broadcast lives in Checkpoint 16 `live:execute` only.
 
 See [docs/CHECKPOINT_15.md](docs/CHECKPOINT_15.md) and [docs/WALLET_SECURITY_SOURCES.md](docs/WALLET_SECURITY_SOURCES.md).
+
+## How to use the manual tiny-live broadcaster
+
+Checkpoint 16 can transmit real funds. Spec `l16_v1`. It is **not** automatic trading.
+
+Frozen pair: **WSOL → USDC only**. Maximum **0.001 SOL** input per attempt, **0.002 SOL** of broadcast-at-risk input per UTC day, and **2** such attempts per UTC day. Standard Solana RPC only. One `sendTransaction` call. No automatic retry. No Jito. No Jupiter `/execute` or `/submit`. No dashboard SEND button. No arbitrary meme mint.
+
+```bash
+npm run live:status
+npm run live:preview
+npm run live:execute
+npm run live:history
+npm run live:reconcile
+```
+
+`live:status` is local only.
+
+`live:preview` may call Jupiter `/build` and Solana RPC. It cannot sign or send.
+
+`live:execute` requires **both** `TRADING_ENABLED=true` and `LIVE_BROADCAST_ENABLED=true`, then an exact TTY phrase:
+
+```text
+LIVE SEND <candidate-short-id> <amountRaw>
+```
+
+Only after that phrase does the hidden wallet prompt appear. There is no `--yes`. Piped stdin is refused.
+
+RPC send success is not chain confirmation. A timeout is not proof the transaction was unsent. If the outcome is ambiguous, run `live:reconcile`. It uses the stored expected txid. It never broadcasts.
+
+Do **not** run `live:execute` in automated tests or during implementation. The first real 0.001 SOL-or-less plumbing test is an explicit operator action after hostile audit and merge.
+
+See [docs/CHECKPOINT_16.md](docs/CHECKPOINT_16.md) and [docs/LIVE_EXECUTION_SOURCES.md](docs/LIVE_EXECUTION_SOURCES.md).
 
 ## How to use the local database
 
@@ -547,6 +594,7 @@ src/             Application source code
   dashboard/     d13_v1 local loopback-only read-only observability dashboard (no stored dashboard tables)
   execution/     e14_v1 Jupiter V2 unsigned swap preflight engine (no wallet, no sign, no send)
   wallet/        w15_v1 interactive in-memory signer (hidden TTY, no persist, no send)
+  live/          l16_v1 manual tiny WSOL→USDC RPC broadcaster (one send, no automation)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
@@ -554,4 +602,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 16 will add tiny live trading. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet.
+Checkpoint 17 will focus strategy optimization and evidence. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** implemented yet. l16 does not activate strategy automation.

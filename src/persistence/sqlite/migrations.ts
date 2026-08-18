@@ -16,7 +16,9 @@ export const POSITION_MIGRATION_VERSION = 6;
 export const POSITION_MIGRATION_NAME = '006_position_management';
 export const EXIT_MIGRATION_VERSION = 7;
 export const EXIT_MIGRATION_NAME = '007_exit_engine';
-export const LATEST_SCHEMA_VERSION = EXIT_MIGRATION_VERSION;
+export const LIVE_MIGRATION_VERSION = 8;
+export const LIVE_MIGRATION_NAME = '008_live_execution_attempts';
+export const LATEST_SCHEMA_VERSION = LIVE_MIGRATION_VERSION;
 
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
@@ -705,6 +707,81 @@ CREATE TABLE paper_position_exits (
 
 CREATE INDEX exit_evaluations_token_as_of_id
   ON exit_evaluations (token_id, as_of DESC, id DESC);
+`,
+  },
+  {
+    version: LIVE_MIGRATION_VERSION,
+    name: LIVE_MIGRATION_NAME,
+    sql: `
+CREATE TABLE live_execution_attempts (
+  attempt_id TEXT PRIMARY KEY CHECK (length(attempt_id) = 64),
+  live_spec_version TEXT NOT NULL CHECK (live_spec_version = 'l16_v1'),
+  live_definition_fingerprint TEXT NOT NULL CHECK (length(live_definition_fingerprint) = 64),
+  created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+  updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0),
+  taker_address TEXT NOT NULL CHECK (length(taker_address) > 0),
+  input_mint TEXT NOT NULL CHECK (input_mint = 'So11111111111111111111111111111111111111112'),
+  output_mint TEXT NOT NULL CHECK (output_mint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
+  amount_raw TEXT NOT NULL CHECK (
+    length(amount_raw) > 0
+    AND amount_raw GLOB '[1-9]*'
+    AND amount_raw NOT GLOB '*[^0-9]*'
+  ),
+  execution_definition_fingerprint TEXT NOT NULL CHECK (length(execution_definition_fingerprint) = 64),
+  execution_intent_fingerprint TEXT NOT NULL CHECK (length(execution_intent_fingerprint) = 64),
+  jupiter_build_fingerprint TEXT NOT NULL CHECK (length(jupiter_build_fingerprint) = 64),
+  execution_candidate_fingerprint TEXT NOT NULL UNIQUE CHECK (length(execution_candidate_fingerprint) = 64),
+  compiled_message_sha256 TEXT NOT NULL CHECK (length(compiled_message_sha256) = 64),
+  wallet_definition_fingerprint TEXT CHECK (wallet_definition_fingerprint IS NULL OR length(wallet_definition_fingerprint) = 64),
+  wallet_signer_fingerprint TEXT CHECK (wallet_signer_fingerprint IS NULL OR length(wallet_signer_fingerprint) = 64),
+  wallet_signing_proof_fingerprint TEXT CHECK (wallet_signing_proof_fingerprint IS NULL OR length(wallet_signing_proof_fingerprint) = 64),
+  status TEXT NOT NULL CHECK (status IN (
+    'reserved',
+    'signed',
+    'abandoned_signed',
+    'broadcast_submitting',
+    'broadcast_submitted',
+    'broadcast_outcome_unknown',
+    'broadcast_rejected',
+    'broadcast_pending',
+    'confirmed',
+    'finalized',
+    'failed_on_chain',
+    'expired_unconfirmed',
+    'expired_after_submission',
+    'stale_before_send',
+    'cancelled_before_sign',
+    'signer_mismatch',
+    'preflight_failed',
+    'candidate_changed_after_confirmation',
+    'confirmation_integrity_error',
+    'receipt_integrity_error',
+    'confirmed_receipt_pending',
+    'receipt_fee_anomaly',
+    'rpc_signature_mismatch'
+  )),
+  expected_signature TEXT,
+  rpc_returned_signature TEXT,
+  signed_wire_sha256 TEXT CHECK (signed_wire_sha256 IS NULL OR length(signed_wire_sha256) = 64),
+  last_valid_block_height TEXT NOT NULL CHECK (length(last_valid_block_height) > 0),
+  broadcast_risk_at_ms INTEGER CHECK (broadcast_risk_at_ms IS NULL OR broadcast_risk_at_ms >= 0),
+  submitted_at_ms INTEGER CHECK (submitted_at_ms IS NULL OR submitted_at_ms >= 0),
+  confirmed_at_ms INTEGER CHECK (confirmed_at_ms IS NULL OR confirmed_at_ms >= 0),
+  confirmation_status TEXT,
+  slot TEXT,
+  rpc_estimated_transaction_fee_lamports TEXT,
+  actual_transaction_fee_lamports TEXT,
+  actual_output_raw TEXT,
+  failure_code TEXT,
+  failure_message TEXT,
+  live_attempt_fingerprint TEXT CHECK (live_attempt_fingerprint IS NULL OR length(live_attempt_fingerprint) = 64),
+  live_receipt_fingerprint TEXT CHECK (live_receipt_fingerprint IS NULL OR length(live_receipt_fingerprint) = 64)
+) STRICT;
+
+CREATE INDEX live_execution_attempts_taker_created
+  ON live_execution_attempts (taker_address, created_at_ms);
+CREATE INDEX live_execution_attempts_taker_risk
+  ON live_execution_attempts (taker_address, broadcast_risk_at_ms);
 `,
   },
 ];

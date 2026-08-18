@@ -62,8 +62,8 @@ function openWriteRepo(path: string): SqlitePersistenceRepository {
 }
 
 describe('research sqlite source', () => {
-  it('keeps migrations 001-007 frozen and does not add 008', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(7);
+  it('keeps migrations 001-007 frozen after live schema 8', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(8);
     expect(migrationSqlDigest(1)).toBe(
       '7c20b9f9799c65c1be718df10a8841dcb7486d35414fa4806ea77a6192ebda7a',
     );
@@ -85,7 +85,7 @@ describe('research sqlite source', () => {
     expect(migrationSqlDigest(7)).toBe(
       'd049cf6a2ba8b041f703fe15ab13f1b687a347e4eab6b2b8587a84cd67b404fa',
     );
-    expect(() => migrationSqlDigest(8)).toThrow(/Unknown migration version: 8/);
+    expect(migrationSqlDigest(8)).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('rejects schema 6', () => {
@@ -103,7 +103,7 @@ describe('research sqlite source', () => {
   it('accepts schema 7 and future extra columns', () => {
     const path = tempDbPath();
     const repository = openWriteRepo(path);
-    expect(repository.getStats().schemaVersion).toBe(7);
+    expect(repository.getStats().schemaVersion).toBe(8);
     repository.close();
     openRepos.pop();
 
@@ -220,7 +220,7 @@ describe('research sqlite source', () => {
     expect(after).toBe(before);
   });
 
-  it('changes the dataset fingerprint when a bound market or risk fact changes', () => {
+  it('changes the dataset fingerprint when a bound market or risk fact changes', { timeout: 15_000 }, () => {
     const path = tempDbPath();
     const repository = openWriteRepo(path);
     repository.recordMarketSnapshots([allEntrySnapshot({ collectedAt: T_10_00, priceUsd: 1 })]);

@@ -567,7 +567,7 @@ describe('query-only database hardening', () => {
     openRepos.pop();
     const extra = new DatabaseSync(compatible);
     extra
-      .prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (8, 'future', ?)")
+      .prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (9, 'future', ?)")
       .run(T_10_00);
     extra.close();
     const compatibleSource = openSqlitePerformanceDataSource({ path: compatible, busyTimeoutMs: 1000 });
