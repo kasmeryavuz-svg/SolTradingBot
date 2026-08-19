@@ -79,7 +79,8 @@
     "prod:status": "tsx src/production/status.ts",
     "prod:plan": "tsx src/production/plan.ts",
     "prod:preflight": "tsx src/production/run-preflight.ts",
-    "prod:run": "tsx src/production/run.ts"
+    "prod:run": "tsx src/production/run.ts",
+    "recovery:status": "tsx src/recovery-watcher/status.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",
