@@ -1,10 +1,11 @@
-import { loadConfig } from '../config/load-config.js';
-import type { AppConfig, EnvSource } from '../config/types.js';
+import type { CoreAppConfig } from '../config/core-types.js';
+import type { EnvSource } from '../config/env-source.js';
+import { loadCoreConfig } from '../config/load-core-config.js';
 import { assertTradingDisabled } from '../core/safety.js';
 import { PersistenceError } from './types.js';
 
-export function preparePersistenceCommand(source: EnvSource): AppConfig {
-  const config = loadConfig(source);
+export function preparePersistenceCommand(source: EnvSource): CoreAppConfig {
+  const config = loadCoreConfig(source);
   assertTradingDisabled(config);
 
   if (!config.database.enabled) {

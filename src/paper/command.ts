@@ -1,13 +1,14 @@
-import type { AppConfig, EnvSource } from '../config/types.js';
+import type { CoreAppConfig } from '../config/core-types.js';
+import type { EnvSource } from '../config/env-source.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
 import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
 import { PaperError } from './types.js';
 
-export function preparePaperStepCommand(source: EnvSource): AppConfig {
+export function preparePaperStepCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function preparePaperHistoryCommand(source: EnvSource): AppConfig {
+export function preparePaperHistoryCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 

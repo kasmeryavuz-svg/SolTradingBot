@@ -1,0 +1,69 @@
+export const PROD20_SPEC_VERSION = 'prod20_v1';
+export const PROD20_SPEC_NAME = 'paper_only_production_supervisor_and_release_readiness';
+export const PROD20_CHECKPOINT = '20';
+
+export const REQUIRED_SCHEMA_VERSION = 9;
+export const FORBIDDEN_MIGRATION_010_PREFIX = '010';
+
+export const DEFAULT_PROD20_ENABLED = false;
+export const DEFAULT_PROD20_INTERVAL_MS = 300_000;
+export const PROD20_INTERVAL_MS_MIN = 60_000;
+export const PROD20_INTERVAL_MS_MAX = 3_600_000;
+export const DEFAULT_PROD20_COLLECTOR_ENABLED = true;
+export const DEFAULT_PROD20_PAPER_ENABLED = false;
+export const DEFAULT_PROD20_HEALTH_PORT = 4314;
+export const PROD20_HEALTH_HOST = '127.0.0.1' as const;
+export const PROD20_HEALTH_PORT_MIN = 1024;
+export const PROD20_HEALTH_PORT_MAX = 65_535;
+export const PROD20_MAX_WATCHLIST = 20;
+export const PROD20_MAX_CONSECUTIVE_FAILED_CYCLES = 3;
+export const PROD20_LOCK_FILE_NAME = '.prod20-runtime.lock';
+export const PROD20_PREFLIGHT_PROBE_FILE_NAME = '.prod20-preflight-write-probe';
+export const PROD20_LOCK_FILE_MODE = 0o600;
+export const PROD20_REDACTED_URL_TOKEN = '[REDACTED_URL]';
+
+export const FROZEN_S07_DEFINITION_FINGERPRINT =
+  'b4560629e6a58331e9046f13bad78b73b3bdc1bb7349fc6173ba158b4db067cd';
+export const FROZEN_B08_DEFINITION_FINGERPRINT =
+  '87bca6f2ea8e57b7613d3627b5a5adf37864142b3c62de97849440189ff07fcf';
+export const FROZEN_P09_DEFINITION_FINGERPRINT =
+  '4951807199956eb0425193fbdb3296289090b6bbffd92f7353718cad0f68a0e0';
+export const FROZEN_PM10_DEFINITION_FINGERPRINT =
+  '8c89f5a95f7aadb02d0cd7736b73d563266b2df1f3b16da5d24788eced75aa4f';
+export const FROZEN_X11_DEFINITION_FINGERPRINT =
+  '4678a49e73cab2f0076e376506910761f4afcabdcdee4fe3c9830c2395c2e6e6';
+export const FROZEN_A12_DEFINITION_FINGERPRINT =
+  '9fe2b033c19d5470b972714cc37d32333ac4662ad8d30cdd97b668891454e53c';
+export const FROZEN_R125_DEFINITION_FINGERPRINT =
+  '61f5a9d091ce9214e440dddf029f81bb881a907f4cd9193e04ecd3238c20a83a';
+export const FROZEN_D13_DEFINITION_FINGERPRINT =
+  'd4a72c37b15c334171cbd0975cbb9534c3ca836f38923654e22e3685d02c5b18';
+export const FROZEN_E14_DEFINITION_FINGERPRINT =
+  '6c9bf5bd42a6137b21b8ed2f4c8939085c7b999add2013efbf7d63a8fc306fd0';
+export const FROZEN_W15_DEFINITION_FINGERPRINT =
+  '2caec72e3ea5fa2c141f9d00f689a23eadaa1f29b403605595abaf6e2d0a7855';
+export const FROZEN_L16_DEFINITION_FINGERPRINT =
+  '57a6fc872f7e51f1e4b041ed5b93413efe0779dea61a88b9dc1b4ed9f05e395d';
+export const FROZEN_O17_DEFINITION_FINGERPRINT =
+  '3c2171dc1aee3b0a31bae185e156f0a7236d56d11fe381e83364e8c326c4b979';
+export const FROZEN_COST17_DEFINITION_FINGERPRINT =
+  'da3674208672b3f7c630ac0d3dc9e8cc0818c639fd5e69c62d9d87203757a523';
+export const FROZEN_WI18_DEFINITION_FINGERPRINT =
+  '61e341190e1b8b19a47ed11101932acfebc904b664ee00db7cefff0284d67f32';
+export const FROZEN_ML19_DEFINITION_FINGERPRINT =
+  '9e5821c2815ac4025307fc0d8cec5555256c917b62e8d9d4ddd0726b82a39b65';
+export const FROZEN_ML19_FEATURE_FINGERPRINT =
+  '5d29959fa54e79d0b8d08d577da2deef7d2480a11b13ac283871b73b14143072';
+
+export const REQUIRED_NODE_MAJOR = 24;
+export const REQUIRED_NODE_MINOR = 15;
+export const REQUIRED_NODE_PATCH = 0;
+
+export const PROD20_SECURITY_HEADERS = {
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Cache-Control': 'no-store',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+} as const;

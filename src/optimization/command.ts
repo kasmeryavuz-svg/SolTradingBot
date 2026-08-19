@@ -1,4 +1,5 @@
 import { loadConfig } from '../config/load-config.js';
+import type { CoreAppConfig } from '../config/core-types.js';
 import type { AppConfig, EnvSource } from '../config/types.js';
 import { assertTradingDisabled } from '../core/safety.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
@@ -17,7 +18,7 @@ export function prepareOptimizationCatalogCommand(source: EnvSource): AppConfig 
   return config;
 }
 
-export function prepareOptimizationCommand(source: EnvSource): AppConfig {
+export function prepareOptimizationCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
@@ -42,7 +43,7 @@ export function executeOptimizationCatalog(): {
   };
 }
 
-export function executeOptimizationData(config: AppConfig): {
+export function executeOptimizationData(config: CoreAppConfig): {
   dataset: OptimizationDataset;
   segments: ReturnType<typeof buildChronologicalSegments>;
   readiness: ReturnType<typeof evaluateStructuralReadiness>;
@@ -62,11 +63,11 @@ export function executeOptimizationData(config: AppConfig): {
   };
 }
 
-export function executeOptimizationRun(config: AppConfig): WalkForwardReport {
+export function executeOptimizationRun(config: CoreAppConfig): WalkForwardReport {
   const dataset = executeLoadOptimizationDataset(config);
   return runAnchoredWalkForward(dataset);
 }
 
-export function executeOptimizationFolds(config: AppConfig): WalkForwardReport {
+export function executeOptimizationFolds(config: CoreAppConfig): WalkForwardReport {
   return executeOptimizationRun(config);
 }

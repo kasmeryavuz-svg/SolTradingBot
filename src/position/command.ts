@@ -1,17 +1,18 @@
-import type { AppConfig, EnvSource } from '../config/types.js';
+import type { CoreAppConfig } from '../config/core-types.js';
+import type { EnvSource } from '../config/env-source.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
 import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
 import { PositionError } from './types.js';
 
-export function preparePositionStepCommand(source: EnvSource): AppConfig {
+export function preparePositionStepCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function preparePositionStatusCommand(source: EnvSource): AppConfig {
+export function preparePositionStatusCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function preparePositionHistoryCommand(source: EnvSource): AppConfig {
+export function preparePositionHistoryCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 

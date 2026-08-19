@@ -26,27 +26,21 @@ Do not implement a later checkpoint until the current one is complete.
 | 16         | Tiny live trading                 | Complete                  |
 | 17         | Strategy optimization             | Complete                  |
 | 18         | Wallet intelligence               | Complete                  |
-| 19         | Advanced models / ML              | Complete after validation |
-| 20         | Production deployment             | Not started               |
+| 19         | Advanced models / ML              | Complete                  |
+| 20         | Production deployment             | Complete after validation |
 
 ## Current status
 
-- **Active checkpoint:** 19 Advanced models / ML (complete after validation)
-- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, an r125_v1 read-only historical strategy research / benchmark lab, a d13_v1 local loopback-only read-only observability dashboard, an e14_v1 Jupiter Swap API V2 unsigned swap preflight engine, a w15_v1 interactive in-memory signer security boundary, an l16_v1 manual single-shot tiny mainnet RPC broadcaster, an o17_v1 read-only anchored walk-forward / cost-stress strategy-optimization lab, a wi18_v1 read-only public-on-chain holder-cohort wallet intelligence layer, and an ml19_v1 read-only purged walk-forward regularized logistic research lab
-- **Not implemented:** everything from Checkpoint 20 onward
+- **Active checkpoint:** 20 Production deployment (complete after validation)
+- **Implemented:** TypeScript foundation, safety guard, read-only Solana RPC, market snapshots, candidate discovery, local SQLite historical persistence, technical token risk scanning, a deterministic point-in-time feature engine, the first experimental s07_v1 entry-candidate classifier, a deterministic read-only historical backtester, a p09_v1 live paper-entry observation layer, pm10_v1 simulated single-open-position management with a fixed $100 reference notional, an experimental x11_v1 deterministic paper exit engine (10% stop, 20% take profit, 6-hour max hold, full close only), a12_v1 read-only GROSS closed-paper-trade analytics, an r125_v1 read-only historical strategy research / benchmark lab, a d13_v1 local loopback-only read-only observability dashboard, an e14_v1 Jupiter Swap API V2 unsigned swap preflight engine, a w15_v1 interactive in-memory signer security boundary, an l16_v1 manual single-shot tiny mainnet RPC broadcaster, an o17_v1 read-only anchored walk-forward / cost-stress strategy-optimization lab, a wi18_v1 read-only public-on-chain holder-cohort wallet intelligence layer, an ml19_v1 read-only purged walk-forward regularized logistic research lab, and a prod20_v1 paper-only production supervisor for long-running data collection and explicit watchlist paper validation
+- **Not implemented:** automatic live trading
 
-## What Checkpoint 19 did
+## What Checkpoint 20 did
 
-Checkpoint 19 builds a **deterministic, read-only supervised ML research lab**.
+Checkpoint 20 builds a **paper-only production supervisor**.
 
-It asks whether frozen point-in-time c06 features provide useful out-of-sample information about later cost-adjusted x11 outcomes. It uses one model family (L2 logistic regression) plus an intercept-only null model, purged chronological walk-forward, TRAIN-only preprocessing, and a frozen 0.65 threshold. Wallet-intelligence features are not used.
+It can collect public market and discovery evidence and optionally manage simulated paper positions for an explicit operator watchlist. It fails closed if live flags are enabled. It does not sign, send, load an ML candidate, or change s07.
 
-CP19 does not modify s07, paper, or live. `npm run dev` does not train a model.
+## Checkpoint 20 does not trade real money
 
-## Planned next checkpoint: 20 Production deployment
-
-Checkpoint 20 owns production deployment. Do not start it from CP19. An eligible ML candidate is still only a candidate for later paper validation, not a live bot.
-
-## Checkpoint 19 does not trade
-
-A predicted probability is not a buy signal. It does not edit s07, does not call `live:execute`, and does not change CP16 live caps.
+`prod:run` is not `live:execute`. Manual CP16 remains separate. ML and wallet intelligence are not production inputs.

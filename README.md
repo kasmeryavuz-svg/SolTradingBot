@@ -4,13 +4,21 @@ This project will eventually become a **Solana meme-coin trading system**.
 
 It is being built in small, safe checkpoints so you can learn as you go. You do not need to be an experienced trader or programmer to follow along.
 
-## Current checkpoint: 19
+## Current checkpoint: 20
 
-**Checkpoint 19 is a read-only purged walk-forward supervised machine-learning research lab.** It asks whether frozen point-in-time c06 features contain out-of-sample information about later cost-adjusted x11 trade outcomes. It does **not** optimize until something wins, does **not** connect predictions to live execution, and does **not** claim that AI predicts meme coins reliably.
+**Checkpoint 20 is a paper-only production supervisor.** It can collect public market and discovery evidence for long periods and optionally manage **explicit paper watchlist** positions. It is **not** unattended real-money trading.
 
-Checkpoint 18 remains a read-only public-on-chain wallet intelligence layer. Wallet-intelligence features are **not** ML model inputs in ml19_v1, because most historical market observations do not have uniformly point-in-time holder scans.
+- **Production runtime: YES**
+- **24/7 data collection: YES**
+- **Automated paper watchlist: YES**
+- **Automatic real-money trading: NO**
+- **Manual hard-capped CP16 live: still separate**
+- **ML live integration: NO**
+- **Wallet intelligence live integration: NO**
 
-Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. It is not an automatic trading bot. CP19 does not call it. `npm run dev` does not train a model.
+Checkpoint 19 remains a read-only purged walk-forward supervised machine-learning research lab. Its current status on a young database is **`NO_MODEL_PROMOTION_INSUFFICIENT_DATA`**. prod20 may display research readiness. It must not act on it.
+
+Checkpoint 16 already introduced code capable of transmitting real funds. That capability remains **manual, hard-capped, and single-shot**. Production does not call it. `npm run dev` does not start the production supervisor.
 
 **Current capabilities:**
 
@@ -36,6 +44,7 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - o17_v1 anchored walk-forward / cost-stress strategy-optimization lab
 - wi18_v1 public-on-chain holder-cohort wallet intelligence
 - ml19_v1 purged walk-forward regularized logistic research lab
+- prod20_v1 paper-only production supervisor (data collection and explicit paper watchlist)
 
 ### What this checkpoint is not
 
@@ -50,6 +59,9 @@ Checkpoint 16 already introduced code capable of transmitting real funds. That c
 - **Strategy optimization lab: YES (read-only walk-forward research; no live promotion)**
 - **Wallet intelligence: YES (public holder-cohort evidence; no score, no PnL, no copy trading)**
 - **Advanced models / ML: YES (read-only research lab; no live integration)**
+- **Production runtime: YES (paper / data only)**
+- **24/7 data collection: YES**
+- **Automated paper watchlist: YES (explicit mints only)**
 - **ML live integration: NO**
 - **Dashboard: YES (local, read-only, frozen d13 — no live controls)**
 - **Execution preflight: YES (terminal-only, unsigned until an explicit wallet or live command)**
@@ -149,7 +161,12 @@ Slot: 123456789
 Version: 2.x.x
 Health: ok
 
-Checkpoint: 19
+Checkpoint: 20
+Production deployment: available
+Production mode: PAPER / DATA ONLY
+Automatic live trading: unavailable
+Manual tiny-live broadcaster: available separately
+Advanced models / ML: research only
 Blockchain capability: READ ONLY by default
 Local persistence: available
 Token risk scanner: available
@@ -662,6 +679,31 @@ There is no `ml:live`, `ml:trade`, `ml:deploy`, `ml:auto`, `ml:optimize`, or `ml
 
 See [docs/CHECKPOINT_19.md](docs/CHECKPOINT_19.md) and [docs/ML_RESEARCH_SOURCES.md](docs/ML_RESEARCH_SOURCES.md).
 
+## How to run paper-only production
+
+Checkpoint 20 can run for a long time in **data collection** and/or **explicit paper watchlist** mode. Spec `prod20_v1`. It does **not** send transactions.
+
+```bash
+npm run prod:status
+npm run prod:plan
+npm run prod:preflight
+npm run prod:run
+```
+
+`prod:status` is local only: no database, no network.
+
+`prod:plan` parses environment and prints a sanitized plan. It never prints an RPC URL or a full database path.
+
+`prod:preflight` checks Node, fingerprints, schema 9, migration 010 absence, SQLite `quick_check`, watchlist, interval, health port, and live flags. It does not use the network and does not write the database. It does not take the runtime lock.
+
+`prod:run` is the only long-running supervisor. It requires `PROD20_ENABLED=true`. It fails closed if `TRADING_ENABLED=true` or `LIVE_BROADCAST_ENABLED=true`. Paper mints must be listed in `PROD20_PAPER_MINTS`. Discovery collection does not automatically paper-trade every new token.
+
+Docker artifacts: `Dockerfile`, `docker-compose.production.yml`, `.env.production.example`. Compose forces live flags off. The process still binds health to `127.0.0.1` only. Docker does **not** publish that port to the host; Docker HEALTHCHECK probes `http://127.0.0.1:4314/healthz` from inside the container. Bare-metal `prod:run` may be inspected on that host at `127.0.0.1:<PROD20_HEALTH_PORT>`. Do not browse `localhost:4314` for the Docker deployment; use `docker compose ps` and `docker compose logs`.
+
+There is no `prod:live`, `prod:trade`, `prod:execute`, or `prod:wallet`.
+
+See [docs/CHECKPOINT_20.md](docs/CHECKPOINT_20.md), [docs/PRODUCTION_RUNBOOK.md](docs/PRODUCTION_RUNBOOK.md), and [docs/DEPLOYMENT_SECURITY.md](docs/DEPLOYMENT_SECURITY.md).
+
 ## How to use the local database
 
 Initialize the SQLite file and apply migrations:
@@ -744,6 +786,7 @@ src/             Application source code
   live/          l16_v1 manual tiny WSOL→USDC RPC broadcaster (one send, no automation)
   wallet-intelligence/ wi18_v1 public holder-cohort evidence (no signing, no copy trade, no live wiring)
   ml/            ml19_v1 purged walk-forward logistic research lab (read-only, no live, no DB writes)
+  production/    prod20_v1 paper-only supervisor (collector + explicit paper watchlist, no live)
   utils/         Small shared helpers
   index.ts       The program entry point
 tests/           Automated tests (no live DEX Screener or Solana calls unless a test explicitly injects them)
@@ -751,4 +794,4 @@ docs/            Project documents, including the roadmap
 data/            Local runtime database files (ignored by git)
 ```
 
-Checkpoint 20 will focus production deployment. That piece is listed in [docs/ROADMAP.md](docs/ROADMAP.md) and is **not** started. Checkpoint 19 ML is research-only: it does not edit s07, enable paper, or call `live:execute`. Wallet intelligence remains evidence only. It does not follow wallets or activate live broadcast.
+Checkpoint 20 production is paper / data only. It does not edit s07, load an ML candidate, or call `live:execute`. Wallet intelligence remains evidence only. Manual CP16 live remains a separate operator command.

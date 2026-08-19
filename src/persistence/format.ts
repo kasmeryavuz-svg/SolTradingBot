@@ -24,6 +24,8 @@ export function formatCapabilityFooter(): string[] {
     'Wallet intelligence: available',
     'Advanced models / ML: available',
     'ML live integration: unavailable',
+    'Production deployment: available',
+    'Production mode: PAPER / DATA ONLY',
     'Automatic wallet following: unavailable',
     'Copy trading: unavailable',
     'Automatic live trading: unavailable',
@@ -31,7 +33,7 @@ export function formatCapabilityFooter(): string[] {
     'Dashboard live controls: unavailable',
     'Signing: manual/local only',
     'Trading capability: MANUAL / HARD-CAPPED ONLY',
-    'Checkpoint: 19',
+    'Checkpoint: 20',
   ];
 }
 

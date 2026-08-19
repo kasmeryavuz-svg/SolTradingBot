@@ -1,4 +1,5 @@
 import { loadConfig } from '../config/load-config.js';
+import type { CoreAppConfig } from '../config/core-types.js';
 import type { AppConfig, EnvSource } from '../config/types.js';
 import { assertTradingDisabled } from '../core/safety.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
@@ -11,11 +12,11 @@ export function prepareStrategyCheckCommand(source: EnvSource): AppConfig {
   return config;
 }
 
-export function prepareStrategyRecordCommand(source: EnvSource): AppConfig {
+export function prepareStrategyRecordCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function prepareStrategyHistoryCommand(source: EnvSource): AppConfig {
+export function prepareStrategyHistoryCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
