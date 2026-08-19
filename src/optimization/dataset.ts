@@ -1,4 +1,4 @@
-import type { AppConfig } from '../config/types.js';
+import type { CoreAppConfig } from '../config/core-types.js';
 import { currentSchemaVersion } from '../persistence/sqlite/migrations.js';
 import type { ResearchDataset } from '../research/types.js';
 import { openReadOnlyResearchDatabase, SqliteResearchDataSource } from '../research/sqlite-source.js';
@@ -49,7 +49,7 @@ export function researchDatasetToOptimizationDataset(
   };
 }
 
-export function executeLoadOptimizationDataset(config: AppConfig): OptimizationDataset {
+export function executeLoadOptimizationDataset(config: CoreAppConfig): OptimizationDataset {
   const database = openReadOnlyResearchDatabase(config.database);
   const source = new SqliteResearchDataSource(database);
   try {

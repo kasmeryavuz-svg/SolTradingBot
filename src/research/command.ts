@@ -1,4 +1,5 @@
 import { loadConfig } from '../config/load-config.js';
+import type { CoreAppConfig } from '../config/core-types.js';
 import type { AppConfig, EnvSource } from '../config/types.js';
 import { assertTradingDisabled } from '../core/safety.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
@@ -19,7 +20,7 @@ export function prepareResearchCatalogCommand(source: EnvSource): AppConfig {
   return config;
 }
 
-export function prepareResearchCommand(source: EnvSource): AppConfig {
+export function prepareResearchCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
@@ -60,7 +61,7 @@ export function executeResearchCatalog(): ResearchCandidateDescriptor[] {
 export type ResearchIntegrityMode = 'verify' | 'skip';
 
 export function executeResearchCompare(
-  config: AppConfig,
+  config: CoreAppConfig,
   options: { integrity?: ResearchIntegrityMode } = {},
 ): ResearchCompareReport {
   const source = openSqliteResearchDataSource(config.database);
@@ -79,7 +80,7 @@ export function executeResearchCompare(
 }
 
 export function executeResearchTrades(
-  config: AppConfig,
+  config: CoreAppConfig,
   candidateId: ResearchCandidateId,
 ): ResearchCandidateReport {
   const source = openSqliteResearchDataSource(config.database);

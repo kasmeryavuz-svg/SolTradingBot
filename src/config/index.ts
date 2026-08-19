@@ -42,9 +42,11 @@ export {
   USDC_MINT,
   WRAPPED_SOL_MINT,
 } from './defaults.js';
+export { loadCoreConfig } from './load-core-config.js';
 export { loadConfig } from './load-config.js';
 export type {
   AppConfig,
+  CoreAppConfig,
   DatabaseConfig,
   DiscoveryConfig,
   EnvSource,

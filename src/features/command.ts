@@ -1,4 +1,5 @@
 import { loadConfig } from '../config/load-config.js';
+import type { CoreAppConfig } from '../config/core-types.js';
 import type { AppConfig, EnvSource } from '../config/types.js';
 import { assertTradingDisabled } from '../core/safety.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
@@ -11,11 +12,11 @@ export function prepareFeatureCheckCommand(source: EnvSource): AppConfig {
   return config;
 }
 
-export function prepareFeatureRecordCommand(source: EnvSource): AppConfig {
+export function prepareFeatureRecordCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function prepareFeatureHistoryCommand(source: EnvSource): AppConfig {
+export function prepareFeatureHistoryCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 

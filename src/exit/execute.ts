@@ -1,4 +1,4 @@
-import type { EnvSource } from '../config/types.js';
+import type { EnvSource } from '../config/env-source.js';
 import {
   createDexScreenerExactPairProvider,
   type ExactPairMarketDataProvider,

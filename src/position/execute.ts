@@ -1,4 +1,4 @@
-import type { EnvSource } from '../config/types.js';
+import type { EnvSource } from '../config/env-source.js';
 import { generateFeatureVector } from '../features/engine.js';
 import { collectLiveFeatureInputs, createLiveFeatureProviders } from '../features/live.js';
 import { evaluatePaperAction } from '../paper/evaluator.js';

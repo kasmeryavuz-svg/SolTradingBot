@@ -1,13 +1,14 @@
-import type { AppConfig, EnvSource } from '../config/types.js';
+import type { CoreAppConfig } from '../config/core-types.js';
+import type { EnvSource } from '../config/env-source.js';
 import { preparePersistenceCommand } from '../persistence/command.js';
 import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
 import { ExitError } from './types.js';
 
-export function prepareExitStepCommand(source: EnvSource): AppConfig {
+export function prepareExitStepCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 
-export function prepareExitHistoryCommand(source: EnvSource): AppConfig {
+export function prepareExitHistoryCommand(source: EnvSource): CoreAppConfig {
   return preparePersistenceCommand(source);
 }
 

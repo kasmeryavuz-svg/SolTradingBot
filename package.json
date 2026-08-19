@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 19 adds a read-only purged walk-forward supervised ML research lab. Automatic trading is not implemented.",
+    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 20 adds a paper-only production supervisor for data collection and explicit watchlist forward validation. Automatic live trading is not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -75,7 +75,11 @@
     "ml:data": "tsx src/ml/data.ts",
     "ml:run": "tsx src/ml/run.ts",
     "ml:folds": "tsx src/ml/folds-command.ts",
-    "ml:candidate": "tsx src/ml/candidate-command.ts"
+    "ml:candidate": "tsx src/ml/candidate-command.ts",
+    "prod:status": "tsx src/production/status.ts",
+    "prod:plan": "tsx src/production/plan.ts",
+    "prod:preflight": "tsx src/production/run-preflight.ts",
+    "prod:run": "tsx src/production/run.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",
