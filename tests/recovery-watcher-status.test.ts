@@ -8,7 +8,7 @@ import { loadRecoveryWatcherConfig } from '../src/recovery-watcher/config.js';
 import { prepareRecoveryStatusCommand } from '../src/recovery-watcher/command.js';
 
 describe('recovery:status', () => {
-  it('reports rw0_v1 paper/data research identity and the isolated DB path', () => {
+  it('reports rw0_v2 safety-evidence identity and the isolated DB path', () => {
     const config = prepareRecoveryStatusCommand({
       TRADING_ENABLED: 'false',
       LIVE_BROADCAST_ENABLED: 'false',
@@ -16,7 +16,7 @@ describe('recovery:status', () => {
     const text = formatRecoveryStatusLines(config).join('\n');
     expect(config.databasePath).toBe(DEFAULT_RW0_DATABASE_PATH);
     expect(config.databasePath).not.toBe(DEFAULT_DATABASE_PATH);
-    expect(text).toContain('Spec: rw0_v1');
+    expect(text).toContain('Spec: rw0_v2');
     expect(text).toContain(`Watcher fingerprint: ${RW0_WATCHER_DEFINITION_FINGERPRINT}`);
     expect(text).toContain('Mode: PAPER / DATA RESEARCH ONLY');
     expect(text).toContain('TRADING_ENABLED: false');
@@ -24,19 +24,23 @@ describe('recovery:status', () => {
     expect(text).toContain('Intended recovery DB path: recovery-watcher.sqlite');
     expect(text).toContain('Configured production DB path: soltradingbot.sqlite');
     expect(text).not.toMatch(/Intended recovery DB path: soltradingbot\.sqlite/);
-    expect(text).toContain('Holder gate: UNKNOWN');
-    expect(text).toContain('Bundle gate: UNKNOWN');
+    expect(text).toContain('Holder gate: largest aggregated nonexcluded owner <=10%');
+    expect(text).toContain('Bundle gate: complete linked cluster <=20%');
     expect(text).toContain('SHADOW_RESEARCH_OPEN is the only simulation path');
-    expect(text).toContain('PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v1');
-    expect(text).toContain('Manually setting holder/bundle/creator PASS cannot reach PAPER');
+    expect(text).toContain(
+      'PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v2',
+    );
+    expect(text).toContain('caller-supplied gate status cannot reach PAPER');
     expect(text).toContain('historical percentages are not proof');
     expect(text).toContain('Networked forward observation: IMPLEMENTED');
     expect(text).toContain('NOT_DIP does not create an episode');
-    expect(text).toContain('Slice 2 does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED');
+    expect(text).toContain(
+      'Slice 3A does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
+    );
     expect(text).toContain('collectedAt is this process local collection time');
-    expect(text).toContain('Shadow exit/CLOSED: NOT IMPLEMENTED IN rw0_v1');
+    expect(text).toContain('Shadow exit/CLOSED: NOT IMPLEMENTED');
     expect(text).toContain('legal only when recoveryConfirmedAt < watchStartedAt + 2h TTL');
-    expect(text).toContain('UNKNOWN-only in rw0_v1');
+    expect(text).toContain('persisted PASS/FAIL/UNKNOWN');
     expect(text).toContain('Runtime RW0_DATABASE_PATH=:memory: REJECTED');
   });
 

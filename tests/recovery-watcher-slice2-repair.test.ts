@@ -16,7 +16,11 @@ import {
   RW0_WATCH_MARKET_SOURCE,
 } from '../src/recovery-watcher/constants.js';
 import { runRecoveryCycle } from '../src/recovery-watcher/cycle.js';
-import { initializeRecoveryDatabase, openRecoverySqlite, openRecoverySqliteReadOnly } from '../src/recovery-watcher/db/database.js';
+import {
+  initializeRecoveryDatabase,
+  openRecoverySqlite,
+  openRecoverySqliteReadOnly,
+} from '../src/recovery-watcher/db/database.js';
 import { RecoveryWatcherError } from '../src/recovery-watcher/errors.js';
 import {
   RECOVERY_V0_SIGNAL_FINGERPRINT,
@@ -36,8 +40,15 @@ import {
 } from '../src/recovery-watcher/persistence.js';
 import { formatRecoveryReportLines, loadRecoveryReport } from '../src/recovery-watcher/report.js';
 import { createRecoveryCycleMutex, runRecoveryWatcher } from '../src/recovery-watcher/runtime.js';
-import { createScreeningObservation, screeningFromSnapshot, snapshotToMarketObservation } from '../src/recovery-watcher/screening.js';
-import type { RecoveryWatcherConfig, ScreeningObservationRecord } from '../src/recovery-watcher/types.js';
+import {
+  createScreeningObservation,
+  screeningFromSnapshot,
+  snapshotToMarketObservation,
+} from '../src/recovery-watcher/screening.js';
+import type {
+  RecoveryWatcherConfig,
+  ScreeningObservationRecord,
+} from '../src/recovery-watcher/types.js';
 import {
   discoveredEpisodeInput,
   FIXTURE_MINT,
@@ -83,7 +94,9 @@ function sourceRecord(mint: string, source: SourceRecord['source']): SourceRecor
   };
 }
 
-function marketSnapshot(overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string }): MarketSnapshot {
+function marketSnapshot(
+  overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string },
+): MarketSnapshot {
   return {
     chain: 'solana',
     tokenName: 'Test',
@@ -112,7 +125,14 @@ function marketSnapshot(overrides: Partial<MarketSnapshot> & { tokenMint: string
 }
 
 function dipSnapshot(mint = FIXTURE_MINT, pair = FIXTURE_PAIR): MarketSnapshot {
-  return marketSnapshot({ tokenMint: mint, pairAddress: pair, priceUsd: 1, liquidityUsd: 8_000, volume5mUsd: 5_000, priceChange5mPct: -50 });
+  return marketSnapshot({
+    tokenMint: mint,
+    pairAddress: pair,
+    priceUsd: 1,
+    liquidityUsd: 8_000,
+    volume5mUsd: 5_000,
+    priceChange5mPct: -50,
+  });
 }
 
 function notDipSnapshot(mint = FIXTURE_MINT, pair = FIXTURE_PAIR): MarketSnapshot {
@@ -144,14 +164,21 @@ function testConfig(overrides: Partial<RecoveryWatcherConfig> = {}): RecoveryWat
 
 function idleProviders() {
   return {
-    profileFeed: { source: 'dexscreener_profile' as const, fetchRecords: () => Promise.resolve([]) },
+    profileFeed: {
+      source: 'dexscreener_profile' as const,
+      fetchRecords: () => Promise.resolve([]),
+    },
     boostFeed: { source: 'dexscreener_boost' as const, fetchRecords: () => Promise.resolve([]) },
     screeningMarket: { getSnapshot: () => Promise.resolve(dipSnapshot()) },
     exactPairMarket: { getSnapshotForPair: () => Promise.resolve(confirmSnapshot()) },
   };
 }
 
-function admitWatch(database: ReturnType<typeof openInitializedRecoveryDatabase>, mint: string, pair: string): void {
+function admitWatch(
+  database: ReturnType<typeof openInitializedRecoveryDatabase>,
+  mint: string,
+  pair: string,
+): void {
   const created = persistCreatedEpisode(
     database,
     discoveredEpisodeInput({ mint, pairAddress: pair, ...passingDipFields() }),
@@ -233,7 +260,7 @@ function insertRawScreening(
       overrides.priceChange5mPct === undefined ? -10 : overrides.priceChange5mPct,
       'recovery_v0',
       RECOVERY_V0_SIGNAL_FINGERPRINT,
-      'rw0_v1',
+      'rw0_v2',
       RW0_WATCHER_DEFINITION_FINGERPRINT,
       overrides.dipFilterResult ?? 'NOT_DIP',
       overrides.disposition ?? 'NOT_DIP',
@@ -284,7 +311,8 @@ describe('recovery watcher slice 2 repair', () => {
       clock: { now: () => new Date(T0) },
       profileFeed: {
         source: 'dexscreener_profile',
-        fetchRecords: () => Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
+        fetchRecords: () =>
+          Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
       },
       boostFeed: { source: 'dexscreener_boost', fetchRecords: () => Promise.resolve([]) },
       screeningMarket: {
@@ -325,7 +353,8 @@ describe('recovery watcher slice 2 repair', () => {
       providers: {
         profileFeed: {
           source: 'dexscreener_profile',
-          fetchRecords: () => Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
+          fetchRecords: () =>
+            Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
         },
         boostFeed: { source: 'dexscreener_boost', fetchRecords: () => Promise.resolve([]) },
         screeningMarket: {
@@ -473,7 +502,9 @@ describe('recovery watcher slice 2 repair', () => {
         exactPairMarket: { getSnapshotForPair: () => Promise.resolve(confirmSnapshot()) },
       }),
     ).rejects.toBeInstanceOf(TypeError);
-    expect(listScreeningObservations(fatal).every((row) => row.disposition !== 'MARKET_UNAVAILABLE')).toBe(true);
+    expect(
+      listScreeningObservations(fatal).every((row) => row.disposition !== 'MARKET_UNAVAILABLE'),
+    ).toBe(true);
   });
 
   it('fails the runtime when a provider throws TypeError instead of counting it as provider_unavailable', async () => {
@@ -515,7 +546,11 @@ describe('recovery watcher slice 2 repair', () => {
         () => {
           persistAdmittedDipWatch(
             database,
-            { ...validAdmissionInput(), mint: mintAt(3), screening: { ...validAdmissionInput().screening, mint: mintAt(3) } },
+            {
+              ...validAdmissionInput(),
+              mint: mintAt(3),
+              screening: { ...validAdmissionInput().screening, mint: mintAt(3) },
+            },
             { now: new Date(T0) },
           );
         },
@@ -594,7 +629,11 @@ describe('recovery watcher slice 2 repair', () => {
             database,
             {
               mint: snapshot.tokenMint,
-              observation: snapshotToMarketObservation(snapshot, 'pending', RW0_SCREENING_MARKET_SOURCE),
+              observation: snapshotToMarketObservation(
+                snapshot,
+                'pending',
+                RW0_SCREENING_MARKET_SOURCE,
+              ),
               screening: screeningFromSnapshot(snapshot, 'dexscreener_profile', {
                 disposition: 'DIP_PASS',
                 dipFilterResult: 'PASS',
@@ -718,7 +757,7 @@ describe('recovery watcher slice 2 repair', () => {
         -10,
         'recovery_v0',
         fakeSignal,
-        'rw0_v1',
+        'rw0_v2',
         fakeWatcher,
         'NOT_DIP',
         'NOT_DIP',
@@ -748,29 +787,49 @@ describe('recovery watcher slice 2 repair', () => {
       priceChange5mPct: -10,
     };
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, liquidityUsd: Number.NaN }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, liquidityUsd: Number.NaN }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, volume5mUsd: Number.POSITIVE_INFINITY }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, volume5mUsd: Number.POSITIVE_INFINITY }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, liquidityUsd: -1 }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, liquidityUsd: -1 }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, volume5mUsd: -5 }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, volume5mUsd: -5 }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, priceUsd: Number.POSITIVE_INFINITY }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, priceUsd: Number.POSITIVE_INFINITY }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite price > 0/);
     expect(() =>
       persistScreeningObservation(
@@ -812,8 +871,12 @@ describe('recovery watcher slice 2 repair', () => {
       priceChange5mPct: -10,
       reason: 'forged persisted PASS',
     });
-    expect(() => listScreeningObservations(forgedPass)).toThrow(/dip_filter_result=PASS must recompute/);
-    expect(() => loadRecoveryReportSnapshot(forgedPass)).toThrow(/dip_filter_result=PASS must recompute/);
+    expect(() => listScreeningObservations(forgedPass)).toThrow(
+      /dip_filter_result=PASS must recompute/,
+    );
+    expect(() => loadRecoveryReportSnapshot(forgedPass)).toThrow(
+      /dip_filter_result=PASS must recompute/,
+    );
 
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
@@ -874,7 +937,9 @@ describe('recovery watcher slice 2 repair', () => {
     expect(after.size).toBe(before.size);
     expect(after.mtimeMs).toBe(before.mtimeMs);
 
-    const reportDb = openRecoverySqliteReadOnly(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+    const reportDb = openRecoverySqliteReadOnly(path, {
+      configuredProductionPath: DEFAULT_DATABASE_PATH,
+    });
     expect(() => {
       reportDb.exec("UPDATE rw0_screening_observations SET reason = 'tamper'");
     }).toThrow();
@@ -929,7 +994,10 @@ describe('recovery watcher slice 2 repair', () => {
     const snapshot = loadRecoveryReportSnapshot(database);
     expect(snapshot.firstObservationAt).toBe('2026-08-19T11:00:00.000Z');
     expect(snapshot.lastObservationAt).toBe('2026-08-19T13:00:00.000Z');
-    const market = listMarketObservations(database, listEpisodesByMint(database, FIXTURE_MINT)[0]?.episodeId ?? '');
+    const market = listMarketObservations(
+      database,
+      listEpisodesByMint(database, FIXTURE_MINT)[0]?.episodeId ?? '',
+    );
     expect(market[0]?.collectedAt).toBe(T0);
     expect(snapshot.firstObservationAt).not.toBe(T0);
     expect(snapshot.lastObservationAt).not.toBe(T0);
@@ -976,7 +1044,8 @@ describe('recovery watcher slice 2 repair', () => {
           },
           profileFeed: {
             source: 'dexscreener_profile',
-            fetchRecords: () => Promise.resolve([sourceRecord(FIXTURE_MINT, 'dexscreener_profile')]),
+            fetchRecords: () =>
+              Promise.resolve([sourceRecord(FIXTURE_MINT, 'dexscreener_profile')]),
           },
         },
       }),
@@ -1010,9 +1079,13 @@ describe('recovery watcher slice 2 repair', () => {
       screeningMarket: { getSnapshot: () => Promise.resolve(dipSnapshot()) },
       exactPairMarket: { getSnapshotForPair: () => Promise.resolve(dipSnapshot()) },
     });
-    const discoveryRows = listScreeningObservations(database).filter((row) => row.disposition === 'ALREADY_ACTIVE');
+    const discoveryRows = listScreeningObservations(database).filter(
+      (row) => row.disposition === 'ALREADY_ACTIVE',
+    );
     expect(discoveryRows).toHaveLength(1);
-    expect(Date.parse(discoveryRows[0]?.screenedAt ?? '')).toBeGreaterThanOrEqual(Date.parse(T0) + 5_000);
+    expect(Date.parse(discoveryRows[0]?.screenedAt ?? '')).toBeGreaterThanOrEqual(
+      Date.parse(T0) + 5_000,
+    );
     expect(discoveryRows[0]?.screenedAt).not.toBe(T0);
   });
 });

@@ -5,10 +5,16 @@ import {
   RW0_MAX_CONCURRENT_WATCHES,
   RW0_SCREENING_DISPOSITIONS,
   RW0_SCREENING_MARKET_SOURCE,
+  RW0_SAFETY_SPEC_VERSION,
   RW0_WATCH_SLOT_STATES,
   SHADOW_CLOSE_REASONS,
 } from './constants.js';
-import { assertNotFuture, assertTimestampOrder, isSameUtcInstant, parseUtcInstant } from './clock.js';
+import {
+  assertNotFuture,
+  assertTimestampOrder,
+  isSameUtcInstant,
+  parseUtcInstant,
+} from './clock.js';
 import { RecoveryWatcherError } from './errors.js';
 import {
   asRecoveryCostModel,
@@ -30,6 +36,7 @@ import {
   applyTransition,
   assertCanCreateEpisode,
   createEpisode,
+  applyPersistedSafetyRejection,
   isActiveRecoveryEpisode,
   isShadowExitAction,
   isShadowResearch,
@@ -45,6 +52,8 @@ import type {
   RecoveryReportSnapshot,
   ResearchTrack,
   SafetyEvidenceRecord,
+  SafetyDecisionRecord,
+  SafetyGateKind,
   SafetyGateStatus,
   ScreeningDipFilterResult,
   ScreeningDisposition,
@@ -57,6 +66,12 @@ import type {
   TransitionResult,
 } from './types.js';
 import { assertRecoverySchema } from './db/database.js';
+import {
+  canonicalizeSafetyEvidence,
+  emptySafetyEvidenceCounts,
+  RW0_SAFETY_GATE_KINDS,
+} from './safety.js';
+import { fingerprintCanonicalJson, RW0_SAFETY_SPEC_FINGERPRINT } from './identity.js';
 
 const WATCH_SLOT_IN_LIST = RW0_WATCH_SLOT_STATES.map((state) => `'${state}'`).join(', ');
 
@@ -224,9 +239,12 @@ function persistScreeningObservationUnlocked(
     watcherSpecFingerprint: normalized.watcherSpecFingerprint,
   });
   if (normalized.screeningId !== expectedId) {
-    throw new RecoveryWatcherError('Screening identity does not match frozen screening identity inputs.', {
-      code: 'observation_conflict',
-    });
+    throw new RecoveryWatcherError(
+      'Screening identity does not match frozen screening identity inputs.',
+      {
+        code: 'observation_conflict',
+      },
+    );
   }
   const existing = findScreeningObservation(database, normalized.screeningId);
   if (existing !== null) {
@@ -326,17 +344,25 @@ function persistTransitionUnlocked(
 ): TransitionResult {
   const current = loadEpisodeUnlocked(database, episodeId);
   if (current === null) {
-    throw new RecoveryWatcherError('Recovery episode does not exist.', { code: 'persistence_failed' });
+    throw new RecoveryWatcherError('Recovery episode does not exist.', {
+      code: 'persistence_failed',
+    });
   }
   if (expected !== undefined && !isSameUtcInstant(expected.updatedAt, current.updatedAt)) {
-    throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
-      code: 'stale_episode',
-    });
+    throw new RecoveryWatcherError(
+      'Stale recovery episode object. Refusing to overwrite newer persisted state.',
+      {
+        code: 'stale_episode',
+      },
+    );
   }
   if (expected?.state !== undefined && expected.state !== current.state) {
-    throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
-      code: 'stale_episode',
-    });
+    throw new RecoveryWatcherError(
+      'Stale recovery episode object. Refusing to overwrite newer persisted state.',
+      {
+        code: 'stale_episode',
+      },
+    );
   }
   const boundRequest =
     request.to === 'SIGNAL_PENDING_SAFETY'
@@ -354,7 +380,14 @@ function persistTransitionUnlocked(
         `INSERT INTO rw0_state_transitions (episode_id, from_state, to_state, at, reason, event_id)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(result.episode.episodeId, result.fromState, result.toState, result.at, result.reason, result.eventId);
+      .run(
+        result.episode.episodeId,
+        result.fromState,
+        result.toState,
+        result.at,
+        result.reason,
+        result.eventId,
+      );
     if (result.toState === 'SHADOW_RESEARCH_OPEN') {
       insertShadowPositionIfAbsent(database, result.episode);
     }
@@ -391,7 +424,11 @@ function persistAdmittedDipWatchUnlocked(
       { ...observation, episodeId },
       context.now,
     );
-    const persistedScreening = persistScreeningObservationUnlocked(database, screening, context.now);
+    const persistedScreening = persistScreeningObservationUnlocked(
+      database,
+      screening,
+      context.now,
+    );
     let episode = existingSame;
     if (episode.state === 'DISCOVERED') {
       persistTransitionUnlocked(
@@ -406,12 +443,21 @@ function persistAdmittedDipWatchUnlocked(
       persistTransitionUnlocked(
         database,
         episode.episodeId,
-        { to: 'RECOVERY_WATCH', at: observation.collectedAt, reason: 'slice2_resume_dip_candidate' },
+        {
+          to: 'RECOVERY_WATCH',
+          at: observation.collectedAt,
+          reason: 'slice2_resume_dip_candidate',
+        },
         { now: context.now },
       );
       episode = requireEpisode(database, episode.episodeId);
     }
-    return { episode, screening: persistedScreening, observation: persistedObservation, created: false };
+    return {
+      episode,
+      screening: persistedScreening,
+      observation: persistedObservation,
+      created: false,
+    };
   }
 
   assertCanCreateEpisode({
@@ -472,22 +518,16 @@ export function persistSafetyEvidence(
   database.exec('BEGIN IMMEDIATE');
   try {
     const episode = requireEpisode(database, evidence.episodeId);
-    assertNotFuture(evidence.observedAt, context.now, 'safety evidence observedAt');
-    if (evidence.status !== 'UNKNOWN') {
-      throw new RecoveryWatcherError(
-        'rw0_v1 can persist UNKNOWN-only holder/bundle/creator/token-rights/liquidity evidence. PASS and FAIL are rejected until a later safety slice implements a reducer.',
-        { code: 'safe_paper_not_implemented' },
-      );
-    }
-    const before = {
-      holderStatus: episode.holderStatus,
-      bundleStatus: episode.bundleStatus,
-      creatorStatus: episode.creatorStatus,
-      completenessGate: episode.completenessGate,
-    };
-    const existing = findSafetyEvidenceByInstant(database, evidence.episodeId, evidence.kind, evidence.observedAt);
+    const normalized = canonicalizeSafetyEvidence(evidence, context.now);
+    assertSafetyEvidenceBinding(database, episode, normalized);
+    const existing = findSafetyEvidenceByInstant(
+      database,
+      normalized.episodeId,
+      normalized.kind,
+      normalized.observedAt,
+    );
     if (existing.length > 0) {
-      if (existing.some((row) => !safetyEvidenceMatches(row, evidence))) {
+      if (existing.some((row) => !safetyEvidenceMatches(row, normalized))) {
         throw new RecoveryWatcherError(
           'Conflicting safety evidence for the same episode, kind, and observed_at.',
           { code: 'observation_conflict' },
@@ -498,30 +538,35 @@ export function persistSafetyEvidence(
     }
     database
       .prepare(
-        `INSERT INTO rw0_safety_evidence (
-          episode_id, kind, status, observed_at, provider, provenance, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rw0_safety_evidence_v2 (
+          evidence_id, episode_id, mint, pair_address, confirmation_observed_at, confirmation_event_id,
+          kind, status, observed_at, collected_at, provider, provenance,
+          signal_version, signal_fingerprint, watcher_spec_version, watcher_spec_fingerprint,
+          safety_spec_version, safety_spec_fingerprint, payload_json, reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        evidence.episodeId,
-        evidence.kind,
-        evidence.status,
-        evidence.observedAt,
-        evidence.provider,
-        evidence.provenance,
-        evidence.notes,
+        normalized.evidenceId,
+        normalized.episodeId,
+        normalized.mint,
+        normalized.pairAddress,
+        normalized.confirmationObservedAt,
+        normalized.confirmationEventId,
+        normalized.kind,
+        normalized.status,
+        normalized.observedAt,
+        normalized.collectedAt,
+        normalized.provider,
+        normalized.provenance,
+        normalized.signalVersion,
+        normalized.signalFingerprint,
+        normalized.watcherSpecVersion,
+        normalized.watcherSpecFingerprint,
+        normalized.safetySpecVersion,
+        normalized.safetySpecFingerprint,
+        JSON.stringify(normalized.payload),
+        normalized.reason,
       );
-    const after = requireEpisode(database, evidence.episodeId);
-    if (
-      after.holderStatus !== before.holderStatus ||
-      after.bundleStatus !== before.bundleStatus ||
-      after.creatorStatus !== before.creatorStatus ||
-      after.completenessGate !== before.completenessGate
-    ) {
-      throw new RecoveryWatcherError('Safety evidence must not change episode gate status.', {
-        code: 'evidence_invalid',
-      });
-    }
     database.exec('COMMIT');
     return { idempotent: false };
   } catch (error: unknown) {
@@ -530,6 +575,152 @@ export function persistSafetyEvidence(
       throw error;
     }
     throw new RecoveryWatcherError('Failed to persist safety evidence.', {
+      code: 'persistence_failed',
+      cause: error,
+    });
+  }
+}
+
+export function listSafetyEvidence(
+  database: DatabaseSync,
+  episodeId: string,
+): SafetyEvidenceRecord[] {
+  assertRecoverySchema(database);
+  const episode = requireEpisode(database, episodeId);
+  return database
+    .prepare(
+      'SELECT * FROM rw0_safety_evidence_v2 WHERE episode_id = ? ORDER BY collected_at ASC, evidence_id ASC',
+    )
+    .all(episodeId)
+    .map((row) => hydrateSafetyEvidence(database, row, episode, new Date(8_640_000_000_000_000)));
+}
+
+export function persistSafetyDecision(
+  database: DatabaseSync,
+  episodeId: string,
+  decidedAt: string,
+  context: { now: Date },
+): { decision: SafetyDecisionRecord; idempotent: boolean } {
+  assertRecoverySchema(database);
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    assertNotFuture(decidedAt, context.now, 'safety decision decidedAt');
+    const existingRow = database
+      .prepare('SELECT * FROM rw0_safety_decisions WHERE episode_id = ?')
+      .get(episodeId);
+    if (existingRow !== undefined) {
+      const existing = hydrateSafetyDecision(existingRow);
+      const episode = requireEpisode(database, episodeId);
+      assertPersistedSafetyDecision(database, episode, existing, context.now);
+      if (!isSameUtcInstant(existing.decidedAt, decidedAt)) {
+        throw new RecoveryWatcherError('Conflicting safety decision retry for this episode.', {
+          code: 'transition_conflict',
+        });
+      }
+      database.exec('COMMIT');
+      return { decision: existing, idempotent: true };
+    }
+    const episode = requireEpisode(database, episodeId);
+    if (episode.state !== 'SIGNAL_PENDING_SAFETY' || episode.recoveryConfirmedAt === null) {
+      throw new RecoveryWatcherError(
+        'Safety decision requires SIGNAL_PENDING_SAFETY with confirmed recovery.',
+        {
+          code: 'evidence_invalid',
+        },
+      );
+    }
+    assertTimestampOrder(
+      episode.recoveryConfirmedAt,
+      decidedAt,
+      'Safety decision cannot precede recovery confirmation.',
+    );
+    const evidence = database
+      .prepare('SELECT * FROM rw0_safety_evidence_v2 WHERE episode_id = ?')
+      .all(episodeId)
+      .map((row) => hydrateSafetyEvidence(database, row, episode, context.now))
+      .filter(
+        (row) =>
+          parseUtcInstant(row.collectedAt, 'collected_at') <=
+          parseUtcInstant(decidedAt, 'decided_at'),
+      );
+    const selected = selectDecisionEvidence(evidence);
+    const statuses = RW0_SAFETY_GATE_KINDS.map((kind) => selected.get(kind)?.status ?? 'UNKNOWN');
+    const hasFail = statuses.includes('FAIL');
+    const hasUnknown = statuses.includes('UNKNOWN');
+    const outcome = hasFail ? 'REJECTED_SAFETY' : 'REJECTED_SAFETY_UNKNOWN';
+    const reason = hasFail
+      ? `hard gate FAIL: ${RW0_SAFETY_GATE_KINDS.filter((_, index) => statuses[index] === 'FAIL').join(',')}`
+      : hasUnknown
+        ? `hard gate UNKNOWN: ${RW0_SAFETY_GATE_KINDS.filter((_, index) => statuses[index] === 'UNKNOWN').join(',')}`
+        : 'all four evidence gates PASS; safety-evidence-only slice cannot make paper eligibility reachable';
+    const evidenceIds = RW0_SAFETY_GATE_KINDS.map((kind) => selected.get(kind)?.evidenceId)
+      .filter((value): value is string => value !== undefined)
+      .sort();
+    const decisionId = fingerprintCanonicalJson({
+      episodeId,
+      decidedAt,
+      outcome,
+      reason,
+      statuses,
+      evidenceIds,
+    });
+    const transition = applyPersistedSafetyRejection(
+      episode,
+      { to: outcome, at: decidedAt, reason: `slice3a:${decisionId}` },
+      { now: context.now },
+      statuses,
+    );
+    updateEpisodeRow(database, transition.episode);
+    database
+      .prepare(
+        `INSERT INTO rw0_state_transitions (episode_id, from_state, to_state, at, reason, event_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        episodeId,
+        transition.fromState,
+        transition.toState,
+        transition.at,
+        transition.reason,
+        transition.eventId,
+      );
+    const decision: SafetyDecisionRecord = {
+      decisionId,
+      episodeId,
+      decidedAt,
+      outcome,
+      reason,
+      tokenRightsStatus: statuses[0] ?? 'UNKNOWN',
+      holderStatus: statuses[1] ?? 'UNKNOWN',
+      bundleStatus: statuses[2] ?? 'UNKNOWN',
+      creatorStatus: statuses[3] ?? 'UNKNOWN',
+      evidenceIds,
+    };
+    database
+      .prepare(
+        `INSERT INTO rw0_safety_decisions (
+          decision_id, episode_id, decided_at, outcome, reason,
+          token_rights_status, holder_status, bundle_status, creator_status, evidence_ids_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        decision.decisionId,
+        decision.episodeId,
+        decision.decidedAt,
+        decision.outcome,
+        decision.reason,
+        decision.tokenRightsStatus,
+        decision.holderStatus,
+        decision.bundleStatus,
+        decision.creatorStatus,
+        JSON.stringify(decision.evidenceIds),
+      );
+    database.exec('COMMIT');
+    return { decision, idempotent: false };
+  } catch (error: unknown) {
+    rollbackQuietly(database);
+    if (error instanceof RecoveryWatcherError) throw error;
+    throw new RecoveryWatcherError('Failed to persist safety decision.', {
       code: 'persistence_failed',
       cause: error,
     });
@@ -623,7 +814,11 @@ export function listMarketObservations(
     )
     .all(episodeId)
     .map((row) => asMarketObservationRecord(row, episodeId))
-    .sort((left, right) => parseUtcInstant(left.collectedAt, 'collected_at') - parseUtcInstant(right.collectedAt, 'collected_at'));
+    .sort(
+      (left, right) =>
+        parseUtcInstant(left.collectedAt, 'collected_at') -
+        parseUtcInstant(right.collectedAt, 'collected_at'),
+    );
 }
 
 export function listScreeningObservations(database: DatabaseSync): ScreeningObservationRecord[] {
@@ -634,7 +829,10 @@ export function listScreeningObservations(database: DatabaseSync): ScreeningObse
     .map((row) => hydrateScreeningObservation(row));
 }
 
-export function listEpisodesInState(database: DatabaseSync, state: RecoveryEpisodeState): RecoveryEpisode[] {
+export function listEpisodesInState(
+  database: DatabaseSync,
+  state: RecoveryEpisodeState,
+): RecoveryEpisode[] {
   assertRecoverySchema(database);
   return database
     .prepare('SELECT * FROM rw0_episodes WHERE state = ?')
@@ -658,20 +856,43 @@ export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryRepo
     dipFilterCounts[row.dipFilterResult] += 1;
   }
   const stateCounts = new Map<string, number>();
-  for (const row of database.prepare('SELECT state, COUNT(*) AS count FROM rw0_episodes GROUP BY state').all()) {
+  for (const row of database
+    .prepare('SELECT state, COUNT(*) AS count FROM rw0_episodes GROUP BY state')
+    .all()) {
     stateCounts.set(requireString(row['state']), Number(row['count'] ?? 0));
   }
   const admittedWatch = database
-    .prepare(`SELECT COUNT(*) AS count FROM rw0_state_transitions WHERE to_state = 'RECOVERY_WATCH'`)
+    .prepare(
+      `SELECT COUNT(*) AS count FROM rw0_state_transitions WHERE to_state = 'RECOVERY_WATCH'`,
+    )
     .get();
   const confirmed = database
     .prepare('SELECT COUNT(*) AS count FROM rw0_episodes WHERE recovery_confirmed_at IS NOT NULL')
     .get();
-  const marketTimes = database.prepare('SELECT collected_at AS at FROM rw0_market_observations').all();
+  const marketTimes = database
+    .prepare('SELECT collected_at AS at FROM rw0_market_observations')
+    .all();
   const timestamps = [
     ...marketTimes.map((row) => asNullableString(row['at'])),
     ...screeningRows.map((row) => row.screenedAt),
   ];
+  const safetyEvidenceCounts = emptySafetyEvidenceCounts();
+  const episodeIds = database
+    .prepare('SELECT * FROM rw0_episodes')
+    .all()
+    .map((row) => hydrateEpisode(row).episodeId);
+  for (const episodeId of episodeIds) {
+    for (const evidence of listSafetyEvidence(database, episodeId)) {
+      safetyEvidenceCounts[evidence.kind][evidence.status] += 1;
+    }
+  }
+  const safetyDecisionReasons: Record<string, number> = {};
+  for (const row of database.prepare('SELECT * FROM rw0_safety_decisions').all()) {
+    const decision = hydrateSafetyDecision(row);
+    const episode = requireEpisode(database, decision.episodeId);
+    assertPersistedSafetyDecision(database, episode, decision, new Date(8_640_000_000_000_000));
+    safetyDecisionReasons[decision.reason] = (safetyDecisionReasons[decision.reason] ?? 0) + 1;
+  }
   return {
     screeningCount: screeningRows.length,
     screeningByDisposition,
@@ -688,8 +909,12 @@ export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryRepo
     firstObservationAt: earliestUtcInstant(timestamps),
     lastObservationAt: latestUtcInstant(timestamps),
     shadowPositionCount: countShadowPositions(database),
-    paperStateCount: (stateCounts.get('PAPER_ELIGIBLE') ?? 0) + (stateCounts.get('PAPER_OPEN') ?? 0),
+    paperStateCount:
+      (stateCounts.get('PAPER_ELIGIBLE') ?? 0) + (stateCounts.get('PAPER_OPEN') ?? 0),
     closedStateCount: stateCounts.get('CLOSED') ?? 0,
+    rejectedSafetyCount: stateCounts.get('REJECTED_SAFETY') ?? 0,
+    safetyEvidenceCounts,
+    safetyDecisionReasons,
   };
 }
 
@@ -783,7 +1008,13 @@ function insertEpisodeUnlocked(database: DatabaseSync, episode: RecoveryEpisode)
       `INSERT INTO rw0_state_transitions (episode_id, from_state, to_state, at, reason, event_id)
        VALUES (?, NULL, ?, ?, ?, ?)`,
     )
-    .run(episode.episodeId, episode.state, episode.createdAt, 'episode_created', episode.lastTransitionEventId);
+    .run(
+      episode.episodeId,
+      episode.state,
+      episode.createdAt,
+      'episode_created',
+      episode.lastTransitionEventId,
+    );
 }
 
 function insertShadowPositionIfAbsent(database: DatabaseSync, episode: RecoveryEpisode): void {
@@ -939,7 +1170,10 @@ function listEpisodesByMintUnlocked(database: DatabaseSync, mint: string): Recov
       if (byDip !== 0) {
         return byDip;
       }
-      return parseUtcInstant(left.createdAt, 'created_at') - parseUtcInstant(right.createdAt, 'created_at');
+      return (
+        parseUtcInstant(left.createdAt, 'created_at') -
+        parseUtcInstant(right.createdAt, 'created_at')
+      );
     });
 }
 
@@ -953,7 +1187,9 @@ function countHighResolutionWatchSlotsUnlocked(database: DatabaseSync): number {
 function requireEpisode(database: DatabaseSync, episodeId: string): RecoveryEpisode {
   const episode = loadEpisodeUnlocked(database, episodeId);
   if (episode === null) {
-    throw new RecoveryWatcherError('Evidence episode does not exist.', { code: 'evidence_invalid' });
+    throw new RecoveryWatcherError('Evidence episode does not exist.', {
+      code: 'evidence_invalid',
+    });
   }
   return episode;
 }
@@ -970,7 +1206,10 @@ function bindConfirmationRequestToPersistedObservation(
       code: 'evidence_invalid',
     });
   }
-  if (request.recoveryConfirmedAt !== undefined && !isSameUtcInstant(request.recoveryConfirmedAt, confirmedAt)) {
+  if (
+    request.recoveryConfirmedAt !== undefined &&
+    !isSameUtcInstant(request.recoveryConfirmedAt, confirmedAt)
+  ) {
     throw new RecoveryWatcherError(
       'Confirmation recoveryConfirmedAt must identify the same instant as the persisted observation.',
       { code: 'evidence_invalid' },
@@ -998,14 +1237,20 @@ function bindConfirmationRequestToPersistedObservation(
     );
   }
   if (observation.mint !== episode.mint) {
-    throw new RecoveryWatcherError('Persisted confirmation observation mint must match the episode mint.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted confirmation observation mint must match the episode mint.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (observation.pairAddress !== episode.pairAddress) {
-    throw new RecoveryWatcherError('Persisted confirmation observation pair must match the pinned episode pair.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted confirmation observation pair must match the pinned episode pair.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (
     observation.signalVersion !== episode.signalVersion ||
@@ -1013,9 +1258,12 @@ function bindConfirmationRequestToPersistedObservation(
     observation.watcherSpecVersion !== episode.watcherSpecVersion ||
     observation.watcherSpecFingerprint !== episode.watcherSpecFingerprint
   ) {
-    throw new RecoveryWatcherError('Persisted confirmation observation fingerprints must match the episode.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted confirmation observation fingerprints must match the episode.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (
     !isKnownFinite(observation.priceUsd) ||
@@ -1069,7 +1317,11 @@ function bindConfirmationRequestToPersistedObservation(
   };
 }
 
-function assertCallerNumberAgrees(label: string, supplied: number | undefined, stored: number): void {
+function assertCallerNumberAgrees(
+  label: string,
+  supplied: number | undefined,
+  stored: number,
+): void {
   if (supplied === undefined) {
     return;
   }
@@ -1089,7 +1341,9 @@ function normalizeMarketObservation(observation: MarketObservationRecord): Marke
   };
 }
 
-function normalizeScreeningObservation(observation: ScreeningObservationRecord): ScreeningObservationRecord {
+function normalizeScreeningObservation(
+  observation: ScreeningObservationRecord,
+): ScreeningObservationRecord {
   const discoverySources = requireNonEmptyProvenance(
     observation.discoverySources,
     'screening discovery_sources',
@@ -1099,7 +1353,9 @@ function normalizeScreeningObservation(observation: ScreeningObservationRecord):
     throw new RecoveryWatcherError('Unknown screening disposition.', { code: 'evidence_invalid' });
   }
   if (!isScreeningDipFilterResult(observation.dipFilterResult)) {
-    throw new RecoveryWatcherError('Unknown screening dip_filter_result.', { code: 'evidence_invalid' });
+    throw new RecoveryWatcherError('Unknown screening dip_filter_result.', {
+      code: 'evidence_invalid',
+    });
   }
   assertFrozenScreeningIdentity(observation);
   assertOptionalPositivePrice(observation.priceUsd, 'screening priceUsd');
@@ -1115,8 +1371,13 @@ function normalizeScreeningObservation(observation: ScreeningObservationRecord):
     ...observation,
     discoverySources,
     provider:
-      observation.provider === null ? null : requireNonEmptyProvenance(observation.provider, 'screening provider'),
-    source: observation.source === null ? null : requireNonEmptyProvenance(observation.source, 'screening source'),
+      observation.provider === null
+        ? null
+        : requireNonEmptyProvenance(observation.provider, 'screening provider'),
+    source:
+      observation.source === null
+        ? null
+        : requireNonEmptyProvenance(observation.source, 'screening source'),
     reason,
     collectedAtIsLocalCollectionTime: true,
   };
@@ -1126,7 +1387,9 @@ function findScreeningObservation(
   database: DatabaseSync,
   screeningId: string,
 ): ScreeningObservationRecord | null {
-  const row = database.prepare('SELECT * FROM rw0_screening_observations WHERE screening_id = ?').get(screeningId);
+  const row = database
+    .prepare('SELECT * FROM rw0_screening_observations WHERE screening_id = ?')
+    .get(screeningId);
   return row === undefined ? null : hydrateScreeningObservation(row);
 }
 
@@ -1156,7 +1419,9 @@ function screeningObservationMatches(
   );
 }
 
-function hydrateScreeningObservation(row: Record<string, SQLOutputValue>): ScreeningObservationRecord {
+function hydrateScreeningObservation(
+  row: Record<string, SQLOutputValue>,
+): ScreeningObservationRecord {
   const disposition = requireString(row['disposition']);
   if (!isScreeningDisposition(disposition)) {
     throw new RecoveryWatcherError('Stored screening disposition is not a frozen rw0_v1 value.', {
@@ -1165,9 +1430,12 @@ function hydrateScreeningObservation(row: Record<string, SQLOutputValue>): Scree
   }
   const dipFilterResult = requireString(row['dip_filter_result']);
   if (!isScreeningDipFilterResult(dipFilterResult)) {
-    throw new RecoveryWatcherError('Stored screening dip_filter_result is not a frozen rw0_v1 value.', {
-      code: 'schema_mismatch',
-    });
+    throw new RecoveryWatcherError(
+      'Stored screening dip_filter_result is not a frozen rw0_v1 value.',
+      {
+        code: 'schema_mismatch',
+      },
+    );
   }
   const observation: ScreeningObservationRecord = {
     screeningId: requireString(row['screening_id']),
@@ -1213,9 +1481,12 @@ function assertScreeningDipFilterSemantics(observation: ScreeningObservationReco
     });
   }
   if (observation.disposition === 'INCOMPLETE' && observation.dipFilterResult !== 'INCOMPLETE') {
-    throw new RecoveryWatcherError('INCOMPLETE screening rows must store dip_filter_result=INCOMPLETE.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'INCOMPLETE screening rows must store dip_filter_result=INCOMPLETE.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (observation.dipFilterResult === 'NOT_EVALUATED') {
     return;
@@ -1233,7 +1504,11 @@ function assertScreeningDipFilterSemantics(observation: ScreeningObservationReco
         { code: 'evidence_invalid' },
       );
     }
-    if (observation.provider === null || observation.source === null || observation.pairAddress === null) {
+    if (
+      observation.provider === null ||
+      observation.source === null ||
+      observation.pairAddress === null
+    ) {
       throw new RecoveryWatcherError(
         'dip_filter_result=PASS requires provider, source, and pair_address provenance.',
         { code: 'evidence_invalid' },
@@ -1247,7 +1522,11 @@ function assertScreeningDipFilterSemantics(observation: ScreeningObservationReco
       { code: 'evidence_invalid' },
     );
   }
-  if (observation.dipFilterResult === 'INCOMPLETE' && filters.kind !== 'reject_incomplete' && filters.kind !== 'reject_invalid') {
+  if (
+    observation.dipFilterResult === 'INCOMPLETE' &&
+    filters.kind !== 'reject_incomplete' &&
+    filters.kind !== 'reject_invalid'
+  ) {
     throw new RecoveryWatcherError(
       'Screening dip_filter_result=INCOMPLETE must recompute as incomplete or invalid recovery_v0 inputs.',
       { code: 'evidence_invalid' },
@@ -1264,14 +1543,20 @@ function assertAdmittedDipEvidenceBinding(input: {
   assertFrozenScreeningIdentity(observation);
   assertFrozenScreeningIdentity(screening);
   if (screening.mint !== input.mint || observation.mint !== input.mint) {
-    throw new RecoveryWatcherError('Admitted dip watch mint must match screening and market observation mint.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Admitted dip watch mint must match screening and market observation mint.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (screening.pairAddress === null || screening.pairAddress !== observation.pairAddress) {
-    throw new RecoveryWatcherError('Admitted dip watch pair must match screening and market observation pair.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Admitted dip watch pair must match screening and market observation pair.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (!isSameUtcInstant(screening.screenedAt, observation.collectedAt)) {
     throw new RecoveryWatcherError(
@@ -1296,14 +1581,20 @@ function assertAdmittedDipEvidenceBinding(input: {
     screening.watcherSpecVersion !== observation.watcherSpecVersion ||
     screening.watcherSpecFingerprint !== observation.watcherSpecFingerprint
   ) {
-    throw new RecoveryWatcherError('Admitted dip watch screening identity must match the market observation.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'Admitted dip watch screening identity must match the market observation.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (screening.disposition !== 'DIP_PASS' || screening.dipFilterResult !== 'PASS') {
-    throw new RecoveryWatcherError('persistAdmittedDipWatch requires operational DIP_PASS and dip_filter_result=PASS.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'persistAdmittedDipWatch requires operational DIP_PASS and dip_filter_result=PASS.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
   if (screening.provider !== observation.provider || screening.source !== observation.source) {
     throw new RecoveryWatcherError(
@@ -1399,8 +1690,8 @@ function findSafetyEvidenceByInstant(
 ): Record<string, SQLOutputValue>[] {
   return database
     .prepare(
-      `SELECT status, observed_at, provider, provenance, notes
-       FROM rw0_safety_evidence
+      `SELECT *
+       FROM rw0_safety_evidence_v2
        WHERE episode_id = ? AND kind = ?`,
     )
     .all(episodeId, kind)
@@ -1475,9 +1766,12 @@ function assertMarketObservationProvenance(
   assertOptionalFiniteNonNegative(observation.liquidityUsd, 'market observation liquidityUsd');
   assertOptionalFiniteNonNegative(observation.volume5mUsd, 'market observation volume5mUsd');
   if (observation.priceChange5mPct !== null && !isKnownFinite(observation.priceChange5mPct)) {
-    throw new RecoveryWatcherError('market observation priceChange5mPct must be finite when present.', {
-      code: 'evidence_invalid',
-    });
+    throw new RecoveryWatcherError(
+      'market observation priceChange5mPct must be finite when present.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
   }
 }
 
@@ -1522,7 +1816,10 @@ function assertShadowExitProvenance(
   }
 }
 
-function marketObservationMatches(row: Record<string, SQLOutputValue>, observation: MarketObservationRecord): boolean {
+function marketObservationMatches(
+  row: Record<string, SQLOutputValue>,
+  observation: MarketObservationRecord,
+): boolean {
   return (
     asNullableString(row['mint']) === observation.mint &&
     asNullableString(row['pair_address']) === observation.pairAddress &&
@@ -1539,7 +1836,10 @@ function marketObservationMatches(row: Record<string, SQLOutputValue>, observati
   );
 }
 
-function shadowExitMatches(row: Record<string, SQLOutputValue>, observation: ShadowExitObservationRecord): boolean {
+function shadowExitMatches(
+  row: Record<string, SQLOutputValue>,
+  observation: ShadowExitObservationRecord,
+): boolean {
   return (
     asNullableNumber(row['observed_price_usd']) === observation.observedPriceUsd &&
     asNullableNumber(row['threshold_price_usd']) === observation.thresholdPriceUsd &&
@@ -1549,13 +1849,284 @@ function shadowExitMatches(row: Record<string, SQLOutputValue>, observation: Sha
   );
 }
 
-function safetyEvidenceMatches(row: Record<string, SQLOutputValue>, evidence: SafetyEvidenceRecord): boolean {
-  return (
-    requireString(row['status']) === evidence.status &&
-    asNullableString(row['provider']) === evidence.provider &&
-    asNullableString(row['provenance']) === evidence.provenance &&
-    asNullableString(row['notes']) === evidence.notes
+function safetyEvidenceMatches(
+  row: Record<string, SQLOutputValue>,
+  evidence: SafetyEvidenceRecord,
+): boolean {
+  try {
+    const payload = JSON.parse(
+      requireString(row['payload_json']),
+    ) as SafetyEvidenceRecord['payload'];
+    return (
+      requireString(row['evidence_id']) === evidence.evidenceId &&
+      requireString(row['mint']) === evidence.mint &&
+      requireString(row['pair_address']) === evidence.pairAddress &&
+      isSameUtcInstant(
+        requireString(row['confirmation_observed_at']),
+        evidence.confirmationObservedAt,
+      ) &&
+      requireString(row['confirmation_event_id']) === evidence.confirmationEventId &&
+      requireString(row['status']) === evidence.status &&
+      isSameUtcInstant(requireString(row['collected_at']), evidence.collectedAt) &&
+      asNullableString(row['provider']) === evidence.provider &&
+      requireString(row['provenance']) === evidence.provenance &&
+      requireString(row['signal_version']) === evidence.signalVersion &&
+      requireString(row['signal_fingerprint']) === evidence.signalFingerprint &&
+      requireString(row['watcher_spec_version']) === evidence.watcherSpecVersion &&
+      requireString(row['watcher_spec_fingerprint']) === evidence.watcherSpecFingerprint &&
+      requireString(row['safety_spec_version']) === evidence.safetySpecVersion &&
+      requireString(row['safety_spec_fingerprint']) === evidence.safetySpecFingerprint &&
+      requireString(row['reason']) === evidence.reason &&
+      JSON.stringify(payload) === JSON.stringify(evidence.payload)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hydrateSafetyEvidence(
+  database: DatabaseSync,
+  row: Record<string, SQLOutputValue>,
+  episode: RecoveryEpisode,
+  now: Date,
+): SafetyEvidenceRecord {
+  let payload: SafetyEvidenceRecord['payload'];
+  try {
+    payload = JSON.parse(requireString(row['payload_json'])) as SafetyEvidenceRecord['payload'];
+  } catch (error: unknown) {
+    throw new RecoveryWatcherError('Stored safety evidence payload is malformed.', {
+      code: 'evidence_invalid',
+      cause: error,
+    });
+  }
+  const evidence = canonicalizeSafetyEvidence(
+    {
+      evidenceId: requireString(row['evidence_id']),
+      episodeId: requireString(row['episode_id']),
+      mint: requireString(row['mint']),
+      pairAddress: requireString(row['pair_address']),
+      confirmationObservedAt: requireString(row['confirmation_observed_at']),
+      confirmationEventId: requireString(row['confirmation_event_id']),
+      kind: requireString(row['kind']) as SafetyGateKind,
+      status: requireString(row['status']) as SafetyGateStatus,
+      observedAt: requireString(row['observed_at']),
+      collectedAt: requireString(row['collected_at']),
+      provider: asNullableString(row['provider']),
+      provenance: requireString(row['provenance']),
+      signalVersion: requireString(row['signal_version']),
+      signalFingerprint: requireString(row['signal_fingerprint']),
+      watcherSpecVersion: requireString(row['watcher_spec_version']),
+      watcherSpecFingerprint: requireString(row['watcher_spec_fingerprint']),
+      safetySpecVersion: requireString(row['safety_spec_version']),
+      safetySpecFingerprint: requireString(row['safety_spec_fingerprint']),
+      payload,
+      reason: requireString(row['reason']),
+    },
+    now,
   );
+  assertSafetyEvidenceBinding(database, episode, evidence);
+  return evidence;
+}
+
+function assertSafetyEvidenceBinding(
+  database: DatabaseSync,
+  episode: RecoveryEpisode,
+  evidence: SafetyEvidenceRecord,
+): void {
+  if (episode.recoveryConfirmedAt === null) {
+    throw new RecoveryWatcherError('Safety evidence requires a confirmed recovery episode.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (evidence.episodeId !== episode.episodeId || evidence.mint !== episode.mint) {
+    throw new RecoveryWatcherError(
+      'Safety evidence episode or mint does not match persisted confirmation.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
+  }
+  if (evidence.pairAddress !== episode.pairAddress) {
+    throw new RecoveryWatcherError('Safety evidence pair must match the pinned episode pair.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (!isSameUtcInstant(evidence.confirmationObservedAt, episode.recoveryConfirmedAt)) {
+    throw new RecoveryWatcherError(
+      'Safety evidence confirmation identity does not match the episode.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
+  }
+  const confirmationTransitions = database
+    .prepare(
+      `SELECT event_id, at FROM rw0_state_transitions
+       WHERE episode_id = ? AND to_state = 'SIGNAL_PENDING_SAFETY'`,
+    )
+    .all(episode.episodeId)
+    .filter((row) => isSameUtcInstant(requireString(row['at']), evidence.confirmationObservedAt));
+  if (
+    confirmationTransitions.length !== 1 ||
+    requireString(confirmationTransitions[0]?.['event_id']) !== evidence.confirmationEventId
+  ) {
+    throw new RecoveryWatcherError(
+      'Safety evidence confirmation event identity does not match persisted history.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
+  }
+  if (
+    evidence.signalVersion !== episode.signalVersion ||
+    evidence.signalFingerprint !== episode.signalFingerprint ||
+    evidence.watcherSpecVersion !== episode.watcherSpecVersion ||
+    evidence.watcherSpecFingerprint !== episode.watcherSpecFingerprint ||
+    evidence.safetySpecVersion !== RW0_SAFETY_SPEC_VERSION ||
+    evidence.safetySpecFingerprint !== RW0_SAFETY_SPEC_FINGERPRINT
+  ) {
+    throw new RecoveryWatcherError(
+      'Safety evidence frozen identities do not match the episode and safety spec.',
+      {
+        code: 'definition_mismatch',
+      },
+    );
+  }
+}
+
+function selectDecisionEvidence(
+  evidence: readonly SafetyEvidenceRecord[],
+): Map<SafetyGateKind, SafetyEvidenceRecord> {
+  const selected = new Map<SafetyGateKind, SafetyEvidenceRecord>();
+  for (const row of evidence) {
+    const previous = selected.get(row.kind);
+    if (
+      previous === undefined ||
+      parseUtcInstant(row.collectedAt, 'collected_at') >
+        parseUtcInstant(previous.collectedAt, 'collected_at')
+    ) {
+      selected.set(row.kind, row);
+    } else if (
+      parseUtcInstant(row.collectedAt, 'collected_at') ===
+        parseUtcInstant(previous.collectedAt, 'collected_at') &&
+      row.evidenceId !== previous.evidenceId
+    ) {
+      throw new RecoveryWatcherError(
+        'Conflicting safety evidence shares the latest collection instant.',
+        {
+          code: 'observation_conflict',
+        },
+      );
+    }
+  }
+  return selected;
+}
+
+function hydrateSafetyDecision(row: Record<string, SQLOutputValue>): SafetyDecisionRecord {
+  let evidenceIds: string[];
+  try {
+    const parsed = JSON.parse(requireString(row['evidence_ids_json'])) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === 'string'))
+      throw new Error('invalid');
+    evidenceIds = parsed;
+  } catch (error: unknown) {
+    throw new RecoveryWatcherError('Stored safety decision evidence identities are malformed.', {
+      code: 'evidence_invalid',
+      cause: error,
+    });
+  }
+  const outcome = requireString(row['outcome']);
+  if (outcome !== 'REJECTED_SAFETY' && outcome !== 'REJECTED_SAFETY_UNKNOWN') {
+    throw new RecoveryWatcherError('Stored safety decision outcome is malformed.', {
+      code: 'evidence_invalid',
+    });
+  }
+  const statuses = [
+    requireString(row['token_rights_status']),
+    requireString(row['holder_status']),
+    requireString(row['bundle_status']),
+    requireString(row['creator_status']),
+  ];
+  if (statuses.some((status) => status !== 'PASS' && status !== 'FAIL' && status !== 'UNKNOWN')) {
+    throw new RecoveryWatcherError('Stored safety decision status is malformed.', {
+      code: 'evidence_invalid',
+    });
+  }
+  return {
+    decisionId: requireString(row['decision_id']),
+    episodeId: requireString(row['episode_id']),
+    decidedAt: requireString(row['decided_at']),
+    outcome,
+    reason: requireString(row['reason']),
+    tokenRightsStatus: statuses[0] as SafetyGateStatus,
+    holderStatus: statuses[1] as SafetyGateStatus,
+    bundleStatus: statuses[2] as SafetyGateStatus,
+    creatorStatus: statuses[3] as SafetyGateStatus,
+    evidenceIds,
+  };
+}
+
+function assertPersistedSafetyDecision(
+  database: DatabaseSync,
+  episode: RecoveryEpisode,
+  decision: SafetyDecisionRecord,
+  now: Date,
+): void {
+  assertNotFuture(decision.decidedAt, now, 'stored safety decision decidedAt');
+  if (episode.state !== decision.outcome) {
+    throw new RecoveryWatcherError('Stored safety decision outcome does not match episode state.', {
+      code: 'evidence_invalid',
+    });
+  }
+  const evidence = database
+    .prepare('SELECT * FROM rw0_safety_evidence_v2 WHERE episode_id = ?')
+    .all(episode.episodeId)
+    .map((row) => hydrateSafetyEvidence(database, row, episode, now))
+    .filter(
+      (row) =>
+        parseUtcInstant(row.collectedAt, 'collected_at') <=
+        parseUtcInstant(decision.decidedAt, 'decided_at'),
+    );
+  const selected = selectDecisionEvidence(evidence);
+  const statuses = RW0_SAFETY_GATE_KINDS.map((kind) => selected.get(kind)?.status ?? 'UNKNOWN');
+  const expectedOutcome = statuses.includes('FAIL') ? 'REJECTED_SAFETY' : 'REJECTED_SAFETY_UNKNOWN';
+  const hasUnknown = statuses.includes('UNKNOWN');
+  const expectedReason = statuses.includes('FAIL')
+    ? `hard gate FAIL: ${RW0_SAFETY_GATE_KINDS.filter((_, index) => statuses[index] === 'FAIL').join(',')}`
+    : hasUnknown
+      ? `hard gate UNKNOWN: ${RW0_SAFETY_GATE_KINDS.filter((_, index) => statuses[index] === 'UNKNOWN').join(',')}`
+      : 'all four evidence gates PASS; safety-evidence-only slice cannot make paper eligibility reachable';
+  const evidenceIds = RW0_SAFETY_GATE_KINDS.map((kind) => selected.get(kind)?.evidenceId)
+    .filter((value): value is string => value !== undefined)
+    .sort();
+  const expectedId = fingerprintCanonicalJson({
+    episodeId: episode.episodeId,
+    decidedAt: decision.decidedAt,
+    outcome: expectedOutcome,
+    reason: expectedReason,
+    statuses,
+    evidenceIds,
+  });
+  const persistedStatuses = [
+    decision.tokenRightsStatus,
+    decision.holderStatus,
+    decision.bundleStatus,
+    decision.creatorStatus,
+  ];
+  if (
+    decision.decisionId !== expectedId ||
+    decision.outcome !== expectedOutcome ||
+    decision.reason !== expectedReason ||
+    JSON.stringify(persistedStatuses) !== JSON.stringify(statuses) ||
+    JSON.stringify(decision.evidenceIds) !== JSON.stringify(evidenceIds)
+  ) {
+    throw new RecoveryWatcherError(
+      'Stored safety decision does not match canonical persisted evidence.',
+      {
+        code: 'evidence_invalid',
+      },
+    );
+  }
 }
 
 function hydrateEpisode(row: Record<string, SQLOutputValue>): RecoveryEpisode {
@@ -1614,7 +2185,9 @@ function hydrateEpisode(row: Record<string, SQLOutputValue>): RecoveryEpisode {
     recoveryConfirmationPriceUsd: asNullableNumber(row['recovery_confirmation_price_usd']),
     recoveryConfirmationLiquidityUsd: asNullableNumber(row['recovery_confirmation_liquidity_usd']),
     recoveryConfirmationVolume5mUsd: asNullableNumber(row['recovery_confirmation_volume_5m_usd']),
-    recoveryConfirmationVolumeToLiquidity5m: asNullableNumber(row['recovery_confirmation_volume_to_liquidity_5m']),
+    recoveryConfirmationVolumeToLiquidity5m: asNullableNumber(
+      row['recovery_confirmation_volume_to_liquidity_5m'],
+    ),
     watchStartedAt: asNullableString(row['watch_started_at']),
     lastTransitionEventId: requireString(row['last_transition_event_id']),
     lastFromState: asNullableString(row['last_from_state']) as RecoveryEpisodeState | null,

@@ -10,6 +10,7 @@ import {
   RW0_MAX_CONCURRENT_WATCHES,
   RW0_SCREENING_FETCH_CONCURRENCY,
   RW0_SCREENING_MARKET_SOURCE,
+  RW0_SAFETY_SPEC_VERSION,
   RW0_WATCH_FETCH_CONCURRENCY,
   RW0_WATCH_MARKET_SOURCE,
   RW0_WATCH_TTL_MS,
@@ -26,14 +27,22 @@ import {
   persistAdmittedDipWatch,
   persistMarketObservation,
   persistScreeningObservation,
+  persistSafetyDecision,
+  persistSafetyEvidence,
   persistTransition,
+  loadEpisode,
 } from './persistence.js';
 import {
   fetchDiscoveryRecords,
   fetchExactPairSnapshot,
   fetchScreeningSnapshot,
 } from './providers.js';
-import { classifyDipSnapshot, createScreeningObservation, screeningFromSnapshot, snapshotToMarketObservation } from './screening.js';
+import {
+  classifyDipSnapshot,
+  createScreeningObservation,
+  screeningFromSnapshot,
+  snapshotToMarketObservation,
+} from './screening.js';
 import { evaluateRecoveryConfirmation, evaluateRecoveryV0DipFilters } from './signal.js';
 import { assertCanCreateEpisode, isActiveRecoveryEpisode } from './state.js';
 import type {
@@ -45,6 +54,7 @@ import type {
   ScreeningDisposition,
   ScreeningObservationRecord,
 } from './types.js';
+import { canonicalizeSafetyEvidence, RW0_SAFETY_SPEC_FINGERPRINT } from './safety.js';
 
 export type RecoveryCycleDependencies = {
   database: DatabaseSync;
@@ -58,7 +68,9 @@ export type RecoveryCycleDependencies = {
   screeningWallBudgetMs?: number;
 };
 
-export async function runRecoveryCycle(deps: RecoveryCycleDependencies): Promise<RecoveryCycleMetrics> {
+export async function runRecoveryCycle(
+  deps: RecoveryCycleDependencies,
+): Promise<RecoveryCycleMetrics> {
   const metrics = emptyCycleMetrics(deps.clock.now().toISOString());
   await runRecoveryWatchPass(deps, metrics);
   await runRecoveryScreeningPass(deps, metrics);
@@ -123,18 +135,14 @@ function defaultMonotonicNow(): number {
   return performance.now();
 }
 
-function drainPendingSafety(database: DatabaseSync, now: Date, metrics: RecoveryCycleMetrics): void {
+function drainPendingSafety(
+  database: DatabaseSync,
+  now: Date,
+  metrics: RecoveryCycleMetrics,
+): void {
   for (const episode of listEpisodesInState(database, 'SIGNAL_PENDING_SAFETY')) {
-    persistTransition(
-      database,
-      episode.episodeId,
-      {
-        to: 'REJECTED_SAFETY_UNKNOWN',
-        at: now.toISOString(),
-        reason: 'slice2_safety_unknown',
-      },
-      { now },
-    );
+    persistUnavailableSafetyEvidence(database, episode, now);
+    persistSafetyDecision(database, episode.episodeId, now.toISOString(), { now });
     metrics.rejectedSafetyUnknown += 1;
   }
 }
@@ -149,7 +157,11 @@ function reevaluatePersistedWatchObservations(
   }
 }
 
-function expireOverdueWatches(database: DatabaseSync, now: Date, metrics: RecoveryCycleMetrics): void {
+function expireOverdueWatches(
+  database: DatabaseSync,
+  now: Date,
+  metrics: RecoveryCycleMetrics,
+): void {
   for (const episode of listEpisodesInState(database, 'RECOVERY_WATCH')) {
     if (episode.watchStartedAt === null) {
       continue;
@@ -255,7 +267,11 @@ function persistWatchFetchResult(
       persistTransition(
         deps.database,
         episode.episodeId,
-        { to: 'EXPIRED', at: persistAt.toISOString(), reason: 'slice2_watch_ttl_provider_unavailable' },
+        {
+          to: 'EXPIRED',
+          at: persistAt.toISOString(),
+          reason: 'slice2_watch_ttl_provider_unavailable',
+        },
         { now: persistAt },
       );
       metrics.expiries += 1;
@@ -273,7 +289,10 @@ function persistWatchFetchResult(
     episode.episodeId,
     fetchResult.snapshot.collectedAt,
   );
-  if (parseUtcInstant(stored.collectedAt, 'collected_at') >= watchExpiresAtMs(episode.watchStartedAt, RW0_WATCH_TTL_MS)) {
+  if (
+    parseUtcInstant(stored.collectedAt, 'collected_at') >=
+    watchExpiresAtMs(episode.watchStartedAt, RW0_WATCH_TTL_MS)
+  ) {
     persistTransition(
       deps.database,
       episode.episodeId,
@@ -343,19 +362,93 @@ function confirmFromStoredObservation(
     },
     { now },
   );
-  persistTransition(
-    database,
-    episode.episodeId,
-    {
-      to: 'REJECTED_SAFETY_UNKNOWN',
-      at: observation.collectedAt,
-      reason: 'slice2_safety_unknown',
-    },
-    { now },
-  );
+  const pending = loadEpisode(database, episode.episodeId);
+  if (pending === null) {
+    throw new RecoveryWatcherError(
+      'Confirmed recovery episode disappeared before safety evidence.',
+      {
+        code: 'persistence_failed',
+      },
+    );
+  }
+  persistUnavailableSafetyEvidence(database, pending, now);
+  persistSafetyDecision(database, episode.episodeId, now.toISOString(), { now });
   metrics.confirmations += 1;
   metrics.rejectedSafetyUnknown += 1;
   return true;
+}
+
+function persistUnavailableSafetyEvidence(
+  database: DatabaseSync,
+  episode: RecoveryEpisode,
+  now: Date,
+): void {
+  if (episode.recoveryConfirmedAt === null) {
+    throw new RecoveryWatcherError('Unavailable safety evidence requires recovery confirmation.', {
+      code: 'evidence_invalid',
+    });
+  }
+  const base = {
+    episodeId: episode.episodeId,
+    mint: episode.mint,
+    pairAddress: episode.pairAddress,
+    confirmationObservedAt: episode.recoveryConfirmedAt,
+    confirmationEventId: episode.lastTransitionEventId,
+    observedAt: now.toISOString(),
+    collectedAt: now.toISOString(),
+    provider: null,
+    provenance: 'slice3a:no_safety_provider_configured',
+    signalVersion: episode.signalVersion,
+    signalFingerprint: episode.signalFingerprint,
+    watcherSpecVersion: episode.watcherSpecVersion,
+    watcherSpecFingerprint: episode.watcherSpecFingerprint,
+    safetySpecVersion: RW0_SAFETY_SPEC_VERSION,
+    safetySpecFingerprint: RW0_SAFETY_SPEC_FINGERPRINT,
+  } as const;
+  const payloads = [
+    {
+      kind: 'token_rights',
+      tokenProgram: 'unsupported',
+      mintAuthority: null,
+      freezeAuthority: null,
+      extensions: [],
+      factsComplete: false,
+    },
+    {
+      kind: 'holder',
+      denominatorKind: 'effective_circulating_supply',
+      totalSupplyRaw: '1',
+      denominatorRaw: '1',
+      supplyReconciled: false,
+      ownerCoverageComplete: false,
+      sourceIsTop20Only: true,
+      accounts: [],
+    },
+    {
+      kind: 'bundle',
+      rule: 'unavailable',
+      denominatorKind: 'effective_circulating_supply',
+      denominatorRaw: '1',
+      graphComplete: false,
+      membershipComplete: false,
+      confidence: 'low',
+      members: [],
+    },
+    {
+      kind: 'creator',
+      creatorIdentity: null,
+      identityProvenance: null,
+      identityTrustworthy: false,
+      controlledAccountsComplete: false,
+      retainedControlCapabilities: [],
+      controlledBalanceRaw: null,
+      denominatorRaw: null,
+    },
+  ] as const;
+  for (const payload of payloads) {
+    const evidence = canonicalizeSafetyEvidence({ ...base, kind: payload.kind, payload }, now);
+    persistSafetyEvidence(database, evidence, { now });
+  }
 }
 
 async function screenDiscoveredMints(
@@ -469,7 +562,13 @@ async function screenDiscoveredMints(
     }
     metrics.marketFetchSuccesses += 1;
     metrics.candidatesEnriched += 1;
-    admitOrRecordScreening(deps.database, item.result.snapshot, item.discoverySources, persistAt, metrics);
+    admitOrRecordScreening(
+      deps.database,
+      item.result.snapshot,
+      item.discoverySources,
+      persistAt,
+      metrics,
+    );
   }
 
   for (const mint of fetched.remaining) {
@@ -557,7 +656,9 @@ function admitOrRecordScreening(
   metrics.dipFilterPassCount += 1;
 }
 
-function admissionErrorBarrier(error: unknown): { disposition: ScreeningDisposition; reason: string } | null {
+function admissionErrorBarrier(
+  error: unknown,
+): { disposition: ScreeningDisposition; reason: string } | null {
   if (!(error instanceof RecoveryWatcherError)) {
     return null;
   }
@@ -621,7 +722,9 @@ function requireStoredObservation(
   collectedAt: string,
 ): MarketObservationRecord {
   const stored = listMarketObservations(database, episodeId).find(
-    (observation) => parseUtcInstant(observation.collectedAt, 'collected_at') === parseUtcInstant(collectedAt, 'collected_at'),
+    (observation) =>
+      parseUtcInstant(observation.collectedAt, 'collected_at') ===
+      parseUtcInstant(collectedAt, 'collected_at'),
   );
   if (stored === undefined) {
     throw new RecoveryWatcherError('Expected the just-persisted market observation to exist.', {
@@ -631,7 +734,10 @@ function requireStoredObservation(
   return stored;
 }
 
-function isSamePinnedDipObservation(episode: RecoveryEpisode, observation: MarketObservationRecord): boolean {
+function isSamePinnedDipObservation(
+  episode: RecoveryEpisode,
+  observation: MarketObservationRecord,
+): boolean {
   return (
     observation.pairAddress === episode.pairAddress &&
     parseUtcInstant(observation.collectedAt, 'collected_at') ===

@@ -1,12 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { RW0_MIGRATION_NAME, RW0_SCHEMA_VERSION } from '../constants.js';
+import { RW0_SCHEMA_VERSION } from '../constants.js';
 import { RecoveryWatcherError } from '../errors.js';
 
 export const RW0_MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
-    version: RW0_SCHEMA_VERSION,
-    name: RW0_MIGRATION_NAME,
+    version: 1,
+    name: 'rw0_001_initial',
     sql: `
 CREATE TABLE rw0_episodes (
   episode_id TEXT PRIMARY KEY,
@@ -238,14 +238,104 @@ CREATE INDEX rw0_screening_disposition ON rw0_screening_observations (dispositio
 CREATE INDEX rw0_screening_dip_filter ON rw0_screening_observations (dip_filter_result);
 `,
   },
+  {
+    version: 2,
+    name: 'rw0_002_safety_evidence',
+    sql: `
+ALTER TABLE rw0_screening_observations RENAME TO rw0_screening_observations_v1;
+
+CREATE TABLE rw0_screening_observations (
+  screening_id TEXT PRIMARY KEY,
+  mint TEXT NOT NULL,
+  screened_at TEXT NOT NULL,
+  discovery_sources TEXT NOT NULL CHECK (length(trim(discovery_sources)) > 0),
+  provider TEXT CHECK (provider IS NULL OR length(trim(provider)) > 0),
+  source TEXT CHECK (source IS NULL OR length(trim(source)) > 0),
+  pair_address TEXT,
+  price_usd REAL,
+  liquidity_usd REAL,
+  volume_5m_usd REAL,
+  price_change_5m_pct REAL,
+  signal_version TEXT NOT NULL CHECK (signal_version = 'recovery_v0'),
+  signal_fingerprint TEXT NOT NULL,
+  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version IN ('rw0_v1', 'rw0_v2')),
+  watcher_spec_fingerprint TEXT NOT NULL,
+  dip_filter_result TEXT NOT NULL CHECK (
+    dip_filter_result IN ('PASS', 'NOT_DIP', 'INCOMPLETE', 'NOT_EVALUATED')
+  ),
+  disposition TEXT NOT NULL CHECK (
+    disposition IN (
+      'DIP_PASS', 'NOT_DIP', 'INCOMPLETE', 'MARKET_UNAVAILABLE', 'WATCH_CAP_FULL',
+      'EPISODE_LIMIT', 'COOLDOWN', 'ALREADY_ACTIVE', 'SKIPPED_CAP'
+    )
+  ),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  collected_at_is_local_collection_time INTEGER NOT NULL CHECK (collected_at_is_local_collection_time = 1),
+  CHECK ((disposition != 'DIP_PASS') OR dip_filter_result = 'PASS'),
+  CHECK ((disposition != 'NOT_DIP') OR dip_filter_result = 'NOT_DIP'),
+  CHECK ((disposition != 'INCOMPLETE') OR dip_filter_result = 'INCOMPLETE')
+) STRICT;
+
+INSERT INTO rw0_screening_observations SELECT * FROM rw0_screening_observations_v1;
+DROP TABLE rw0_screening_observations_v1;
+CREATE INDEX rw0_screening_mint_at ON rw0_screening_observations (mint, screened_at);
+CREATE INDEX rw0_screening_disposition ON rw0_screening_observations (disposition);
+CREATE INDEX rw0_screening_dip_filter ON rw0_screening_observations (dip_filter_result);
+
+CREATE TABLE rw0_safety_evidence_v2 (
+  evidence_id TEXT PRIMARY KEY,
+  episode_id TEXT NOT NULL,
+  mint TEXT NOT NULL,
+  pair_address TEXT NOT NULL,
+  confirmation_observed_at TEXT NOT NULL,
+  confirmation_event_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('token_rights', 'holder', 'bundle', 'creator')),
+  status TEXT NOT NULL CHECK (status IN ('PASS', 'FAIL', 'UNKNOWN')),
+  observed_at TEXT NOT NULL,
+  collected_at TEXT NOT NULL,
+  provider TEXT CHECK (provider IS NULL OR length(trim(provider)) > 0),
+  provenance TEXT NOT NULL CHECK (length(trim(provenance)) > 0),
+  signal_version TEXT NOT NULL CHECK (signal_version = 'recovery_v0'),
+  signal_fingerprint TEXT NOT NULL,
+  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version = 'rw0_v2'),
+  watcher_spec_fingerprint TEXT NOT NULL,
+  safety_spec_version TEXT NOT NULL CHECK (safety_spec_version = 'rw0_safety_v1'),
+  safety_spec_fingerprint TEXT NOT NULL,
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  UNIQUE (episode_id, kind, observed_at),
+  FOREIGN KEY (episode_id) REFERENCES rw0_episodes(episode_id)
+) STRICT;
+
+CREATE INDEX rw0_safety_evidence_episode_kind
+ON rw0_safety_evidence_v2 (episode_id, kind, collected_at);
+
+CREATE TABLE rw0_safety_decisions (
+  decision_id TEXT PRIMARY KEY,
+  episode_id TEXT NOT NULL UNIQUE,
+  decided_at TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('REJECTED_SAFETY', 'REJECTED_SAFETY_UNKNOWN')),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  token_rights_status TEXT NOT NULL CHECK (token_rights_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+  holder_status TEXT NOT NULL CHECK (holder_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+  bundle_status TEXT NOT NULL CHECK (bundle_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+  creator_status TEXT NOT NULL CHECK (creator_status IN ('PASS', 'FAIL', 'UNKNOWN')),
+  evidence_ids_json TEXT NOT NULL CHECK (json_valid(evidence_ids_json)),
+  FOREIGN KEY (episode_id) REFERENCES rw0_episodes(episode_id)
+) STRICT;
+`,
+  },
 ];
 
 export function recoveryMigrationSql(version: number): string {
   const migration = RW0_MIGRATIONS.find((item) => item.version === version);
   if (migration === undefined) {
-    throw new RecoveryWatcherError(`Unknown recovery-watcher migration version ${String(version)}.`, {
-      code: 'schema_mismatch',
-    });
+    throw new RecoveryWatcherError(
+      `Unknown recovery-watcher migration version ${String(version)}.`,
+      {
+        code: 'schema_mismatch',
+      },
+    );
   }
   return migration.sql;
 }
@@ -264,7 +354,9 @@ CREATE TABLE IF NOT EXISTS rw0_schema_migrations (
 ) STRICT;
 `);
 
-  const appliedRows = database.prepare('SELECT version, name, sql_digest FROM rw0_schema_migrations').all();
+  const appliedRows = database
+    .prepare('SELECT version, name, sql_digest FROM rw0_schema_migrations')
+    .all();
   const applied = new Map<number, { name: string; sqlDigest: string }>();
   for (const row of appliedRows) {
     const version = Number(row['version']);
@@ -294,7 +386,9 @@ CREATE TABLE IF NOT EXISTS rw0_schema_migrations (
     try {
       database.exec(migration.sql);
       database
-        .prepare('INSERT INTO rw0_schema_migrations (version, name, sql_digest, applied_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          'INSERT INTO rw0_schema_migrations (version, name, sql_digest, applied_at) VALUES (?, ?, ?, ?)',
+        )
         .run(migration.version, migration.name, expectedDigest, new Date().toISOString());
       database.exec('COMMIT');
     } catch (error: unknown) {
@@ -306,10 +400,13 @@ CREATE TABLE IF NOT EXISTS rw0_schema_migrations (
       if (error instanceof RecoveryWatcherError) {
         throw error;
       }
-      throw new RecoveryWatcherError('Recovery Watcher migration failed. The local database was rolled back.', {
-        code: 'persistence_failed',
-        cause: error,
-      });
+      throw new RecoveryWatcherError(
+        'Recovery Watcher migration failed. The local database was rolled back.',
+        {
+          code: 'persistence_failed',
+          cause: error,
+        },
+      );
     }
   }
 
@@ -322,8 +419,13 @@ export function currentRecoverySchemaVersion(database: DatabaseSync): number {
   return row === undefined || row['version'] === null ? 0 : Number(row['version']);
 }
 
-export function storedRecoveryMigrationDigest(database: DatabaseSync, version: number): string | null {
-  const row = database.prepare('SELECT sql_digest FROM rw0_schema_migrations WHERE version = ?').get(version);
+export function storedRecoveryMigrationDigest(
+  database: DatabaseSync,
+  version: number,
+): string | null {
+  const row = database
+    .prepare('SELECT sql_digest FROM rw0_schema_migrations WHERE version = ?')
+    .get(version);
   if (row === undefined || typeof row['sql_digest'] !== 'string') {
     return null;
   }
@@ -338,12 +440,14 @@ export function assertRecoveryMigrationIntegrity(database: DatabaseSync): void {
       { code: 'schema_mismatch' },
     );
   }
-  const stored = storedRecoveryMigrationDigest(database, RW0_SCHEMA_VERSION);
-  const expected = recoveryMigrationSqlDigest(RW0_SCHEMA_VERSION);
-  if (stored !== expected) {
-    throw new RecoveryWatcherError(
-      'Recovery schema migration digest does not match rw0_v1. Migration drift without a version bump is rejected.',
-      { code: 'schema_mismatch' },
-    );
+  for (const migration of RW0_MIGRATIONS) {
+    const stored = storedRecoveryMigrationDigest(database, migration.version);
+    const expected = recoveryMigrationSqlDigest(migration.version);
+    if (stored !== expected) {
+      throw new RecoveryWatcherError(
+        `Recovery schema migration ${String(migration.version)} digest does not match the frozen definition. Migration drift without a version bump is rejected.`,
+        { code: 'schema_mismatch' },
+      );
+    }
   }
 }

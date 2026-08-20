@@ -2,7 +2,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LATEST_SCHEMA_VERSION, migrationSqlDigest } from '../src/persistence/sqlite/migrations.js';
-import { DEFAULT_RW0_DATABASE_PATH, RW0_LOCK_FILE_NAME } from '../src/recovery-watcher/constants.js';
+import {
+  DEFAULT_RW0_DATABASE_PATH,
+  RW0_LOCK_FILE_NAME,
+} from '../src/recovery-watcher/constants.js';
 import { RW0_MIGRATIONS } from '../src/recovery-watcher/db/migrations.js';
 import { PROD20_LOCK_FILE_NAME } from '../src/production/constants.js';
 import { REQUIRED_SCHEMA_VERSION as PRODUCTION_REQUIRED_SCHEMA_VERSION } from '../src/production/constants.js';
@@ -19,14 +22,22 @@ describe('recovery watcher hostile audit prep', () => {
     expect(LATEST_SCHEMA_VERSION).toBe(9);
     expect(PRODUCTION_REQUIRED_SCHEMA_VERSION).toBe(9);
     expect(() => migrationSqlDigest(10)).toThrow();
-    const productionMigrations = readFileSync(join(process.cwd(), 'src/persistence/sqlite/migrations.ts'), 'utf8');
+    const productionMigrations = readFileSync(
+      join(process.cwd(), 'src/persistence/sqlite/migrations.ts'),
+      'utf8',
+    );
     expect(productionMigrations).not.toMatch(/010_/);
-    expect(productionMigrations).toContain("export const LATEST_SCHEMA_VERSION = WALLET_INTELLIGENCE_MIGRATION_VERSION");
+    expect(productionMigrations).toContain(
+      'export const LATEST_SCHEMA_VERSION = WALLET_INTELLIGENCE_MIGRATION_VERSION',
+    );
   });
 
   it('does not number recovery migrations as 010', () => {
-    expect(RW0_MIGRATIONS.map((item) => item.version)).toEqual([1]);
-    expect(RW0_MIGRATIONS.map((item) => item.name)).toEqual(['rw0_001_initial']);
+    expect(RW0_MIGRATIONS.map((item) => item.version)).toEqual([1, 2]);
+    expect(RW0_MIGRATIONS.map((item) => item.name)).toEqual([
+      'rw0_001_initial',
+      'rw0_002_safety_evidence',
+    ]);
     const recoverySql = RW0_MIGRATIONS.map((item) => item.sql).join('\n');
     expect(recoverySql).not.toMatch(/\b010\b/);
   });
@@ -51,7 +62,7 @@ describe('recovery watcher hostile audit prep', () => {
 
   it('does not mention live trading as available in recovery sources', () => {
     const recovery = readTree(join(process.cwd(), 'src/recovery-watcher'));
-    expect(recovery).toContain("automaticLiveTrading: false");
+    expect(recovery).toContain('automaticLiveTrading: false');
     expect(recovery).not.toMatch(/sendTransaction/);
   });
 });
