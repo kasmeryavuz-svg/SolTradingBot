@@ -30,7 +30,10 @@ describe('recovery:status', () => {
     expect(text).toContain('PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v1');
     expect(text).toContain('Manually setting holder/bundle/creator PASS cannot reach PAPER');
     expect(text).toContain('historical percentages are not proof');
-    expect(text).toContain('Network polling: NOT IMPLEMENTED IN THIS SLICE');
+    expect(text).toContain('Networked forward observation: IMPLEMENTED');
+    expect(text).toContain('NOT_DIP does not create an episode');
+    expect(text).toContain('Slice 2 does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED');
+    expect(text).toContain('collectedAt is this process local collection time');
     expect(text).toContain('Shadow exit/CLOSED: NOT IMPLEMENTED IN rw0_v1');
     expect(text).toContain('legal only when recoveryConfirmedAt < watchStartedAt + 2h TTL');
     expect(text).toContain('UNKNOWN-only in rw0_v1');

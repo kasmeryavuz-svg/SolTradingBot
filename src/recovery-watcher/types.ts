@@ -7,6 +7,8 @@ import {
   SHADOW_CLOSE_REASONS,
   SHADOW_EXIT_ACTIONS,
   TERMINAL_BEFORE_COOLDOWN_STATES,
+  RW0_DIP_FILTER_RESULTS,
+  RW0_SCREENING_DISPOSITIONS,
 } from './constants.js';
 
 export type RecoveryEpisodeState = (typeof RECOVERY_EPISODE_STATES)[number];
@@ -20,6 +22,8 @@ export type RecoveryCostModel = 'none';
 export type RecoveryExecutionModel = 'discrete_observed_price_no_quote';
 export type ShadowCloseReason = (typeof SHADOW_CLOSE_REASONS)[number];
 export type ShadowExitAction = (typeof SHADOW_EXIT_ACTIONS)[number];
+export type ScreeningDisposition = (typeof RW0_SCREENING_DISPOSITIONS)[number];
+export type ScreeningDipFilterResult = (typeof RW0_DIP_FILTER_RESULTS)[number];
 
 export type RecoveryClock = {
   now: () => Date;
@@ -47,6 +51,8 @@ export type RecoveryWatcherConfig = {
   liveBroadcastEnabled: boolean;
   databasePath: string;
   configuredProductionDatabasePath: string;
+  networkTimeoutMs: number;
+  screeningMaxCandidates: number;
 };
 
 export type SafetyEvidenceKind = 'holder' | 'bundle' | 'creator' | 'token_rights' | 'liquidity_execution' | 'other';
@@ -238,4 +244,69 @@ export type ShadowExitObservationRecord = {
 
 export type PersistObservationResult = {
   idempotent: boolean;
+};
+
+export type ScreeningObservationRecord = {
+  screeningId: string;
+  mint: string;
+  screenedAt: string;
+  discoverySources: string;
+  provider: string | null;
+  source: string | null;
+  pairAddress: string | null;
+  priceUsd: number | null;
+  liquidityUsd: number | null;
+  volume5mUsd: number | null;
+  priceChange5mPct: number | null;
+  signalVersion: string;
+  signalFingerprint: string;
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+  dipFilterResult: ScreeningDipFilterResult;
+  disposition: ScreeningDisposition;
+  reason: string;
+  collectedAtIsLocalCollectionTime: true;
+};
+
+export type RecoveryCycleMetrics = {
+  at: string;
+  discoveryCalls: number;
+  discoveryFailures: number;
+  candidatesDiscovered: number;
+  candidatesDeduped: number;
+  candidatesSelected: number;
+  candidatesSkippedCap: number;
+  candidatesEnriched: number;
+  candidatesEnrichmentFailed: number;
+  activeWatchesAtStart: number;
+  marketFetchSuccesses: number;
+  marketFetchFailures: number;
+  confirmations: number;
+  expiries: number;
+  rejectedSafetyUnknown: number;
+  providerFailures: number;
+  screeningByDisposition: Record<ScreeningDisposition, number>;
+  dipFilterPassCount: number;
+  candidatesSkippedBudget: number;
+  screeningBudgetExhausted: boolean;
+};
+
+export type RecoveryReportSnapshot = {
+  screeningCount: number;
+  screeningByDisposition: Record<ScreeningDisposition, number>;
+  dipFilterPassCount: number;
+  dipFilterNotDipCount: number;
+  dipFilterIncompleteCount: number;
+  dipFilterNotEvaluatedCount: number;
+  admittedWatchCount: number;
+  activeWatchCount: number;
+  confirmedRecoveryCount: number;
+  rejectedSafetyUnknownCount: number;
+  expiredCount: number;
+  marketUnavailableCount: number;
+  firstObservationAt: string | null;
+  lastObservationAt: string | null;
+  shadowPositionCount: number;
+  paperStateCount: number;
+  closedStateCount: number;
 };

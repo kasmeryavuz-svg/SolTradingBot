@@ -119,7 +119,7 @@ describe('recovery watcher isolated persistence', () => {
     expect(RW0_MIGRATIONS[0]?.version).toBe(1);
     expect(RW0_MIGRATIONS[0]?.name).toBe('rw0_001_initial');
     expect(recoveryMigrationSqlDigest(1)).toBe(
-      '8e19f884212a42d58a01e7cd0e234f3a0d2f5fdd954fbcf7da0e948fc5f128a6',
+      '84832895ff70d1d6362058699a2301ed590eb3b5e6ce70bf598b2eb41060f234',
     );
     const database = openInitializedRecoveryDatabase();
     expect(currentRecoverySchemaVersion(database)).toBe(1);

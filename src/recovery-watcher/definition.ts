@@ -19,12 +19,21 @@ import {
   RW0_MAX_CONCURRENT_WATCHES,
   RW0_MAX_EPISODES_PER_MINT_PER_24H,
   RW0_MIGRATION_NAME,
+  RW0_NETWORK_TIMEOUT_MS,
   RW0_SCHEMA_VERSION,
+  RW0_SCREENING_DISPOSITIONS,
+  RW0_SCREENING_MAX_CANDIDATES,
+  RW0_SCHEDULING_POLICY,
+  RW0_DISCOVERY_CALLS_PER_SCREENING_CYCLE,
   RW0_SHADOW_PAPER_SPEC_NAME,
   RW0_SHADOW_PAPER_SPEC_VERSION,
   RW0_SPEC_NAME,
   RW0_SPEC_VERSION,
   RW0_WATCH_CADENCE_MS,
+  RW0_WATCH_FETCH_CONCURRENCY,
+  RW0_SCREENING_FETCH_CONCURRENCY,
+  RW0_SCREENING_WALL_BUDGET_MS,
+  RW0_DIP_FILTER_RESULTS,
   RW0_WATCH_SLOT_STATES,
   RW0_WATCH_TTL_MS,
   SHADOW_CLOSE_REASONS,
@@ -188,6 +197,40 @@ export type CanonicalRecoveryWatcherDefinition = {
     exitExecutionImplementedInRw0V1: false;
     holderBundleCreatorEvidenceUnknownOnlyInRw0V1: true;
     runtimeFileDatabaseRejectsMemoryPath: true;
+    networkedForwardObservationImplemented: true;
+    screeningIndependentOfEpisodes: true;
+    notDipDoesNotCreateEpisode: true;
+    notDipDoesNotStartCooldown: true;
+    incompleteDoesNotCreateEpisode: true;
+    slice2DoesNotOpenShadowResearch: true;
+    slice2DoesNotOpenPaper: true;
+    slice2DoesNotClose: true;
+    confirmationDrainsToRejectedSafetyUnknown: true;
+    scheduling: typeof RW0_SCHEDULING_POLICY;
+    noCatchUpStorm: true;
+    noOverlappingCycles: true;
+    noMathRandomJitter: true;
+    watchWorkHasPriorityOverScreening: true;
+    networkTimeoutMs: number;
+    screeningMaxCandidates: number;
+    discoveryCallsPerScreeningCycle: number;
+    noProviderRetryStorm: true;
+    collectedAtIsLocalCollectionTime: true;
+    noTrustworthyDexScreenerQuoteTimestamp: true;
+    pairSelectionAllowedForScreeningOnly: true;
+    pinnedPairNeverSwitches: true;
+    screeningDispositions: readonly string[];
+    dipFilterResults: readonly string[];
+    watchFetchConcurrency: number;
+    screeningFetchConcurrency: number;
+    screeningWallBudgetMs: number;
+    unknownProviderErrorsAreFatal: true;
+    singletonLockBeforeSchemaInit: true;
+    reportOpensReadOnly: true;
+    screeningIdentityMustMatchFrozenRw0: true;
+    admissionRecomputesDipFilterInsideTransaction: true;
+    priorPublicSmokeIsDisposableEngineeringOnly: true;
+    priorPublicSmokeExcludedFromForwardValidation: true;
   };
   signal: CanonicalRecoveryV0Signal;
   shadowPaper: CanonicalRw0ShadowPaper;
@@ -367,6 +410,40 @@ export function canonicalRecoveryWatcherDefinition(): CanonicalRecoveryWatcherDe
       exitExecutionImplementedInRw0V1: false,
       holderBundleCreatorEvidenceUnknownOnlyInRw0V1: true,
       runtimeFileDatabaseRejectsMemoryPath: true,
+      networkedForwardObservationImplemented: true,
+      screeningIndependentOfEpisodes: true,
+      notDipDoesNotCreateEpisode: true,
+      notDipDoesNotStartCooldown: true,
+      incompleteDoesNotCreateEpisode: true,
+      slice2DoesNotOpenShadowResearch: true,
+      slice2DoesNotOpenPaper: true,
+      slice2DoesNotClose: true,
+      confirmationDrainsToRejectedSafetyUnknown: true,
+      scheduling: RW0_SCHEDULING_POLICY,
+      noCatchUpStorm: true,
+      noOverlappingCycles: true,
+      noMathRandomJitter: true,
+      watchWorkHasPriorityOverScreening: true,
+      networkTimeoutMs: RW0_NETWORK_TIMEOUT_MS,
+      screeningMaxCandidates: RW0_SCREENING_MAX_CANDIDATES,
+      discoveryCallsPerScreeningCycle: RW0_DISCOVERY_CALLS_PER_SCREENING_CYCLE,
+      noProviderRetryStorm: true,
+      collectedAtIsLocalCollectionTime: true,
+      noTrustworthyDexScreenerQuoteTimestamp: true,
+      pairSelectionAllowedForScreeningOnly: true,
+      pinnedPairNeverSwitches: true,
+      screeningDispositions: [...RW0_SCREENING_DISPOSITIONS],
+      dipFilterResults: [...RW0_DIP_FILTER_RESULTS],
+      watchFetchConcurrency: RW0_WATCH_FETCH_CONCURRENCY,
+      screeningFetchConcurrency: RW0_SCREENING_FETCH_CONCURRENCY,
+      screeningWallBudgetMs: RW0_SCREENING_WALL_BUDGET_MS,
+      unknownProviderErrorsAreFatal: true,
+      singletonLockBeforeSchemaInit: true,
+      reportOpensReadOnly: true,
+      screeningIdentityMustMatchFrozenRw0: true,
+      admissionRecomputesDipFilterInsideTransaction: true,
+      priorPublicSmokeIsDisposableEngineeringOnly: true,
+      priorPublicSmokeExcludedFromForwardValidation: true,
     },
     signal: canonicalRecoveryV0Signal(),
     shadowPaper: canonicalRw0ShadowPaper(),

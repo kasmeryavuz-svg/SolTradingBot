@@ -6,5 +6,8 @@ export {
   RW0_WATCHER_DEFINITION_FINGERPRINT,
 } from './identity.js';
 export { loadRecoveryWatcherConfig } from './config.js';
-export { prepareRecoveryStatusCommand } from './command.js';
-export { formatRecoveryStatusLines } from './format.js';
+export { prepareRecoveryStatusCommand, prepareRecoveryRunCommand, prepareRecoveryReportCommand } from './command.js';
+export { formatRecoveryStatusLines, formatRecoveryCycleLines } from './format.js';
+export { formatRecoveryReportLines } from './report.js';
+export { runRecoveryCycle } from './cycle.js';
+export { runRecoveryWatcher } from './runtime.js';

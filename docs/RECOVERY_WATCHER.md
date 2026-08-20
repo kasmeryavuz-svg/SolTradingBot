@@ -2,13 +2,19 @@
 
 Paper/data research only. Automatic live trading is unavailable.
 
-This document is the operator-facing contract for Foundation after hostile-review repair 2. It does **not** claim that Recovery_v0 is profitable, complete, or live-ready.
+This document is the operator-facing contract for Foundation plus Slice 2 networked forward observation. It does **not** claim that Recovery_v0 is profitable, complete, or live-ready.
 
 ## What this slice is
 
-Foundation Slice 1 freezes identity, isolation, an isolated SQLite file, and a deterministic episode state machine.
+Slice 2 adds DexScreener screening and approximately-60-second pinned-pair forward observation on an isolated RW0 database.
 
-It does **not** poll DexScreener, scan holders, cluster wallets, open safety-approved paper, or broadcast.
+- Screening observations are independent of recovery episodes.
+- Only a frozen `recovery_v0` dip admits a sticky-pair watch.
+- A persisted later observation may confirm recovery.
+- Slice 2 then records `SIGNAL_PENDING_SAFETY` and immediately `REJECTED_SAFETY_UNKNOWN`.
+- No paper position, shadow position, PnL, holder/bundle safety, or live execution.
+
+Foundation Slice 1 still freezes identity, isolation, schema version 1, and the deterministic episode state machine.
 
 ## What this slice is not
 
@@ -20,13 +26,13 @@ It does **not** poll DexScreener, scan holders, cluster wallets, open safety-app
 - Not complete market discovery
 - Not a holder 10% gate
 - Not a bundle 20% gate
-- Not network polling / Slice 2
+- Not SHADOW_RESEARCH_OPEN / paper / exits / PnL
 
 ## Isolation
 
 | Resource | Recovery Watcher | Production |
 | -------- | ---------------- | ---------- |
-| Process | `recovery:status` only in this slice | `prod:run` |
+| Process | `recovery:status`, `recovery:run`, `recovery:report` | `prod:run` |
 | SQLite file | `./data/recovery-watcher.sqlite` (`RW0_DATABASE_PATH`) | configured `DATABASE_PATH` (default `./data/soltradingbot.sqlite`) |
 | Schema | `rw0` version 1 (`rw0_001_initial`) plus SQL digest | version 9 (`001`–`009`) |
 | Lock file | `.rw0-runtime.lock` with ownership-safe pid + process-start identity | `.prod20-runtime.lock` |
@@ -147,7 +153,7 @@ These are fingerprinted separately from the signal so a cadence change cannot si
 
 | Constant | Slice 1 value | Meaning |
 | -------- | ------------- | ------- |
-| Watch cadence | 60_000 ms | intended high-res poll (not implemented in this slice) |
+| Watch cadence | 60_000 ms | approximate high-res poll (not exact 60.000s market sampling) |
 | Watch TTL | 7_200_000 ms (2 hours) | max **entry watch** lifetime after `watchStartedAt` |
 | Cooldown | 7_200_000 ms (2 hours) | separate fingerprinted constant; mint cooldown after terminal states |
 | Max holding | 21_600_000 ms (6 hours) | shadow max-hold **CLOSED** comparator, not `EXPIRED` |
@@ -246,3 +252,55 @@ Every stored observation should keep mint, pair, timestamps, provider/source, si
 Chronological comparisons use parsed UTC instants (`parseUtcInstant` / `assertTimestampOrder`), never raw timestamp-string lexicographic order. Equivalent formats (`...00Z`, `...00.1Z`, `...00.100Z`) are the same or ordered numerically.
 
 Runtime episode creation goes through `persistCreatedEpisode` (`BEGIN IMMEDIATE`, active-episode invariant, cooldown, 3/24h, canonical identity). There is no public `insertEpisode` bypass.
+
+## Slice 2 screening vs episodes
+
+Ordinary DexScreener tokens are recorded in `rw0_screening_observations` with **no episode FK**.
+
+Frozen screening dispositions: `DIP_PASS`, `NOT_DIP`, `INCOMPLETE`, `MARKET_UNAVAILABLE`, `WATCH_CAP_FULL`, `EPISODE_LIMIT`, `COOLDOWN`, `ALREADY_ACTIVE`, `SKIPPED_CAP`.
+
+`dip_filter_result` is stored separately as `PASS` | `NOT_DIP` | `INCOMPLETE` | `NOT_EVALUATED`. A genuine `recovery_v0` dip that cannot be admitted because the watch cap, 3/24h episode limit, or cooldown is full is still `dip_filter_result=PASS` with operational disposition `WATCH_CAP_FULL` / `EPISODE_LIMIT` / `COOLDOWN`. Reports count genuine dip-filter PASS rows separately from admitted watches. Do not treat capacity-blocked dips as if the detector did not fire.
+
+`NOT_DIP` and `INCOMPLETE` do **not** create a recovery episode, do **not** consume the 3-admitted-episodes/mint/24h cap, do **not** start cooldown, and do **not** occupy an active episode. The mint may be observed again later.
+
+Exact duplicate screening identity (`mint + screenedAt + signalFingerprint + watcherSpecFingerprint`) with the same payload is idempotent. The same identity with a conflicting payload fails closed.
+
+Screening rows must match the current frozen `recovery_v0` / `rw0_v1` versions **and** fingerprints. Mixed-definition screening evidence fails closed on insert, hydration, and report. SQL CHECKs pin the version strings only; fingerprints are validated in application code so the migration digest cannot circularly depend on the watcher fingerprint.
+
+Admission (`persistAdmittedDipWatch`) binds screening and market observation as the **same** observed event inside `BEGIN IMMEDIATE`: same mint, pair, UTC instant, price, liquidity, 5m volume, 5m change, frozen identities, operational `DIP_PASS`, and a **recomputed** `recovery_v0` dip filter pass from the raw economics. A caller cannot admit a non-dip by labeling it `DIP_PASS`.
+
+Pair selection is allowed for screening only. After a dip is admitted, the pair is pinned. Exact-pair misses do not fall back to a new best pair. Missing pair / HTTP / 429 / timeout does not invent a price and does not immediately mark a losing trade. The watch may retry on a later tick while still before TTL.
+
+`collectedAt` is this process's collection time. DexScreener latest profile/boost and token-pairs payloads do not expose a trustworthy quote/trade timestamp through the existing adapter; none is invented.
+
+## Slice 2 scheduler
+
+`recovery:run` uses isolated RW0 SQLite and the rw0 singleton lock. Startup order is: validate live gates → ensure the parent runtime directory exists → acquire `.rw0-runtime.lock` → open the isolated DB → initialize/verify schema → create providers → first network call. Lock-acquisition failure does not create or migrate the recovery DB.
+
+Scheduling policy is `watch_due_target_from_pass_start`, not fixed-delay-after-completion:
+
+- Watch cadence **target** is 60_000 ms from the monotonic start of the previous watch pass.
+- After work: `sleep max(0, next_due - monotonic_now)`.
+- If work overran the deadline, run **one** next due pass. Do **not** queue or catch up multiple missed cycles.
+- Market evidence timestamps remain UTC wall-clock. Scheduler elapsed/deadlines use a monotonic clock.
+- This is **not** a claim of exact 60.000-second market sampling.
+
+Active `RECOVERY_WATCH` polling is the highest-priority timed work. Independent exact-pair HTTP requests run with bounded concurrency 10, then persist serially in `episode_id` order. SQLite writes stay serial. One recoverable provider failure does not corrupt another watch result. There is no retry storm.
+
+Screening (2 concurrent discovery calls, then up to 20 enrichments at concurrency 4) runs only in leftover time until the next watch due, clipped by a frozen 20_000 ms wall budget. Remaining candidates after budget exhaustion are recorded as `SKIPPED_CAP` with reason `screening wall-time budget exhausted`. Screening must not delay a due watch by several minutes.
+
+`recovery:report` opens the existing file with `DatabaseSync(..., { readOnly: true })` and `PRAGMA query_only = ON`. It does not mkdir, migrate, or change WAL. A missing DB reports `not initialized` without creating the file.
+
+Unknown/unclassified thrown errors are fatal. Known `MarketDataError`, `DiscoveryError`, and explicitly tagged `RecoveryWatcherError` `provider_unavailable` are recoverable for that tick.
+
+No overlapping cycles, no `Math.random` jitter. Live flags must be false before any network call.
+
+Discovery per screening cycle: 2 calls (latest profiles + latest boosts). Screening enrichment cap: 20. Max high-resolution watches: 10. Network timeout: 10_000 ms. Our cap is not a claim of exact DexScreener rate-limit safety.
+
+Slice 2 confirmation end state: `RECOVERY_WATCH` → `SIGNAL_PENDING_SAFETY` (bound to the persisted observation) → `REJECTED_SAFETY_UNKNOWN`. That is not a strategy loss. Safety qualification is unavailable. No shadow/paper/PnL.
+
+## Forward-evidence freeze
+
+The bounded public one-cycle DexScreener smoke collected before this Slice-2 repair is **disposable engineering smoke only**. It is **excluded** from strategy forward-validation evidence. Do not merge that database into later validation results. Do not use it for performance claims.
+
+After this repair is approved, the first **retained** forward run freezes the watcher fingerprint and schema/migration digest for that dataset. Do not run another public smoke until the repair is reviewed.

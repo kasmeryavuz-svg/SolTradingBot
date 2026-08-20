@@ -80,7 +80,9 @@
     "prod:plan": "tsx src/production/plan.ts",
     "prod:preflight": "tsx src/production/run-preflight.ts",
     "prod:run": "tsx src/production/run.ts",
-    "recovery:status": "tsx src/recovery-watcher/status.ts"
+    "recovery:status": "tsx src/recovery-watcher/status.ts",
+    "recovery:run": "tsx src/recovery-watcher/run.ts",
+    "recovery:report": "tsx src/recovery-watcher/report-cli.ts"
   },
   "dependencies": {
     "@solana/kit": "^7.1.0",

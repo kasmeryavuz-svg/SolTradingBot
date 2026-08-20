@@ -7,6 +7,14 @@ export function prepareRecoveryStatusCommand(source: EnvSource): RecoveryWatcher
   return loadRecoveryWatcherConfig(source);
 }
 
+export function prepareRecoveryRunCommand(source: EnvSource): RecoveryWatcherConfig {
+  return loadRecoveryWatcherConfig(source);
+}
+
+export function prepareRecoveryReportCommand(source: EnvSource): RecoveryWatcherConfig {
+  return loadRecoveryWatcherConfig(source);
+}
+
 export function assertNoExtraRecoveryArguments(argv: readonly string[], command: string): void {
   const extras = argv.slice(2).filter((value) => value.trim() !== '');
   if (extras.length > 0) {

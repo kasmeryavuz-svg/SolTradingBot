@@ -31,6 +31,8 @@ export const RECOVERY_WATCHER_ERROR_CODES = [
   'malformed_lock',
   'unknown_lock_identity',
   'definition_mismatch',
+  'provider_unavailable',
+  'overlapping_cycle',
   'recovery_watcher_failed',
 ] as const;
 

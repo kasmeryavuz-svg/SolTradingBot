@@ -193,6 +193,49 @@ CREATE INDEX rw0_episodes_mint_state ON rw0_episodes (mint, state);
 CREATE INDEX rw0_episodes_mint_dip ON rw0_episodes (mint, dip_observed_at);
 CREATE INDEX rw0_transitions_episode_at ON rw0_state_transitions (episode_id, at);
 CREATE INDEX rw0_observations_episode_at ON rw0_market_observations (episode_id, collected_at);
+
+CREATE TABLE rw0_screening_observations (
+  screening_id TEXT PRIMARY KEY,
+  mint TEXT NOT NULL,
+  screened_at TEXT NOT NULL,
+  discovery_sources TEXT NOT NULL CHECK (length(trim(discovery_sources)) > 0),
+  provider TEXT CHECK (provider IS NULL OR length(trim(provider)) > 0),
+  source TEXT CHECK (source IS NULL OR length(trim(source)) > 0),
+  pair_address TEXT,
+  price_usd REAL,
+  liquidity_usd REAL,
+  volume_5m_usd REAL,
+  price_change_5m_pct REAL,
+  signal_version TEXT NOT NULL CHECK (signal_version = 'recovery_v0'),
+  signal_fingerprint TEXT NOT NULL,
+  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version = 'rw0_v1'),
+  watcher_spec_fingerprint TEXT NOT NULL,
+  dip_filter_result TEXT NOT NULL CHECK (
+    dip_filter_result IN ('PASS', 'NOT_DIP', 'INCOMPLETE', 'NOT_EVALUATED')
+  ),
+  disposition TEXT NOT NULL CHECK (
+    disposition IN (
+      'DIP_PASS',
+      'NOT_DIP',
+      'INCOMPLETE',
+      'MARKET_UNAVAILABLE',
+      'WATCH_CAP_FULL',
+      'EPISODE_LIMIT',
+      'COOLDOWN',
+      'ALREADY_ACTIVE',
+      'SKIPPED_CAP'
+    )
+  ),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  collected_at_is_local_collection_time INTEGER NOT NULL CHECK (collected_at_is_local_collection_time = 1),
+  CHECK ((disposition != 'DIP_PASS') OR dip_filter_result = 'PASS'),
+  CHECK ((disposition != 'NOT_DIP') OR dip_filter_result = 'NOT_DIP'),
+  CHECK ((disposition != 'INCOMPLETE') OR dip_filter_result = 'INCOMPLETE')
+) STRICT;
+
+CREATE INDEX rw0_screening_mint_at ON rw0_screening_observations (mint, screened_at);
+CREATE INDEX rw0_screening_disposition ON rw0_screening_observations (disposition);
+CREATE INDEX rw0_screening_dip_filter ON rw0_screening_observations (dip_filter_result);
 `,
   },
 ];

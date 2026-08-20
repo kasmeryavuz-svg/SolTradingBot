@@ -7,6 +7,8 @@ import {
   DEFAULT_RW0_DATABASE_PATH,
   FORBIDDEN_PRODUCTION_DATABASE_PATH,
   RW0_MEMORY_DATABASE_PATH,
+  RW0_NETWORK_TIMEOUT_MS,
+  RW0_SCREENING_MAX_CANDIDATES,
 } from './constants.js';
 import { RecoveryWatcherError } from './errors.js';
 import type { RecoveryWatcherConfig } from './types.js';
@@ -44,6 +46,8 @@ export function loadRecoveryWatcherConfig(source: EnvSource): RecoveryWatcherCon
     ),
     databasePath,
     configuredProductionDatabasePath,
+    networkTimeoutMs: RW0_NETWORK_TIMEOUT_MS,
+    screeningMaxCandidates: RW0_SCREENING_MAX_CANDIDATES,
   };
 }
 

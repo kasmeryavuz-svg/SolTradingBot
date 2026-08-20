@@ -72,6 +72,20 @@ export function recoveryEpisodeId(input: {
   });
 }
 
+export function recoveryScreeningId(input: {
+  mint: string;
+  screenedAt: string;
+  signalFingerprint: string;
+  watcherSpecFingerprint: string;
+}): string {
+  return fingerprintCanonicalJson({
+    mint: input.mint,
+    screenedAt: input.screenedAt,
+    signalFingerprint: input.signalFingerprint,
+    watcherSpecFingerprint: input.watcherSpecFingerprint,
+  });
+}
+
 export function fingerprintTransitionEvent(input: {
   episodeId: string;
   fromState: RecoveryEpisodeState | null;
@@ -265,6 +279,27 @@ export function assertPersistedRw0Identity(input: {
   }
   if (input.executionModel !== RW0_EXECUTION_MODEL) {
     throw new RecoveryWatcherError('Persisted execution_model does not match rw0_v1 discrete observed price.', {
+      code: 'definition_mismatch',
+    });
+  }
+}
+
+export function assertFrozenScreeningIdentity(input: {
+  signalVersion: string;
+  signalFingerprint: string;
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): void {
+  if (input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION || input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT) {
+    throw new RecoveryWatcherError('Screening signal identity does not match frozen recovery_v0.', {
+      code: 'definition_mismatch',
+    });
+  }
+  if (
+    input.watcherSpecVersion !== RW0_SPEC_VERSION ||
+    input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
+  ) {
+    throw new RecoveryWatcherError('Screening watcher identity does not match frozen rw0_v1.', {
       code: 'definition_mismatch',
     });
   }

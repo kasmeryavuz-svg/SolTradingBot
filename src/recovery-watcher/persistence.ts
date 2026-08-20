@@ -1,16 +1,28 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { RW0_WATCH_SLOT_STATES, SHADOW_CLOSE_REASONS } from './constants.js';
+import {
+  RW0_DIP_FILTER_RESULTS,
+  RW0_MARKET_PROVIDER,
+  RW0_MAX_CONCURRENT_WATCHES,
+  RW0_SCREENING_DISPOSITIONS,
+  RW0_SCREENING_MARKET_SOURCE,
+  RW0_WATCH_SLOT_STATES,
+  SHADOW_CLOSE_REASONS,
+} from './constants.js';
 import { assertNotFuture, assertTimestampOrder, isSameUtcInstant, parseUtcInstant } from './clock.js';
 import { RecoveryWatcherError } from './errors.js';
 import {
   asRecoveryCostModel,
   asRecoveryExecutionModel,
+  assertFrozenScreeningIdentity,
   assertPersistedRw0Identity,
+  recoveryEpisodeId,
+  recoveryScreeningId,
 } from './identity.js';
 import {
   assertOptionalFiniteNonNegative,
   assertOptionalPositivePrice,
   computeVolumeToLiquidity5m,
+  evaluateRecoveryV0DipFilters,
   isKnownFinite,
   suppliedRatioDisagrees,
 } from './signal.js';
@@ -30,9 +42,13 @@ import type {
   PersistTransitionExpected,
   RecoveryEpisode,
   RecoveryEpisodeState,
+  RecoveryReportSnapshot,
   ResearchTrack,
   SafetyEvidenceRecord,
   SafetyGateStatus,
+  ScreeningDipFilterResult,
+  ScreeningDisposition,
+  ScreeningObservationRecord,
   ShadowCloseReason,
   ShadowExitObservationRecord,
   ShadowPositionRecord,
@@ -52,10 +68,7 @@ export function persistCreatedEpisode(
   assertRecoverySchema(database);
   database.exec('BEGIN IMMEDIATE');
   try {
-    const existing = listEpisodesByMintUnlocked(database, input.mint);
-    assertCanCreateEpisode({ mint: input.mint, existing, now: context.now });
-    const episode = createEpisode(input, context);
-    insertEpisodeUnlocked(database, episode);
+    const episode = persistCreatedEpisodeUnlocked(database, input, context);
     database.exec('COMMIT');
     return episode;
   } catch (error: unknown) {
@@ -86,41 +99,7 @@ export function persistTransition(
   assertRecoverySchema(database);
   database.exec('BEGIN IMMEDIATE');
   try {
-    const current = loadEpisodeUnlocked(database, episodeId);
-    if (current === null) {
-      throw new RecoveryWatcherError('Recovery episode does not exist.', { code: 'persistence_failed' });
-    }
-    if (expected !== undefined && !isSameUtcInstant(expected.updatedAt, current.updatedAt)) {
-      throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
-        code: 'stale_episode',
-      });
-    }
-    if (expected?.state !== undefined && expected.state !== current.state) {
-      throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
-        code: 'stale_episode',
-      });
-    }
-    const boundRequest =
-      request.to === 'SIGNAL_PENDING_SAFETY'
-        ? bindConfirmationRequestToPersistedObservation(database, current, request)
-        : request;
-    const slotCount = countHighResolutionWatchSlotsUnlocked(database);
-    const result = applyTransition(current, boundRequest, {
-      now: context.now,
-      concurrentWatchCount: slotCount,
-    });
-    if (!result.idempotent) {
-      updateEpisodeRow(database, result.episode);
-      database
-        .prepare(
-          `INSERT INTO rw0_state_transitions (episode_id, from_state, to_state, at, reason, event_id)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .run(result.episode.episodeId, result.fromState, result.toState, result.at, result.reason, result.eventId);
-      if (result.toState === 'SHADOW_RESEARCH_OPEN') {
-        insertShadowPositionIfAbsent(database, result.episode);
-      }
-    }
+    const result = persistTransitionUnlocked(database, episodeId, request, context, expected);
     database.exec('COMMIT');
     return result;
   } catch (error: unknown) {
@@ -143,51 +122,9 @@ export function persistMarketObservation(
   assertRecoverySchema(database);
   database.exec('BEGIN IMMEDIATE');
   try {
-    const episode = requireEpisode(database, observation.episodeId);
-    const normalized = normalizeMarketObservation(observation);
-    assertMarketObservationProvenance(episode, normalized, context.now);
-    const existing = findMarketObservationsByInstant(
-      database,
-      normalized.episodeId,
-      normalized.pairAddress,
-      normalized.collectedAt,
-    );
-    if (existing.length > 0) {
-      if (existing.some((row) => !marketObservationMatches(row, normalized))) {
-        throw new RecoveryWatcherError(
-          'Conflicting market observation for the same episode, pair, and collected_at.',
-          { code: 'observation_conflict' },
-        );
-      }
-      database.exec('COMMIT');
-      return { idempotent: true };
-    }
-    database
-      .prepare(
-        `INSERT INTO rw0_market_observations (
-          episode_id, mint, pair_address, collected_at, provider, source,
-          price_usd, liquidity_usd, volume_5m_usd, price_change_5m_pct,
-          signal_version, signal_fingerprint, watcher_spec_version, watcher_spec_fingerprint
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        observation.episodeId,
-        observation.mint,
-        observation.pairAddress,
-        observation.collectedAt,
-        normalized.provider,
-        normalized.source,
-        observation.priceUsd,
-        observation.liquidityUsd,
-        observation.volume5mUsd,
-        observation.priceChange5mPct,
-        observation.signalVersion,
-        observation.signalFingerprint,
-        observation.watcherSpecVersion,
-        observation.watcherSpecFingerprint,
-      );
+    const result = persistMarketObservationUnlocked(database, observation, context.now);
     database.exec('COMMIT');
-    return { idempotent: false };
+    return result;
   } catch (error: unknown) {
     rollbackQuietly(database);
     if (error instanceof RecoveryWatcherError) {
@@ -198,6 +135,332 @@ export function persistMarketObservation(
       cause: error,
     });
   }
+}
+
+function persistMarketObservationUnlocked(
+  database: DatabaseSync,
+  observation: MarketObservationRecord,
+  now: Date,
+): PersistObservationResult {
+  const episode = requireEpisode(database, observation.episodeId);
+  const normalized = normalizeMarketObservation(observation);
+  assertMarketObservationProvenance(episode, normalized, now);
+  const existing = findMarketObservationsByInstant(
+    database,
+    normalized.episodeId,
+    normalized.pairAddress,
+    normalized.collectedAt,
+  );
+  if (existing.length > 0) {
+    if (existing.some((row) => !marketObservationMatches(row, normalized))) {
+      throw new RecoveryWatcherError(
+        'Conflicting market observation for the same episode, pair, and collected_at.',
+        { code: 'observation_conflict' },
+      );
+    }
+    return { idempotent: true };
+  }
+  database
+    .prepare(
+      `INSERT INTO rw0_market_observations (
+        episode_id, mint, pair_address, collected_at, provider, source,
+        price_usd, liquidity_usd, volume_5m_usd, price_change_5m_pct,
+        signal_version, signal_fingerprint, watcher_spec_version, watcher_spec_fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      observation.episodeId,
+      observation.mint,
+      observation.pairAddress,
+      observation.collectedAt,
+      normalized.provider,
+      normalized.source,
+      observation.priceUsd,
+      observation.liquidityUsd,
+      observation.volume5mUsd,
+      observation.priceChange5mPct,
+      observation.signalVersion,
+      observation.signalFingerprint,
+      observation.watcherSpecVersion,
+      observation.watcherSpecFingerprint,
+    );
+  return { idempotent: false };
+}
+
+export function persistScreeningObservation(
+  database: DatabaseSync,
+  observation: ScreeningObservationRecord,
+  context: { now: Date },
+): PersistObservationResult {
+  assertRecoverySchema(database);
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const result = persistScreeningObservationUnlocked(database, observation, context.now);
+    database.exec('COMMIT');
+    return result;
+  } catch (error: unknown) {
+    rollbackQuietly(database);
+    if (error instanceof RecoveryWatcherError) {
+      throw error;
+    }
+    throw new RecoveryWatcherError('Failed to persist screening observation.', {
+      code: 'persistence_failed',
+      cause: error,
+    });
+  }
+}
+
+function persistScreeningObservationUnlocked(
+  database: DatabaseSync,
+  observation: ScreeningObservationRecord,
+  now: Date,
+): PersistObservationResult {
+  const normalized = normalizeScreeningObservation(observation);
+  assertNotFuture(normalized.screenedAt, now, 'screening screenedAt');
+  const expectedId = recoveryScreeningId({
+    mint: normalized.mint,
+    screenedAt: normalized.screenedAt,
+    signalFingerprint: normalized.signalFingerprint,
+    watcherSpecFingerprint: normalized.watcherSpecFingerprint,
+  });
+  if (normalized.screeningId !== expectedId) {
+    throw new RecoveryWatcherError('Screening identity does not match frozen screening identity inputs.', {
+      code: 'observation_conflict',
+    });
+  }
+  const existing = findScreeningObservation(database, normalized.screeningId);
+  if (existing !== null) {
+    if (!screeningObservationMatches(existing, normalized)) {
+      throw new RecoveryWatcherError(
+        'Conflicting screening observation for the same semantic screening identity.',
+        { code: 'observation_conflict' },
+      );
+    }
+    return { idempotent: true };
+  }
+  database
+    .prepare(
+      `INSERT INTO rw0_screening_observations (
+        screening_id, mint, screened_at, discovery_sources, provider, source, pair_address,
+        price_usd, liquidity_usd, volume_5m_usd, price_change_5m_pct,
+        signal_version, signal_fingerprint, watcher_spec_version, watcher_spec_fingerprint,
+        dip_filter_result, disposition, reason, collected_at_is_local_collection_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      normalized.screeningId,
+      normalized.mint,
+      normalized.screenedAt,
+      normalized.discoverySources,
+      normalized.provider,
+      normalized.source,
+      normalized.pairAddress,
+      normalized.priceUsd,
+      normalized.liquidityUsd,
+      normalized.volume5mUsd,
+      normalized.priceChange5mPct,
+      normalized.signalVersion,
+      normalized.signalFingerprint,
+      normalized.watcherSpecVersion,
+      normalized.watcherSpecFingerprint,
+      normalized.dipFilterResult,
+      normalized.disposition,
+      normalized.reason,
+      1,
+    );
+  return { idempotent: false };
+}
+
+export type PersistAdmittedDipWatchResult = {
+  episode: RecoveryEpisode;
+  screening: PersistObservationResult;
+  observation: PersistObservationResult;
+  created: boolean;
+};
+
+export function persistAdmittedDipWatch(
+  database: DatabaseSync,
+  input: {
+    mint: string;
+    observation: MarketObservationRecord;
+    screening: ScreeningObservationRecord;
+  },
+  context: { now: Date },
+): PersistAdmittedDipWatchResult {
+  assertRecoverySchema(database);
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const result = persistAdmittedDipWatchUnlocked(database, input, context);
+    database.exec('COMMIT');
+    return result;
+  } catch (error: unknown) {
+    rollbackQuietly(database);
+    if (error instanceof RecoveryWatcherError) {
+      throw error;
+    }
+    throw new RecoveryWatcherError('Failed to persist admitted dip watch.', {
+      code: 'persistence_failed',
+      cause: error,
+    });
+  }
+}
+
+function persistCreatedEpisodeUnlocked(
+  database: DatabaseSync,
+  input: CreateEpisodeInput,
+  context: { now: Date },
+): RecoveryEpisode {
+  const existing = listEpisodesByMintUnlocked(database, input.mint);
+  assertCanCreateEpisode({ mint: input.mint, existing, now: context.now });
+  const episode = createEpisode(input, context);
+  insertEpisodeUnlocked(database, episode);
+  return episode;
+}
+
+function persistTransitionUnlocked(
+  database: DatabaseSync,
+  episodeId: string,
+  request: TransitionRequest,
+  context: TransitionContext,
+  expected?: PersistTransitionExpected,
+): TransitionResult {
+  const current = loadEpisodeUnlocked(database, episodeId);
+  if (current === null) {
+    throw new RecoveryWatcherError('Recovery episode does not exist.', { code: 'persistence_failed' });
+  }
+  if (expected !== undefined && !isSameUtcInstant(expected.updatedAt, current.updatedAt)) {
+    throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
+      code: 'stale_episode',
+    });
+  }
+  if (expected?.state !== undefined && expected.state !== current.state) {
+    throw new RecoveryWatcherError('Stale recovery episode object. Refusing to overwrite newer persisted state.', {
+      code: 'stale_episode',
+    });
+  }
+  const boundRequest =
+    request.to === 'SIGNAL_PENDING_SAFETY'
+      ? bindConfirmationRequestToPersistedObservation(database, current, request)
+      : request;
+  const slotCount = countHighResolutionWatchSlotsUnlocked(database);
+  const result = applyTransition(current, boundRequest, {
+    now: context.now,
+    concurrentWatchCount: slotCount,
+  });
+  if (!result.idempotent) {
+    updateEpisodeRow(database, result.episode);
+    database
+      .prepare(
+        `INSERT INTO rw0_state_transitions (episode_id, from_state, to_state, at, reason, event_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(result.episode.episodeId, result.fromState, result.toState, result.at, result.reason, result.eventId);
+    if (result.toState === 'SHADOW_RESEARCH_OPEN') {
+      insertShadowPositionIfAbsent(database, result.episode);
+    }
+  }
+  return result;
+}
+
+function persistAdmittedDipWatchUnlocked(
+  database: DatabaseSync,
+  input: {
+    mint: string;
+    observation: MarketObservationRecord;
+    screening: ScreeningObservationRecord;
+  },
+  context: { now: Date },
+): PersistAdmittedDipWatchResult {
+  const observation = normalizeMarketObservation(input.observation);
+  const screening = normalizeScreeningObservation(input.screening);
+  assertAdmittedDipEvidenceBinding({
+    mint: input.mint,
+    observation,
+    screening,
+  });
+  const episodeId = recoveryEpisodeId({
+    mint: input.mint,
+    pairAddress: observation.pairAddress,
+    dipObservedAt: observation.collectedAt,
+    signalFingerprint: observation.signalFingerprint,
+  });
+  const existingSame = loadEpisodeUnlocked(database, episodeId);
+  if (existingSame !== null) {
+    const persistedObservation = persistMarketObservationUnlocked(
+      database,
+      { ...observation, episodeId },
+      context.now,
+    );
+    const persistedScreening = persistScreeningObservationUnlocked(database, screening, context.now);
+    let episode = existingSame;
+    if (episode.state === 'DISCOVERED') {
+      persistTransitionUnlocked(
+        database,
+        episode.episodeId,
+        { to: 'DIP_CANDIDATE', at: observation.collectedAt, reason: 'slice2_resume_discovered' },
+        { now: context.now },
+      );
+      episode = requireEpisode(database, episode.episodeId);
+    }
+    if (episode.state === 'DIP_CANDIDATE') {
+      persistTransitionUnlocked(
+        database,
+        episode.episodeId,
+        { to: 'RECOVERY_WATCH', at: observation.collectedAt, reason: 'slice2_resume_dip_candidate' },
+        { now: context.now },
+      );
+      episode = requireEpisode(database, episode.episodeId);
+    }
+    return { episode, screening: persistedScreening, observation: persistedObservation, created: false };
+  }
+
+  assertCanCreateEpisode({
+    mint: input.mint,
+    existing: listEpisodesByMintUnlocked(database, input.mint),
+    now: context.now,
+  });
+  if (countHighResolutionWatchSlotsUnlocked(database) >= RW0_MAX_CONCURRENT_WATCHES) {
+    throw new RecoveryWatcherError('High-resolution watch slot cap is 10.', { code: 'watch_cap' });
+  }
+
+  const created = persistCreatedEpisodeUnlocked(
+    database,
+    {
+      mint: input.mint,
+      pairAddress: observation.pairAddress,
+      dipObservedAt: observation.collectedAt,
+      createdAt: observation.collectedAt,
+      dipPriceUsd: observation.priceUsd,
+      dipLiquidityUsd: observation.liquidityUsd,
+      dipVolume5mUsd: observation.volume5mUsd,
+      dipPriceChange5mPct: observation.priceChange5mPct,
+    },
+    context,
+  );
+  persistTransitionUnlocked(
+    database,
+    created.episodeId,
+    { to: 'DIP_CANDIDATE', at: observation.collectedAt, reason: 'slice2_dip_pass' },
+    { now: context.now },
+  );
+  persistTransitionUnlocked(
+    database,
+    created.episodeId,
+    { to: 'RECOVERY_WATCH', at: observation.collectedAt, reason: 'slice2_start_watch' },
+    { now: context.now },
+  );
+  const persistedObservation = persistMarketObservationUnlocked(
+    database,
+    { ...observation, episodeId: created.episodeId },
+    context.now,
+  );
+  const persistedScreening = persistScreeningObservationUnlocked(database, screening, context.now);
+  return {
+    episode: requireEpisode(database, created.episodeId),
+    screening: persistedScreening,
+    observation: persistedObservation,
+    created: true,
+  };
 }
 
 export function persistSafetyEvidence(
@@ -342,6 +605,108 @@ export function listTransitions(
       reason: requireString(row['reason']),
       eventId: requireString(row['event_id']),
     }));
+}
+
+export function listMarketObservations(
+  database: DatabaseSync,
+  episodeId: string,
+): MarketObservationRecord[] {
+  assertRecoverySchema(database);
+  return database
+    .prepare(
+      `SELECT episode_id, mint, pair_address, collected_at, provider, source, price_usd, liquidity_usd,
+              volume_5m_usd, price_change_5m_pct, signal_version, signal_fingerprint,
+              watcher_spec_version, watcher_spec_fingerprint
+       FROM rw0_market_observations
+       WHERE episode_id = ?
+       ORDER BY id ASC`,
+    )
+    .all(episodeId)
+    .map((row) => asMarketObservationRecord(row, episodeId))
+    .sort((left, right) => parseUtcInstant(left.collectedAt, 'collected_at') - parseUtcInstant(right.collectedAt, 'collected_at'));
+}
+
+export function listScreeningObservations(database: DatabaseSync): ScreeningObservationRecord[] {
+  assertRecoverySchema(database);
+  return database
+    .prepare('SELECT * FROM rw0_screening_observations ORDER BY screened_at ASC, screening_id ASC')
+    .all()
+    .map((row) => hydrateScreeningObservation(row));
+}
+
+export function listEpisodesInState(database: DatabaseSync, state: RecoveryEpisodeState): RecoveryEpisode[] {
+  assertRecoverySchema(database);
+  return database
+    .prepare('SELECT * FROM rw0_episodes WHERE state = ?')
+    .all(state)
+    .map((row) => hydrateEpisode(row));
+}
+
+export function countShadowPositions(database: DatabaseSync): number {
+  assertRecoverySchema(database);
+  const row = database.prepare('SELECT COUNT(*) AS count FROM rw0_shadow_positions').get();
+  return Number(row?.['count'] ?? 0);
+}
+
+export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryReportSnapshot {
+  assertRecoverySchema(database);
+  const screeningRows = listScreeningObservations(database);
+  const screeningByDisposition = emptyScreeningDispositionCounts();
+  const dipFilterCounts = emptyDipFilterResultCounts();
+  for (const row of screeningRows) {
+    screeningByDisposition[row.disposition] += 1;
+    dipFilterCounts[row.dipFilterResult] += 1;
+  }
+  const stateCounts = new Map<string, number>();
+  for (const row of database.prepare('SELECT state, COUNT(*) AS count FROM rw0_episodes GROUP BY state').all()) {
+    stateCounts.set(requireString(row['state']), Number(row['count'] ?? 0));
+  }
+  const admittedWatch = database
+    .prepare(`SELECT COUNT(*) AS count FROM rw0_state_transitions WHERE to_state = 'RECOVERY_WATCH'`)
+    .get();
+  const confirmed = database
+    .prepare('SELECT COUNT(*) AS count FROM rw0_episodes WHERE recovery_confirmed_at IS NOT NULL')
+    .get();
+  const marketTimes = database.prepare('SELECT collected_at AS at FROM rw0_market_observations').all();
+  const timestamps = [
+    ...marketTimes.map((row) => asNullableString(row['at'])),
+    ...screeningRows.map((row) => row.screenedAt),
+  ];
+  return {
+    screeningCount: screeningRows.length,
+    screeningByDisposition,
+    dipFilterPassCount: dipFilterCounts.PASS,
+    dipFilterNotDipCount: dipFilterCounts.NOT_DIP,
+    dipFilterIncompleteCount: dipFilterCounts.INCOMPLETE,
+    dipFilterNotEvaluatedCount: dipFilterCounts.NOT_EVALUATED,
+    admittedWatchCount: Number(admittedWatch?.['count'] ?? 0),
+    activeWatchCount: stateCounts.get('RECOVERY_WATCH') ?? 0,
+    confirmedRecoveryCount: Number(confirmed?.['count'] ?? 0),
+    rejectedSafetyUnknownCount: stateCounts.get('REJECTED_SAFETY_UNKNOWN') ?? 0,
+    expiredCount: stateCounts.get('EXPIRED') ?? 0,
+    marketUnavailableCount: screeningByDisposition.MARKET_UNAVAILABLE,
+    firstObservationAt: earliestUtcInstant(timestamps),
+    lastObservationAt: latestUtcInstant(timestamps),
+    shadowPositionCount: countShadowPositions(database),
+    paperStateCount: (stateCounts.get('PAPER_ELIGIBLE') ?? 0) + (stateCounts.get('PAPER_OPEN') ?? 0),
+    closedStateCount: stateCounts.get('CLOSED') ?? 0,
+  };
+}
+
+export function emptyScreeningDispositionCounts(): Record<ScreeningDisposition, number> {
+  const counts = {} as Record<ScreeningDisposition, number>;
+  for (const disposition of RW0_SCREENING_DISPOSITIONS) {
+    counts[disposition] = 0;
+  }
+  return counts;
+}
+
+export function emptyDipFilterResultCounts(): Record<ScreeningDipFilterResult, number> {
+  const counts = {} as Record<ScreeningDipFilterResult, number>;
+  for (const result of RW0_DIP_FILTER_RESULTS) {
+    counts[result] = 0;
+  }
+  return counts;
 }
 
 function persistShadowExitObservationUnlocked(
@@ -722,6 +1087,281 @@ function normalizeMarketObservation(observation: MarketObservationRecord): Marke
     provider: requireNonEmptyProvenance(observation.provider, 'market observation provider'),
     source: requireNonEmptyProvenance(observation.source, 'market observation source'),
   };
+}
+
+function normalizeScreeningObservation(observation: ScreeningObservationRecord): ScreeningObservationRecord {
+  const discoverySources = requireNonEmptyProvenance(
+    observation.discoverySources,
+    'screening discovery_sources',
+  );
+  const reason = requireNonEmptyProvenance(observation.reason, 'screening reason');
+  if (!isScreeningDisposition(observation.disposition)) {
+    throw new RecoveryWatcherError('Unknown screening disposition.', { code: 'evidence_invalid' });
+  }
+  if (!isScreeningDipFilterResult(observation.dipFilterResult)) {
+    throw new RecoveryWatcherError('Unknown screening dip_filter_result.', { code: 'evidence_invalid' });
+  }
+  assertFrozenScreeningIdentity(observation);
+  assertOptionalPositivePrice(observation.priceUsd, 'screening priceUsd');
+  assertOptionalFiniteNonNegative(observation.liquidityUsd, 'screening liquidityUsd');
+  assertOptionalFiniteNonNegative(observation.volume5mUsd, 'screening volume5mUsd');
+  if (observation.priceChange5mPct !== null && !isKnownFinite(observation.priceChange5mPct)) {
+    throw new RecoveryWatcherError('screening priceChange5mPct must be finite when present.', {
+      code: 'evidence_invalid',
+    });
+  }
+  assertScreeningDipFilterSemantics(observation);
+  return {
+    ...observation,
+    discoverySources,
+    provider:
+      observation.provider === null ? null : requireNonEmptyProvenance(observation.provider, 'screening provider'),
+    source: observation.source === null ? null : requireNonEmptyProvenance(observation.source, 'screening source'),
+    reason,
+    collectedAtIsLocalCollectionTime: true,
+  };
+}
+
+function findScreeningObservation(
+  database: DatabaseSync,
+  screeningId: string,
+): ScreeningObservationRecord | null {
+  const row = database.prepare('SELECT * FROM rw0_screening_observations WHERE screening_id = ?').get(screeningId);
+  return row === undefined ? null : hydrateScreeningObservation(row);
+}
+
+function screeningObservationMatches(
+  left: ScreeningObservationRecord,
+  right: ScreeningObservationRecord,
+): boolean {
+  return (
+    left.screeningId === right.screeningId &&
+    left.mint === right.mint &&
+    isSameUtcInstant(left.screenedAt, right.screenedAt) &&
+    left.discoverySources === right.discoverySources &&
+    left.provider === right.provider &&
+    left.source === right.source &&
+    left.pairAddress === right.pairAddress &&
+    left.priceUsd === right.priceUsd &&
+    left.liquidityUsd === right.liquidityUsd &&
+    left.volume5mUsd === right.volume5mUsd &&
+    left.priceChange5mPct === right.priceChange5mPct &&
+    left.signalVersion === right.signalVersion &&
+    left.signalFingerprint === right.signalFingerprint &&
+    left.watcherSpecVersion === right.watcherSpecVersion &&
+    left.watcherSpecFingerprint === right.watcherSpecFingerprint &&
+    left.dipFilterResult === right.dipFilterResult &&
+    left.disposition === right.disposition &&
+    left.reason === right.reason
+  );
+}
+
+function hydrateScreeningObservation(row: Record<string, SQLOutputValue>): ScreeningObservationRecord {
+  const disposition = requireString(row['disposition']);
+  if (!isScreeningDisposition(disposition)) {
+    throw new RecoveryWatcherError('Stored screening disposition is not a frozen rw0_v1 value.', {
+      code: 'schema_mismatch',
+    });
+  }
+  const dipFilterResult = requireString(row['dip_filter_result']);
+  if (!isScreeningDipFilterResult(dipFilterResult)) {
+    throw new RecoveryWatcherError('Stored screening dip_filter_result is not a frozen rw0_v1 value.', {
+      code: 'schema_mismatch',
+    });
+  }
+  const observation: ScreeningObservationRecord = {
+    screeningId: requireString(row['screening_id']),
+    mint: requireString(row['mint']),
+    screenedAt: requireString(row['screened_at']),
+    discoverySources: requireString(row['discovery_sources']),
+    provider: asNullableString(row['provider']),
+    source: asNullableString(row['source']),
+    pairAddress: asNullableString(row['pair_address']),
+    priceUsd: asNullableNumber(row['price_usd']),
+    liquidityUsd: asNullableNumber(row['liquidity_usd']),
+    volume5mUsd: asNullableNumber(row['volume_5m_usd']),
+    priceChange5mPct: asNullableNumber(row['price_change_5m_pct']),
+    signalVersion: requireString(row['signal_version']),
+    signalFingerprint: requireString(row['signal_fingerprint']),
+    watcherSpecVersion: requireString(row['watcher_spec_version']),
+    watcherSpecFingerprint: requireString(row['watcher_spec_fingerprint']),
+    dipFilterResult,
+    disposition,
+    reason: requireString(row['reason']),
+    collectedAtIsLocalCollectionTime: true,
+  };
+  return normalizeScreeningObservation(observation);
+}
+
+function isScreeningDisposition(value: string): value is ScreeningDisposition {
+  return (RW0_SCREENING_DISPOSITIONS as readonly string[]).includes(value);
+}
+
+function isScreeningDipFilterResult(value: string): value is ScreeningDipFilterResult {
+  return (RW0_DIP_FILTER_RESULTS as readonly string[]).includes(value);
+}
+
+function assertScreeningDipFilterSemantics(observation: ScreeningObservationRecord): void {
+  if (observation.disposition === 'DIP_PASS' && observation.dipFilterResult !== 'PASS') {
+    throw new RecoveryWatcherError('DIP_PASS screening rows must store dip_filter_result=PASS.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (observation.disposition === 'NOT_DIP' && observation.dipFilterResult !== 'NOT_DIP') {
+    throw new RecoveryWatcherError('NOT_DIP screening rows must store dip_filter_result=NOT_DIP.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (observation.disposition === 'INCOMPLETE' && observation.dipFilterResult !== 'INCOMPLETE') {
+    throw new RecoveryWatcherError('INCOMPLETE screening rows must store dip_filter_result=INCOMPLETE.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (observation.dipFilterResult === 'NOT_EVALUATED') {
+    return;
+  }
+  const filters = evaluateRecoveryV0DipFilters({
+    observedPriceUsd: observation.priceUsd,
+    priceChange5mPct: observation.priceChange5mPct,
+    volume5mUsd: observation.volume5mUsd,
+    liquidityUsd: observation.liquidityUsd,
+  });
+  if (observation.dipFilterResult === 'PASS') {
+    if (filters.kind !== 'pass') {
+      throw new RecoveryWatcherError(
+        'Screening dip_filter_result=PASS must recompute as a recovery_v0 dip filter pass.',
+        { code: 'evidence_invalid' },
+      );
+    }
+    if (observation.provider === null || observation.source === null || observation.pairAddress === null) {
+      throw new RecoveryWatcherError(
+        'dip_filter_result=PASS requires provider, source, and pair_address provenance.',
+        { code: 'evidence_invalid' },
+      );
+    }
+    return;
+  }
+  if (observation.dipFilterResult === 'NOT_DIP' && filters.kind !== 'reject_filter') {
+    throw new RecoveryWatcherError(
+      'Screening dip_filter_result=NOT_DIP must recompute as a recovery_v0 filter rejection.',
+      { code: 'evidence_invalid' },
+    );
+  }
+  if (observation.dipFilterResult === 'INCOMPLETE' && filters.kind !== 'reject_incomplete' && filters.kind !== 'reject_invalid') {
+    throw new RecoveryWatcherError(
+      'Screening dip_filter_result=INCOMPLETE must recompute as incomplete or invalid recovery_v0 inputs.',
+      { code: 'evidence_invalid' },
+    );
+  }
+}
+
+function assertAdmittedDipEvidenceBinding(input: {
+  mint: string;
+  observation: MarketObservationRecord;
+  screening: ScreeningObservationRecord;
+}): void {
+  const { observation, screening } = input;
+  assertFrozenScreeningIdentity(observation);
+  assertFrozenScreeningIdentity(screening);
+  if (screening.mint !== input.mint || observation.mint !== input.mint) {
+    throw new RecoveryWatcherError('Admitted dip watch mint must match screening and market observation mint.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (screening.pairAddress === null || screening.pairAddress !== observation.pairAddress) {
+    throw new RecoveryWatcherError('Admitted dip watch pair must match screening and market observation pair.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (!isSameUtcInstant(screening.screenedAt, observation.collectedAt)) {
+    throw new RecoveryWatcherError(
+      'Admitted dip watch screening.screenedAt must be the same UTC instant as observation.collectedAt.',
+      { code: 'evidence_invalid' },
+    );
+  }
+  if (
+    screening.priceUsd !== observation.priceUsd ||
+    screening.liquidityUsd !== observation.liquidityUsd ||
+    screening.volume5mUsd !== observation.volume5mUsd ||
+    screening.priceChange5mPct !== observation.priceChange5mPct
+  ) {
+    throw new RecoveryWatcherError(
+      'Admitted dip watch screening economics must match the market observation.',
+      { code: 'evidence_invalid' },
+    );
+  }
+  if (
+    screening.signalVersion !== observation.signalVersion ||
+    screening.signalFingerprint !== observation.signalFingerprint ||
+    screening.watcherSpecVersion !== observation.watcherSpecVersion ||
+    screening.watcherSpecFingerprint !== observation.watcherSpecFingerprint
+  ) {
+    throw new RecoveryWatcherError('Admitted dip watch screening identity must match the market observation.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (screening.disposition !== 'DIP_PASS' || screening.dipFilterResult !== 'PASS') {
+    throw new RecoveryWatcherError('persistAdmittedDipWatch requires operational DIP_PASS and dip_filter_result=PASS.', {
+      code: 'evidence_invalid',
+    });
+  }
+  if (screening.provider !== observation.provider || screening.source !== observation.source) {
+    throw new RecoveryWatcherError(
+      'Admitted dip watch screening provider/source must match the market observation.',
+      { code: 'evidence_invalid' },
+    );
+  }
+  if (
+    observation.provider !== RW0_MARKET_PROVIDER ||
+    observation.source !== RW0_SCREENING_MARKET_SOURCE ||
+    screening.provider !== RW0_MARKET_PROVIDER ||
+    screening.source !== RW0_SCREENING_MARKET_SOURCE
+  ) {
+    throw new RecoveryWatcherError(
+      'Admitted dip watch must use the frozen DexScreener screening snapshot provenance.',
+      { code: 'evidence_invalid' },
+    );
+  }
+  const filters = evaluateRecoveryV0DipFilters({
+    observedPriceUsd: observation.priceUsd,
+    priceChange5mPct: observation.priceChange5mPct,
+    volume5mUsd: observation.volume5mUsd,
+    liquidityUsd: observation.liquidityUsd,
+  });
+  if (filters.kind !== 'pass') {
+    throw new RecoveryWatcherError(
+      'persistAdmittedDipWatch recomputed recovery_v0 dip filter from stored economics and it did not pass.',
+      { code: 'evidence_invalid' },
+    );
+  }
+}
+
+function earliestUtcInstant(values: Array<string | null>): string | null {
+  let best: { text: string; ms: number } | null = null;
+  for (const value of values) {
+    if (value === null) {
+      continue;
+    }
+    const ms = parseUtcInstant(value, 'observation bound');
+    if (best === null || ms < best.ms) {
+      best = { text: value, ms };
+    }
+  }
+  return best?.text ?? null;
+}
+
+function latestUtcInstant(values: Array<string | null>): string | null {
+  let best: { text: string; ms: number } | null = null;
+  for (const value of values) {
+    if (value === null) {
+      continue;
+    }
+    const ms = parseUtcInstant(value, 'observation bound');
+    if (best === null || ms > best.ms) {
+      best = { text: value, ms };
+    }
+  }
+  return best?.text ?? null;
 }
 
 function requireNonEmptyProvenance(value: string, label: string): string {

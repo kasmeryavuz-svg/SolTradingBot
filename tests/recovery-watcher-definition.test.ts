@@ -52,10 +52,10 @@ describe('rw0_v1 frozen definitions', () => {
     );
     expect(RW0_EXIT_FINGERPRINT).toBe('fda2db41481e11970451621c9c162ed14555c648a1c496bc81a2dd0a21f023f4');
     expect(RW0_WATCHER_DEFINITION_FINGERPRINT).toBe(
-      'd2bc4e54ab84ab34945fd89af0286ec5d3f7c58180ca07d3a33d2270bdd82028',
+      '5dc65c1129485f77b337be22a42dc81ba76aa24c89d2661fce50ef6d70cbd297',
     );
     expect(recoveryMigrationSqlDigest(1)).toBe(
-      '8e19f884212a42d58a01e7cd0e234f3a0d2f5fdd954fbcf7da0e948fc5f128a6',
+      '84832895ff70d1d6362058699a2301ed590eb3b5e6ce70bf598b2eb41060f234',
     );
     expect(fingerprintRecoveryV0Signal()).toBe(RECOVERY_V0_SIGNAL_FINGERPRINT);
     expect(fingerprintRecoveryWatcherDefinition()).toBe(RW0_WATCHER_DEFINITION_FINGERPRINT);
@@ -203,5 +203,10 @@ describe('rw0_v1 frozen definitions', () => {
       true,
     );
     expect(definition.exit.intendedComparatorWhenImplemented.maxHoldingExitsAsClosedNotExpired).toBe(true);
+    expect(definition.operational.networkedForwardObservationImplemented).toBe(true);
+    expect(definition.operational.screeningIndependentOfEpisodes).toBe(true);
+    expect(definition.operational.slice2DoesNotOpenShadowResearch).toBe(true);
+    expect(definition.operational.confirmationDrainsToRejectedSafetyUnknown).toBe(true);
+    expect(definition.operational.collectedAtIsLocalCollectionTime).toBe(true);
   });
 });

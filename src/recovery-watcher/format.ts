@@ -4,15 +4,23 @@ import {
   RW0_CHECKPOINT,
   RW0_COOLDOWN_MS,
   RW0_COST_MODEL,
+  RW0_DISCOVERY_CALLS_PER_SCREENING_CYCLE,
   RW0_EXECUTION_MODEL,
   RW0_EXIT_SPEC_VERSION,
   RW0_MAX_CONCURRENT_WATCHES,
   RW0_MAX_EPISODES_PER_MINT_PER_24H,
+  RW0_NETWORK_TIMEOUT_MS,
+  RW0_SCHEDULING_POLICY,
   RW0_SCHEMA_VERSION,
+  RW0_SCREENING_DISPOSITIONS,
+  RW0_SCREENING_FETCH_CONCURRENCY,
+  RW0_SCREENING_MAX_CANDIDATES,
+  RW0_SCREENING_WALL_BUDGET_MS,
   RW0_SHADOW_PAPER_SPEC_VERSION,
   RW0_SPEC_NAME,
   RW0_SPEC_VERSION,
   RW0_WATCH_CADENCE_MS,
+  RW0_WATCH_FETCH_CONCURRENCY,
   RW0_WATCH_SLOT_STATES,
   RW0_WATCH_TTL_MS,
 } from './constants.js';
@@ -24,7 +32,7 @@ import {
 } from './identity.js';
 import { recoveryMigrationSqlDigest } from './db/migrations.js';
 import { sanitizeRecoveryDatabasePathDisplay } from './sanitizer.js';
-import type { RecoveryWatcherConfig } from './types.js';
+import type { RecoveryCycleMetrics, RecoveryWatcherConfig } from './types.js';
 
 export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string[] {
   return [
@@ -73,6 +81,40 @@ export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string
     'Creator gate: UNKNOWN',
     'Discovery coverage: INCOMPLETE (DexScreener latest profile/boost research collection only)',
     'Historical recovery_v0 sample used sparse ~5-minute observations; 60s confirmation is a new forward regime and historical percentages are not proof of that regime',
-    'Network polling: NOT IMPLEMENTED IN THIS SLICE',
+    'Slice 2: DexScreener screening + pinned-pair ~60s forward observation; no paper position',
+    'Networked forward observation: IMPLEMENTED (screening independent of episodes; NOT_DIP does not create an episode or start cooldown)',
+    `Scheduling: ${RW0_SCHEDULING_POLICY} (watch due target from pass start; sleep max(0, next_due - monotonic_now); one overdue pass only, no catch-up storm, no overlapping cycles, no Math.random jitter)`,
+    'Watch work has priority over optional leftover-budget screening',
+    `Watch fetch concurrency: ${String(RW0_WATCH_FETCH_CONCURRENCY)} (bounded; persist serial in episode_id order)`,
+    `Screening fetch concurrency: ${String(RW0_SCREENING_FETCH_CONCURRENCY)}`,
+    `Screening wall-time budget ms: ${String(RW0_SCREENING_WALL_BUDGET_MS)} (also clipped to time remaining until the next watch due)`,
+    `Discovery calls per screening cycle: ${String(RW0_DISCOVERY_CALLS_PER_SCREENING_CYCLE)} (profile + boost, concurrent)`,
+    `Screening candidate enrichment cap: ${String(RW0_SCREENING_MAX_CANDIDATES)}`,
+    `Network timeout ms: ${String(RW0_NETWORK_TIMEOUT_MS)}`,
+    'No provider retry storm; known MarketDataError/DiscoveryError fail that tick; unknown TypeError/integrity errors are fatal',
+    `Screening dispositions: ${RW0_SCREENING_DISPOSITIONS.join(', ')}`,
+    'dip_filter_result is separate from operational disposition: PASS can still be WATCH_CAP_FULL/EPISODE_LIMIT/COOLDOWN',
+    'Pinned pair never switches after dip admission; exact-pair miss does not fall back to best pair',
+    'Confirmation binds SIGNAL_PENDING_SAFETY to a persisted rw0_market_observations row, then REJECTED_SAFETY_UNKNOWN',
+    'Slice 2 does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
+    'collectedAt is this process local collection time, not token launch or exchange trade time',
+    'DexScreener does not expose a trustworthy quote/trade timestamp through the existing adapter; none is invented',
+    'Provider cap is not a claim of exact external DexScreener rate-limit safety',
+    'Prior bounded public one-cycle DexScreener smoke is disposable engineering smoke only; excluded from strategy forward-validation; do not merge that DB',
+    'After this Slice-2 repair is approved, the first retained forward run freezes watcher fingerprint and schema digest for that dataset; do not run another public smoke until the repair is reviewed',
+  ];
+}
+
+export function formatRecoveryCycleLines(metrics: RecoveryCycleMetrics): string[] {
+  return [
+    `Recovery cycle at ${metrics.at}`,
+    `Discovery calls: ${String(metrics.discoveryCalls)} failures=${String(metrics.discoveryFailures)}`,
+    `Candidates discovered=${String(metrics.candidatesDiscovered)} deduped=${String(metrics.candidatesDeduped)} selected=${String(metrics.candidatesSelected)} skipped_cap=${String(metrics.candidatesSkippedCap)} enriched=${String(metrics.candidatesEnriched)} enrichment_failed=${String(metrics.candidatesEnrichmentFailed)}`,
+    `Active watches at start: ${String(metrics.activeWatchesAtStart)}`,
+    `Market fetches success=${String(metrics.marketFetchSuccesses)} fail=${String(metrics.marketFetchFailures)} provider_failures=${String(metrics.providerFailures)}`,
+    `Confirmations=${String(metrics.confirmations)} expiries=${String(metrics.expiries)} rejected_safety_unknown=${String(metrics.rejectedSafetyUnknown)}`,
+    `Dip filter PASS (including capacity-blocked dips): ${String(metrics.dipFilterPassCount)}`,
+    `Screening skipped budget=${String(metrics.candidatesSkippedBudget)} budget_exhausted=${metrics.screeningBudgetExhausted ? 'true' : 'false'}`,
+    `Screening dispositions: ${RW0_SCREENING_DISPOSITIONS.map((disposition) => `${disposition}=${String(metrics.screeningByDisposition[disposition])}`).join(' ')}`,
   ];
 }

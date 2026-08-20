@@ -26,6 +26,31 @@ export const RW0_MAX_CONCURRENT_WATCHES = 10;
 export const RW0_MAX_EPISODES_PER_MINT_PER_24H = 3;
 export const RW0_EPISODE_WINDOW_MS = 86_400_000;
 
+export const RW0_NETWORK_TIMEOUT_MS = 10_000;
+export const RW0_SCREENING_MAX_CANDIDATES = 20;
+export const RW0_DISCOVERY_CALLS_PER_SCREENING_CYCLE = 2;
+export const RW0_WATCH_FETCH_CONCURRENCY = RW0_MAX_CONCURRENT_WATCHES;
+export const RW0_SCREENING_FETCH_CONCURRENCY = 4;
+export const RW0_SCREENING_WALL_BUDGET_MS = 20_000;
+export const RW0_SCHEDULING_POLICY = 'watch_due_target_from_pass_start' as const;
+export const RW0_MARKET_PROVIDER = 'dexscreener';
+export const RW0_SCREENING_MARKET_SOURCE = 'token-pairs/v1';
+export const RW0_WATCH_MARKET_SOURCE = 'token-pairs/v1_exact_pair';
+
+export const RW0_SCREENING_DISPOSITIONS = [
+  'DIP_PASS',
+  'NOT_DIP',
+  'INCOMPLETE',
+  'MARKET_UNAVAILABLE',
+  'WATCH_CAP_FULL',
+  'EPISODE_LIMIT',
+  'COOLDOWN',
+  'ALREADY_ACTIVE',
+  'SKIPPED_CAP',
+] as const;
+
+export const RW0_DIP_FILTER_RESULTS = ['PASS', 'NOT_DIP', 'INCOMPLETE', 'NOT_EVALUATED'] as const;
+
 export const RECOVERY_V0_MIN_PRICE_CHANGE_5M_PCT = -60;
 export const RECOVERY_V0_MAX_PRICE_CHANGE_5M_PCT = -40;
 export const RECOVERY_V0_MIN_DIP_VOLUME_5M_USD = 5_000;

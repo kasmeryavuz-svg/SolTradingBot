@@ -42,7 +42,8 @@ describe('recovery watcher hostile audit prep', () => {
       scripts: Record<string, string>;
     };
     expect(pkg.scripts['recovery:status']).toBeDefined();
-    expect(pkg.scripts['recovery:run']).toBeUndefined();
+    expect(pkg.scripts['recovery:run']).toBeDefined();
+    expect(pkg.scripts['recovery:report']).toBeDefined();
     expect(pkg.scripts['recovery:execute']).toBeUndefined();
     expect(pkg.scripts['recovery:live']).toBeUndefined();
     expect(pkg.scripts['recovery:send']).toBeUndefined();
