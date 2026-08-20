@@ -16,6 +16,7 @@ import {
   listEpisodesByMint,
   listEpisodesInState,
   listMarketObservations,
+  listSafetyEvidence,
   listScreeningObservations,
   listTransitions,
   loadEpisode,
@@ -566,6 +567,18 @@ describe('recovery watcher slice 2', () => {
       expect(loadEpisode(database, created.episodeId)?.state).toBe('REJECTED_SAFETY_UNKNOWN');
       expect(countHighResolutionWatchSlots(database)).toBe(0);
       expect(metrics.rejectedSafetyUnknown).toBe(1);
+      const unavailable = listSafetyEvidence(database, created.episodeId, { now: FIXTURE_NOW });
+      const holderEvidence = unavailable.find((row) => row.kind === 'holder');
+      const bundleEvidence = unavailable.find((row) => row.kind === 'bundle');
+      expect(holderEvidence?.payload).toMatchObject({
+        kind: 'holder',
+        totalSupplyRaw: null,
+        denominatorRaw: null,
+      });
+      expect(bundleEvidence?.payload).toMatchObject({
+        kind: 'bundle',
+        denominatorRaw: null,
+      });
       expect(countShadowPositions(database)).toBe(0);
       expect(listEpisodesInState(database, 'SHADOW_RESEARCH_OPEN')).toEqual([]);
       expect(listEpisodesInState(database, 'PAPER_ELIGIBLE')).toEqual([]);

@@ -50,7 +50,13 @@ import type {
 } from './types.js';
 
 const LEGAL_TRANSITIONS: Record<RecoveryEpisodeState, readonly RecoveryEpisodeState[]> = {
-  DISCOVERED: ['DIP_CANDIDATE', 'REJECTED_FILTER', 'REJECTED_INCOMPLETE', 'REJECTED_CAP', 'CENSORED_UNAVAILABLE'],
+  DISCOVERED: [
+    'DIP_CANDIDATE',
+    'REJECTED_FILTER',
+    'REJECTED_INCOMPLETE',
+    'REJECTED_CAP',
+    'CENSORED_UNAVAILABLE',
+  ],
   DIP_CANDIDATE: [
     'RECOVERY_WATCH',
     'REJECTED_CAP',
@@ -65,9 +71,19 @@ const LEGAL_TRANSITIONS: Record<RecoveryEpisodeState, readonly RecoveryEpisodeSt
     'REJECTED_INCOMPLETE',
     'REJECTED_FILTER',
   ],
-  SIGNAL_PENDING_SAFETY: ['SHADOW_RESEARCH_OPEN', 'REJECTED_SAFETY', 'REJECTED_SAFETY_UNKNOWN', 'CENSORED_UNAVAILABLE'],
+  SIGNAL_PENDING_SAFETY: [
+    'SHADOW_RESEARCH_OPEN',
+    'REJECTED_SAFETY',
+    'REJECTED_SAFETY_UNKNOWN',
+    'CENSORED_UNAVAILABLE',
+  ],
   SHADOW_RESEARCH_OPEN: ['CENSORED_UNAVAILABLE'],
-  PAPER_ELIGIBLE: ['PAPER_OPEN', 'CENSORED_UNAVAILABLE', 'REJECTED_SAFETY', 'REJECTED_SAFETY_UNKNOWN'],
+  PAPER_ELIGIBLE: [
+    'PAPER_OPEN',
+    'CENSORED_UNAVAILABLE',
+    'REJECTED_SAFETY',
+    'REJECTED_SAFETY_UNKNOWN',
+  ],
   PAPER_OPEN: ['CLOSED', 'CENSORED_UNAVAILABLE'],
   CLOSED: ['COOLDOWN'],
   EXPIRED: ['COOLDOWN'],
@@ -101,7 +117,11 @@ export function isShadowResearch(episode: RecoveryEpisode): boolean {
 }
 
 export function isSafetyApprovedPaper(episode: RecoveryEpisode): boolean {
-  return episode.track === 'safety_approved' || episode.state === 'PAPER_ELIGIBLE' || episode.state === 'PAPER_OPEN';
+  return (
+    episode.track === 'safety_approved' ||
+    episode.state === 'PAPER_ELIGIBLE' ||
+    episode.state === 'PAPER_OPEN'
+  );
 }
 
 export function isShadowExitAction(value: string): value is ShadowExitAction {
@@ -113,7 +133,11 @@ export function createEpisode(input: CreateEpisodeInput, context: { now: Date })
   assertPair(input.pairAddress);
   assertNotFuture(input.dipObservedAt, context.now, 'dip_observed_at');
   assertNotFuture(input.createdAt, context.now, 'created_at');
-  assertTimestampOrder(input.dipObservedAt, input.createdAt, 'created_at must be at or after dip_observed_at.');
+  assertTimestampOrder(
+    input.dipObservedAt,
+    input.createdAt,
+    'created_at must be at or after dip_observed_at.',
+  );
 
   const episodeId = recoveryEpisodeId({
     mint: input.mint,
@@ -186,7 +210,9 @@ export function assertCanCreateEpisode(input: {
   existing: readonly RecoveryEpisode[];
   now: Date;
 }): void {
-  const active = input.existing.find((episode) => episode.mint === input.mint && isActiveRecoveryEpisode(episode));
+  const active = input.existing.find(
+    (episode) => episode.mint === input.mint && isActiveRecoveryEpisode(episode),
+  );
   if (active !== undefined) {
     throw new RecoveryWatcherError('Only one active recovery episode is allowed per mint.', {
       code: 'active_episode_exists',
@@ -197,9 +223,12 @@ export function assertCanCreateEpisode(input: {
   if (latest?.cooldownUntil !== null && latest !== undefined) {
     const cooldownUntil = parseUtcInstant(latest.cooldownUntil, 'cooldown_until');
     if (input.now.getTime() < cooldownUntil) {
-      throw new RecoveryWatcherError('Mint is in recovery cooldown. A later new dip may start a new episode after cooldown.', {
-        code: 'mint_in_cooldown',
-      });
+      throw new RecoveryWatcherError(
+        'Mint is in recovery cooldown. A later new dip may start a new episode after cooldown.',
+        {
+          code: 'mint_in_cooldown',
+        },
+      );
     }
   }
 
@@ -211,9 +240,12 @@ export function assertCanCreateEpisode(input: {
     return parseUtcInstant(episode.dipObservedAt, 'dip_observed_at') >= windowStart;
   });
   if (recent.length >= RW0_MAX_EPISODES_PER_MINT_PER_24H) {
-    throw new RecoveryWatcherError('Mint exceeded the maximum of 3 recovery episodes per 24 hours.', {
-      code: 'episode_day_cap',
-    });
+    throw new RecoveryWatcherError(
+      'Mint exceeded the maximum of 3 recovery episodes per 24 hours.',
+      {
+        code: 'episode_day_cap',
+      },
+    );
   }
 }
 
@@ -222,13 +254,63 @@ export function applyTransition(
   request: TransitionRequest,
   context: TransitionContext,
 ): TransitionResult {
+  if (request.to === 'REJECTED_SAFETY' || request.to === 'REJECTED_SAFETY_UNKNOWN') {
+    throw new RecoveryWatcherError(
+      'Safety rejection transitions are reserved for the persisted safety-decision reducer.',
+      { code: 'illegal_transition' },
+    );
+  }
+  return applyTransitionWithPersistedSafety(episode, request, context);
+}
+
+/**
+ * Internal persistence boundary. This is intentionally not re-exported from
+ * the Recovery Watcher public API; generic transition callers cannot invoke a
+ * safety decision.
+ */
+export function applyPersistedSafetyRejectionInternal(
+  episode: RecoveryEpisode,
+  request: TransitionRequest,
+  context: TransitionContext,
+  persistedStatuses: readonly SafetyGateStatus[],
+): TransitionResult {
+  if (request.to !== 'REJECTED_SAFETY' && request.to !== 'REJECTED_SAFETY_UNKNOWN') {
+    throw new RecoveryWatcherError(
+      'Persisted safety reducer may only produce a safety rejection.',
+      {
+        code: 'illegal_transition',
+      },
+    );
+  }
+  return applyTransitionWithPersistedSafety(episode, request, context, persistedStatuses);
+}
+
+function applyTransitionWithPersistedSafety(
+  episode: RecoveryEpisode,
+  request: TransitionRequest,
+  context: TransitionContext,
+  persistedStatuses?: readonly SafetyGateStatus[],
+): TransitionResult {
   assertNestedRequestTimestamps(request, context.now);
   assertNotFuture(request.at, context.now, 'transition.at');
-  assertTimestampOrder(episode.updatedAt, request.at, 'transition.at must be at or after the previous episode timestamp.');
-  assertTimestampOrder(episode.createdAt, request.at, 'transition.at must be at or after created_at.');
+  assertTimestampOrder(
+    episode.updatedAt,
+    request.at,
+    'transition.at must be at or after the previous episode timestamp.',
+  );
+  assertTimestampOrder(
+    episode.createdAt,
+    request.at,
+    'transition.at must be at or after created_at.',
+  );
   assertNoSynthesizedSafetyStatuses(request);
 
-  if (request.to === 'PAPER_ELIGIBLE' || request.to === 'PAPER_OPEN' || episode.state === 'PAPER_ELIGIBLE' || episode.state === 'PAPER_OPEN') {
+  if (
+    request.to === 'PAPER_ELIGIBLE' ||
+    request.to === 'PAPER_OPEN' ||
+    episode.state === 'PAPER_ELIGIBLE' ||
+    episode.state === 'PAPER_OPEN'
+  ) {
     throw new RecoveryWatcherError(
       'Safe paper is not implemented in rw0_v1. Holder, bundle, creator, token-rights completeness and liquidity/execution safety are UNKNOWN. SHADOW_RESEARCH_OPEN is the only simulation path.',
       { code: 'safe_paper_not_implemented' },
@@ -270,9 +352,12 @@ export function applyTransition(
 
   const allowed = LEGAL_TRANSITIONS[episode.state];
   if (!allowed.includes(request.to)) {
-    throw new RecoveryWatcherError(`Illegal recovery episode transition ${episode.state} -> ${request.to}.`, {
-      code: 'illegal_transition',
-    });
+    throw new RecoveryWatcherError(
+      `Illegal recovery episode transition ${episode.state} -> ${request.to}.`,
+      {
+        code: 'illegal_transition',
+      },
+    );
   }
 
   const next: RecoveryEpisode = {
@@ -287,7 +372,7 @@ export function applyTransition(
   applyWatchTtlRules(episode, request);
   applyRecoveryConfirmationRules(episode, next, request);
   applyShadowRules(episode, next, request);
-  applySafetyRejectRules(next, request);
+  applySafetyRejectRules(request, persistedStatuses);
   applyTerminalCooldown(next, request.at);
 
   if (next.completenessGate === 'PASS') {
@@ -296,9 +381,12 @@ export function applyTransition(
     });
   }
   if (isShadowResearch(next) && isSafetyApprovedPaper(next) && next.state !== 'CLOSED') {
-    throw new RecoveryWatcherError('SHADOW_RESEARCH must never be confused with PAPER_ELIGIBLE or PAPER_OPEN.', {
-      code: 'shadow_paper_confusion',
-    });
+    throw new RecoveryWatcherError(
+      'SHADOW_RESEARCH must never be confused with PAPER_ELIGIBLE or PAPER_OPEN.',
+      {
+        code: 'shadow_paper_confusion',
+      },
+    );
   }
 
   return {
@@ -340,29 +428,40 @@ function applyDipAdmissionRules(
 
   if (request.to === 'REJECTED_INCOMPLETE' && previous.state === 'DISCOVERED') {
     if (filters.kind !== 'reject_incomplete' && filters.kind !== 'reject_invalid') {
-      throw new RecoveryWatcherError('REJECTED_INCOMPLETE requires missing or contradictory required dip fields.', {
-        code: 'illegal_transition',
-      });
+      throw new RecoveryWatcherError(
+        'REJECTED_INCOMPLETE requires missing or contradictory required dip fields.',
+        {
+          code: 'illegal_transition',
+        },
+      );
     }
   }
 
   if (request.to === 'REJECTED_FILTER' && previous.state === 'DISCOVERED') {
     if (filters.kind !== 'reject_filter') {
-      throw new RecoveryWatcherError('REJECTED_FILTER requires complete data that fails recovery_v0 dip bounds.', {
-        code: 'illegal_transition',
-      });
+      throw new RecoveryWatcherError(
+        'REJECTED_FILTER requires complete data that fails recovery_v0 dip bounds.',
+        {
+          code: 'illegal_transition',
+        },
+      );
     }
   }
 
   if (request.to === 'RECOVERY_WATCH') {
     const concurrent = context.concurrentWatchCount;
     if (concurrent === undefined) {
-      throw new RecoveryWatcherError('RECOVERY_WATCH requires concurrentWatchCount from the recovery database.', {
-        code: 'configuration',
-      });
+      throw new RecoveryWatcherError(
+        'RECOVERY_WATCH requires concurrentWatchCount from the recovery database.',
+        {
+          code: 'configuration',
+        },
+      );
     }
     if (concurrent >= RW0_MAX_CONCURRENT_WATCHES) {
-      throw new RecoveryWatcherError('High-resolution watch slot cap is 10.', { code: 'watch_cap' });
+      throw new RecoveryWatcherError('High-resolution watch slot cap is 10.', {
+        code: 'watch_cap',
+      });
     }
     next.watchStartedAt = request.at;
   }
@@ -373,15 +472,22 @@ function applyWatchTtlRules(previous: RecoveryEpisode, request: TransitionReques
     return;
   }
   if (previous.state !== 'RECOVERY_WATCH' || previous.watchStartedAt === null) {
-    throw new RecoveryWatcherError('EXPIRED is only legal from RECOVERY_WATCH after the 2h entry-watch TTL.', {
-      code: 'watch_ttl_not_elapsed',
-    });
+    throw new RecoveryWatcherError(
+      'EXPIRED is only legal from RECOVERY_WATCH after the 2h entry-watch TTL.',
+      {
+        code: 'watch_ttl_not_elapsed',
+      },
+    );
   }
-  const eligibleAt = parseUtcInstant(previous.watchStartedAt, 'watch_started_at') + RW0_WATCH_TTL_MS;
+  const eligibleAt =
+    parseUtcInstant(previous.watchStartedAt, 'watch_started_at') + RW0_WATCH_TTL_MS;
   if (parseUtcInstant(request.at, 'transition.at') < eligibleAt) {
-    throw new RecoveryWatcherError('RECOVERY_WATCH cannot EXPIRED before watchStartedAt + RW0_WATCH_TTL_MS.', {
-      code: 'watch_ttl_not_elapsed',
-    });
+    throw new RecoveryWatcherError(
+      'RECOVERY_WATCH cannot EXPIRED before watchStartedAt + RW0_WATCH_TTL_MS.',
+      {
+        code: 'watch_ttl_not_elapsed',
+      },
+    );
   }
 }
 
@@ -424,7 +530,10 @@ function applyRecoveryConfirmationRules(
     confirmedAt,
     'Recovery confirmation must be strictly later than the dip. No future information and no trough backfill.',
   );
-  if (parseUtcInstant(confirmedAt, 'recoveryConfirmedAt') >= watchExpiresAtMs(previous.watchStartedAt, RW0_WATCH_TTL_MS)) {
+  if (
+    parseUtcInstant(confirmedAt, 'recoveryConfirmedAt') >=
+    watchExpiresAtMs(previous.watchStartedAt, RW0_WATCH_TTL_MS)
+  ) {
     throw new RecoveryWatcherError(
       'Recovery confirmation is not legal at or after watchStartedAt + RW0_WATCH_TTL_MS. Exact TTL boundary belongs to EXPIRED.',
       { code: 'confirmation_after_watch_ttl' },
@@ -473,7 +582,10 @@ function applyShadowRules(
   }
   const entryAt = request.shadowEntryAt ?? next.recoveryConfirmedAt;
   const entryPrice = request.shadowEntryPriceUsd ?? next.recoveryConfirmationPriceUsd;
-  if (!isSameUtcInstant(entryAt, next.recoveryConfirmedAt) || entryPrice !== next.recoveryConfirmationPriceUsd) {
+  if (
+    !isSameUtcInstant(entryAt, next.recoveryConfirmedAt) ||
+    entryPrice !== next.recoveryConfirmationPriceUsd
+  ) {
     throw new RecoveryWatcherError(
       'SHADOW_RESEARCH entry must be the recovery confirmation observation. This track is explicitly unsafe.',
       { code: 'illegal_transition' },
@@ -486,34 +598,34 @@ function applyShadowRules(
   next.shadowEntryPriceUsd = entryPrice;
 }
 
-function applySafetyRejectRules(next: RecoveryEpisode, request: TransitionRequest): void {
-  if (request.to === 'REJECTED_SAFETY_UNKNOWN') {
-    const statuses = [next.holderStatus, next.bundleStatus, next.creatorStatus];
-    if (statuses.some((status) => status === 'FAIL')) {
-      throw new RecoveryWatcherError('Use REJECTED_SAFETY when a hard gate FAILs.', {
-        code: 'illegal_transition',
-      });
-    }
-    if (!statuses.some((status) => status === 'UNKNOWN')) {
-      throw new RecoveryWatcherError('REJECTED_SAFETY_UNKNOWN requires at least one UNKNOWN hard gate.', {
-        code: 'illegal_transition',
-      });
-    }
+function applySafetyRejectRules(
+  request: TransitionRequest,
+  persistedStatuses?: readonly SafetyGateStatus[],
+): void {
+  if (request.to !== 'REJECTED_SAFETY' && request.to !== 'REJECTED_SAFETY_UNKNOWN') {
+    return;
   }
-
-  if (request.to === 'REJECTED_SAFETY') {
-    const statuses = [next.holderStatus, next.bundleStatus, next.creatorStatus];
-    if (!statuses.some((status) => status === 'FAIL')) {
-      throw new RecoveryWatcherError(
-        'REJECTED_SAFETY requires at least one FAIL hard gate. rw0_v1 cannot synthesize FAIL; gates remain UNKNOWN.',
-        { code: 'illegal_transition' },
-      );
-    }
+  if (persistedStatuses === undefined || persistedStatuses.length !== 4) {
+    throw new RecoveryWatcherError(
+      'Safety rejection requires four canonical statuses from persisted evidence.',
+      { code: 'illegal_transition' },
+    );
+  }
+  const hasFail = persistedStatuses.some((status) => status === 'FAIL');
+  const expected = hasFail ? 'REJECTED_SAFETY' : 'REJECTED_SAFETY_UNKNOWN';
+  if (request.to !== expected) {
+    throw new RecoveryWatcherError(
+      `Persisted safety statuses require ${expected}.`,
+      { code: 'illegal_transition' },
+    );
   }
 }
 
 function applyTerminalCooldown(next: RecoveryEpisode, at: string): void {
-  if ((TERMINAL_BEFORE_COOLDOWN_STATES as readonly string[]).includes(next.state) && next.cooldownUntil === null) {
+  if (
+    (TERMINAL_BEFORE_COOLDOWN_STATES as readonly string[]).includes(next.state) &&
+    next.cooldownUntil === null
+  ) {
     next.cooldownUntil = addMs(at, RW0_COOLDOWN_MS);
   }
   if (next.state === 'COOLDOWN' && next.cooldownUntil === null) {
@@ -581,11 +693,14 @@ function latestEpisode(episodes: readonly RecoveryEpisode[]): RecoveryEpisode | 
   }
   return [...episodes].sort((left, right) => {
     const byDip =
-      parseUtcInstant(right.dipObservedAt, 'dip_observed_at') - parseUtcInstant(left.dipObservedAt, 'dip_observed_at');
+      parseUtcInstant(right.dipObservedAt, 'dip_observed_at') -
+      parseUtcInstant(left.dipObservedAt, 'dip_observed_at');
     if (byDip !== 0) {
       return byDip;
     }
-    return parseUtcInstant(right.updatedAt, 'updated_at') - parseUtcInstant(left.updatedAt, 'updated_at');
+    return (
+      parseUtcInstant(right.updatedAt, 'updated_at') - parseUtcInstant(left.updatedAt, 'updated_at')
+    );
   })[0];
 }
 

@@ -21,6 +21,7 @@ import {
   RW0_MIGRATION_NAME,
   RW0_NETWORK_TIMEOUT_MS,
   RW0_SCHEMA_VERSION,
+  RW0_SAFETY_SPEC_VERSION,
   RW0_SCREENING_DISPOSITIONS,
   RW0_SCREENING_MAX_CANDIDATES,
   RW0_SCHEDULING_POLICY,
@@ -39,6 +40,7 @@ import {
   SHADOW_CLOSE_REASONS,
 } from './constants.js';
 import { recoveryMigrationSqlDigest } from './db/migrations.js';
+import { canonicalRecoverySafetySpec, RW0_SAFETY_SPEC_FINGERPRINT } from './safety.js';
 
 export type CanonicalRecoveryV0Signal = {
   signalVersion: string;
@@ -161,20 +163,20 @@ export type CanonicalRecoveryWatcherDefinition = {
   productionSchemaMustRemain9: true;
   migration010: 'ABSENT';
   recoverySchemaVersion: number;
-  recoveryMigrationName: 'rw0_001_initial';
+  recoveryMigrationName: string;
   recoveryMigrationSqlDigest: string;
   isolatedDatabase: true;
   neverUseProductionDatabasePath: true;
   rejectConfiguredProductionDatabasePath: true;
   discoveryCoverage: 'incomplete_dexscreener_latest_profile_boost_only';
   discoveryCoverageComplete: false;
-  holderGate: 'UNKNOWN_unimplemented';
-  bundleGate: 'UNKNOWN_unimplemented';
-  creatorGate: 'UNKNOWN_unimplemented';
-  largestRealHolderPctImplemented: false;
-  linkedBundlePctImplemented: false;
-  holderPercentageSemanticsUnresolved: true;
-  bundlePercentageSemanticsUnresolved: true;
+  holderGate: 'persisted_fail_closed';
+  bundleGate: 'persisted_fail_closed';
+  creatorGate: 'persisted_fail_closed';
+  largestRealHolderPctImplemented: true;
+  linkedBundlePctImplemented: true;
+  holderPercentageSemanticsUnresolved: false;
+  bundlePercentageSemanticsUnresolved: false;
   incompleteOwnerCoverageIsUnknown: true;
   unexplainedTop20RemainderDoesNotProveHiddenSingleAccountOverTenPercent: true;
   heuristicClusterIsNotOwnership: true;
@@ -195,7 +197,7 @@ export type CanonicalRecoveryWatcherDefinition = {
     exactWatchExpiryBoundaryBelongsToExpired: true;
     closedFromShadowReachableInRw0V1: false;
     exitExecutionImplementedInRw0V1: false;
-    holderBundleCreatorEvidenceUnknownOnlyInRw0V1: true;
+    safetyEvidenceReducerImplemented: true;
     runtimeFileDatabaseRejectsMemoryPath: true;
     networkedForwardObservationImplemented: true;
     screeningIndependentOfEpisodes: true;
@@ -233,6 +235,11 @@ export type CanonicalRecoveryWatcherDefinition = {
     priorPublicSmokeExcludedFromForwardValidation: true;
   };
   signal: CanonicalRecoveryV0Signal;
+  safety: {
+    specVersion: string;
+    specFingerprint: string;
+    definition: ReturnType<typeof canonicalRecoverySafetySpec>;
+  };
   shadowPaper: CanonicalRw0ShadowPaper;
   exit: CanonicalRw0Exit;
   safePaperEntry: {
@@ -381,13 +388,13 @@ export function canonicalRecoveryWatcherDefinition(): CanonicalRecoveryWatcherDe
     rejectConfiguredProductionDatabasePath: true,
     discoveryCoverage: 'incomplete_dexscreener_latest_profile_boost_only',
     discoveryCoverageComplete: false,
-    holderGate: 'UNKNOWN_unimplemented',
-    bundleGate: 'UNKNOWN_unimplemented',
-    creatorGate: 'UNKNOWN_unimplemented',
-    largestRealHolderPctImplemented: false,
-    linkedBundlePctImplemented: false,
-    holderPercentageSemanticsUnresolved: true,
-    bundlePercentageSemanticsUnresolved: true,
+    holderGate: 'persisted_fail_closed',
+    bundleGate: 'persisted_fail_closed',
+    creatorGate: 'persisted_fail_closed',
+    largestRealHolderPctImplemented: true,
+    linkedBundlePctImplemented: true,
+    holderPercentageSemanticsUnresolved: false,
+    bundlePercentageSemanticsUnresolved: false,
     incompleteOwnerCoverageIsUnknown: true,
     unexplainedTop20RemainderDoesNotProveHiddenSingleAccountOverTenPercent: true,
     heuristicClusterIsNotOwnership: true,
@@ -408,7 +415,7 @@ export function canonicalRecoveryWatcherDefinition(): CanonicalRecoveryWatcherDe
       exactWatchExpiryBoundaryBelongsToExpired: true,
       closedFromShadowReachableInRw0V1: false,
       exitExecutionImplementedInRw0V1: false,
-      holderBundleCreatorEvidenceUnknownOnlyInRw0V1: true,
+      safetyEvidenceReducerImplemented: true,
       runtimeFileDatabaseRejectsMemoryPath: true,
       networkedForwardObservationImplemented: true,
       screeningIndependentOfEpisodes: true,
@@ -446,6 +453,11 @@ export function canonicalRecoveryWatcherDefinition(): CanonicalRecoveryWatcherDe
       priorPublicSmokeExcludedFromForwardValidation: true,
     },
     signal: canonicalRecoveryV0Signal(),
+    safety: {
+      specVersion: RW0_SAFETY_SPEC_VERSION,
+      specFingerprint: RW0_SAFETY_SPEC_FINGERPRINT,
+      definition: canonicalRecoverySafetySpec(),
+    },
     shadowPaper: canonicalRw0ShadowPaper(),
     exit: canonicalRw0Exit(),
     safePaperEntry: {
@@ -476,7 +488,9 @@ export function mutateCanonicalRw0ShadowPaper(
   return definition;
 }
 
-export function mutateCanonicalRw0Exit(mutate: (definition: CanonicalRw0Exit) => void): CanonicalRw0Exit {
+export function mutateCanonicalRw0Exit(
+  mutate: (definition: CanonicalRw0Exit) => void,
+): CanonicalRw0Exit {
   const definition = structuredClone(canonicalRw0Exit());
   mutate(definition);
   return definition;

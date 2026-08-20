@@ -1,6 +1,17 @@
-export const RW0_SPEC_VERSION = 'rw0_v1';
-export const RW0_SPEC_NAME = 'recovery_watcher_paper_data_research_foundation';
+export const RW0_SPEC_VERSION = 'rw0_v3';
+export const RW0_SPEC_NAME = 'recovery_watcher_safety_evidence_only';
 export const RW0_CHECKPOINT = 'rw0';
+
+// These values identify the published Slice 1/2 rows. They are compatibility
+// constants only: new episodes, screenings, and safety evidence use RW0_SPEC_VERSION.
+export const RW0_LEGACY_SPEC_VERSION = 'rw0_v1';
+export const RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT =
+  '5dc65c1129485f77b337be22a42dc81ba76aa24c89d2661fce50ef6d70cbd297';
+
+export const RW0_SAFETY_SPEC_VERSION = 'rw0_safety_v2';
+export const RW0_SAFETY_SPEC_NAME = 'persisted_fail_closed_safety_evidence';
+export const RW0_HOLDER_MAX_PCT = 10;
+export const RW0_LINKED_BUNDLE_MAX_PCT = 20;
 
 export const RECOVERY_V0_SIGNAL_VERSION = 'recovery_v0';
 export const RECOVERY_V0_SIGNAL_NAME = 'unproven_5m_crash_then_same_pair_recovery';
@@ -65,8 +76,8 @@ export const RW0_EXIT_STOP_LOSS_BPS = 1000;
 export const RW0_EXIT_TAKE_PROFIT_BPS = 2000;
 export const RW0_EXIT_MAX_HOLDING_MS = 21_600_000;
 
-export const RW0_SCHEMA_VERSION = 1;
-export const RW0_MIGRATION_NAME = 'rw0_001_initial';
+export const RW0_SCHEMA_VERSION = 2;
+export const RW0_MIGRATION_NAME = 'rw0_002_safety_evidence';
 
 export const RW0_REDACTED_URL_TOKEN = '[REDACTED_URL]';
 

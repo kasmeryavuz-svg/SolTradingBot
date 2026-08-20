@@ -10,6 +10,7 @@ import {
   RW0_DIP_FILTER_RESULTS,
   RW0_SCREENING_DISPOSITIONS,
 } from './constants.js';
+import type { TokenExtensionObservation } from '../risk/types.js';
 
 export type RecoveryEpisodeState = (typeof RECOVERY_EPISODE_STATES)[number];
 export type ActiveRecoveryEpisodeState = (typeof ACTIVE_RECOVERY_EPISODE_STATES)[number];
@@ -55,7 +56,71 @@ export type RecoveryWatcherConfig = {
   screeningMaxCandidates: number;
 };
 
-export type SafetyEvidenceKind = 'holder' | 'bundle' | 'creator' | 'token_rights' | 'liquidity_execution' | 'other';
+export type SafetyEvidenceKind =
+  'holder' | 'bundle' | 'creator' | 'token_rights' | 'liquidity_execution' | 'other';
+
+export type SafetyGateKind = 'token_rights' | 'holder' | 'bundle' | 'creator';
+export type SafetyExclusionKind = 'pool' | 'vault' | 'burn' | 'program_controlled';
+export type SafetyExclusionProvenance = {
+  kind: SafetyExclusionKind;
+  source: string;
+  observedAt: string;
+  subjectAddress: string;
+};
+
+export type TokenRightsSafetyPayload = {
+  kind: 'token_rights';
+  tokenProgram: 'spl_token' | 'token_2022' | 'unsupported';
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
+  extensions: readonly TokenExtensionObservation[];
+  factsComplete: boolean;
+};
+
+export type HolderSafetyPayload = {
+  kind: 'holder';
+  denominatorKind: 'effective_circulating_supply';
+  totalSupplyRaw: string | null;
+  denominatorRaw: string | null;
+  supplyReconciled: boolean;
+  ownerCoverageComplete: boolean;
+  sourceIsTop20Only: boolean;
+  accounts: readonly {
+    tokenAccount: string;
+    owner: string;
+    amountRaw: string;
+    exclusion: SafetyExclusionProvenance | null;
+  }[];
+};
+
+export type BundleSafetyPayload = {
+  kind: 'bundle';
+  rule: string;
+  denominatorKind: 'effective_circulating_supply';
+  denominatorRaw: string | null;
+  graphComplete: boolean;
+  membershipComplete: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  members: readonly {
+    owner: string;
+    amountRaw: string;
+    provenance: string;
+  }[];
+};
+
+export type CreatorSafetyPayload = {
+  kind: 'creator';
+  creatorIdentity: string | null;
+  identityProvenance: string | null;
+  identityTrustworthy: boolean;
+  controlledAccountsComplete: boolean;
+  retainedControlCapabilities: readonly string[];
+  controlledBalanceRaw: string | null;
+  denominatorRaw: string | null;
+};
+
+export type SafetyEvidencePayload =
+  TokenRightsSafetyPayload | HolderSafetyPayload | BundleSafetyPayload | CreatorSafetyPayload;
 
 export type DipFilterResult =
   | { kind: 'pass' }
@@ -209,13 +274,39 @@ export type MarketObservationRecord = {
 };
 
 export type SafetyEvidenceRecord = {
+  evidenceId: string;
   episodeId: string;
-  kind: SafetyEvidenceKind;
+  mint: string;
+  pairAddress: string;
+  confirmationObservedAt: string;
+  confirmationEventId: string;
+  kind: SafetyGateKind;
   status: SafetyGateStatus;
   observedAt: string;
+  collectedAt: string;
   provider: string | null;
-  provenance: string | null;
-  notes: string | null;
+  provenance: string;
+  signalVersion: string;
+  signalFingerprint: string;
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+  safetySpecVersion: string;
+  safetySpecFingerprint: string;
+  payload: SafetyEvidencePayload;
+  reason: string;
+};
+
+export type SafetyDecisionRecord = {
+  decisionId: string;
+  episodeId: string;
+  decidedAt: string;
+  outcome: 'REJECTED_SAFETY' | 'REJECTED_SAFETY_UNKNOWN';
+  reason: string;
+  tokenRightsStatus: SafetyGateStatus;
+  holderStatus: SafetyGateStatus;
+  bundleStatus: SafetyGateStatus;
+  creatorStatus: SafetyGateStatus;
+  evidenceIds: readonly string[];
 };
 
 export type ShadowPositionRecord = {
@@ -309,4 +400,7 @@ export type RecoveryReportSnapshot = {
   shadowPositionCount: number;
   paperStateCount: number;
   closedStateCount: number;
+  rejectedSafetyCount: number;
+  safetyEvidenceCounts: Record<SafetyGateKind, Record<SafetyGateStatus, number>>;
+  safetyDecisionReasons: Record<string, number>;
 };

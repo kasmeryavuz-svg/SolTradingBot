@@ -4,9 +4,20 @@ export {
   RW0_EXIT_FINGERPRINT,
   RW0_SHADOW_PAPER_FINGERPRINT,
   RW0_WATCHER_DEFINITION_FINGERPRINT,
+  RW0_SAFETY_SPEC_FINGERPRINT,
 } from './identity.js';
+export {
+  canonicalRecoverySafetySpec,
+  evaluateSafetyPayload,
+  canonicalizeSafetyEvidence,
+} from './safety.js';
+export { persistSafetyEvidence, persistSafetyDecision, listSafetyEvidence } from './persistence.js';
 export { loadRecoveryWatcherConfig } from './config.js';
-export { prepareRecoveryStatusCommand, prepareRecoveryRunCommand, prepareRecoveryReportCommand } from './command.js';
+export {
+  prepareRecoveryStatusCommand,
+  prepareRecoveryRunCommand,
+  prepareRecoveryReportCommand,
+} from './command.js';
 export { formatRecoveryStatusLines, formatRecoveryCycleLines } from './format.js';
 export { formatRecoveryReportLines } from './report.js';
 export { runRecoveryCycle } from './cycle.js';

@@ -1,20 +1,22 @@
-# Recovery Watcher v0 (`rw0_v1`)
+# Recovery Watcher v0 (`rw0_v3`)
 
 Paper/data research only. Automatic live trading is unavailable.
 
-This document is the operator-facing contract for Foundation plus Slice 2 networked forward observation. It does **not** claim that Recovery_v0 is profitable, complete, or live-ready.
+This document is the operator-facing contract for Slice 3A persisted safety evidence. It does **not** claim that Recovery_v0 is profitable, complete, or live-ready.
 
 ## What this slice is
 
-Slice 2 adds DexScreener screening and approximately-60-second pinned-pair forward observation on an isolated RW0 database.
+Slice 3A retains Slice 2 observation semantics and adds a frozen, persisted, fail-closed safety-evidence reducer on the isolated RW0 database.
 
 - Screening observations are independent of recovery episodes.
 - Only a frozen `recovery_v0` dip admits a sticky-pair watch.
 - A persisted later observation may confirm recovery.
-- Slice 2 then records `SIGNAL_PENDING_SAFETY` and immediately `REJECTED_SAFETY_UNKNOWN`.
-- No paper position, shadow position, PnL, holder/bundle safety, or live execution.
+- Confirmed signals enter `SIGNAL_PENDING_SAFETY`; a decision reads canonical persisted evidence only.
+- Any persisted gate `FAIL` produces `REJECTED_SAFETY`; otherwise any `UNKNOWN` produces `REJECTED_SAFETY_UNKNOWN`.
+- Even if all four evidence gates pass, Slice 3A produces `REJECTED_SAFETY_UNKNOWN` because evidence-only mode cannot grant paper eligibility.
+- No paper position, shadow position, PnL, signing, broadcast, or live execution is added.
 
-Foundation Slice 1 still freezes identity, isolation, schema version 1, and the deterministic episode state machine.
+`recovery_v0` remains unchanged. Operational semantics are identified as `rw0_v3`; recovery schema version is 2.
 
 ## What this slice is not
 
@@ -22,21 +24,20 @@ Foundation Slice 1 still freezes identity, isolation, schema version 1, and the 
 - Not a change to production schema 9
 - Not migration 010
 - Not `p09_v1` / `pm10_v1` / `x11_v1` (those remain frozen to `s07_v1`)
-- Not safety-approved paper (unreachable in `rw0_v1`)
+- Not safety-approved paper (unreachable in `rw0_v3`)
 - Not complete market discovery
-- Not a holder 10% gate
-- Not a bundle 20% gate
+- Not a claim that incomplete holder or linked-wallet data is safe
 - Not SHADOW_RESEARCH_OPEN / paper / exits / PnL
 
 ## Isolation
 
-| Resource | Recovery Watcher | Production |
-| -------- | ---------------- | ---------- |
-| Process | `recovery:status`, `recovery:run`, `recovery:report` | `prod:run` |
-| SQLite file | `./data/recovery-watcher.sqlite` (`RW0_DATABASE_PATH`) | configured `DATABASE_PATH` (default `./data/soltradingbot.sqlite`) |
-| Schema | `rw0` version 1 (`rw0_001_initial`) plus SQL digest | version 9 (`001`–`009`) |
-| Lock file | `.rw0-runtime.lock` with ownership-safe pid + process-start identity | `.prod20-runtime.lock` |
-| Trading flags | must be false or the process refuses | must be false or `prod:run` refuses |
+| Resource      | Recovery Watcher                                                                | Production                                                         |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Process       | `recovery:status`, `recovery:run`, `recovery:report`                            | `prod:run`                                                         |
+| SQLite file   | `./data/recovery-watcher.sqlite` (`RW0_DATABASE_PATH`)                          | configured `DATABASE_PATH` (default `./data/soltradingbot.sqlite`) |
+| Schema        | `rw0` version 2 (`rw0_001_initial`, `rw0_002_safety_evidence`) plus SQL digests | version 9 (`001`–`009`)                                            |
+| Lock file     | `.rw0-runtime.lock` with ownership-safe pid + process-start identity            | `.prod20-runtime.lock`                                             |
+| Trading flags | must be false or the process refuses                                            | must be false or `prod:run` refuses                                |
 
 `TRADING_ENABLED=true` or `LIVE_BROADCAST_ENABLED=true` is fail-closed for recovery status.
 
@@ -56,22 +57,22 @@ Two tracks exist. They must never share a “paper open” meaning.
 
 State: `SHADOW_RESEARCH_OPEN`
 
-- The **only** simulation path in `rw0_v1`
+- A reserved research simulation path; Slice 3A does not open it
 - May simulate recovery entry/exit **before** holder/bundle/creator gates exist
 - `safety_incomplete = true`
 - Completeness gate = **FAIL**
 - Never counts as live-readiness evidence
 - Never appears as `PAPER_ELIGIBLE` or `PAPER_OPEN`
 - Entry time/price **may** be the recovery-confirmation observation because the track is explicitly unsafe
-- **Cannot** transition to `CLOSED` in `rw0_v1`. Shadow exit execution (threshold / overshoot / gap from a persisted market observation) is reserved for a dedicated later slice. Do not open shadow positions that you cannot subsequently monitor/close in Slice 2.
+- **Cannot** transition to `CLOSED` in `rw0_v3`. Shadow exit execution remains reserved for a dedicated later slice.
 
-### Safety-approved paper (reserved, unreachable in `rw0_v1`)
+### Safety-approved paper (reserved, unreachable in `rw0_v3`)
 
 States: `PAPER_ELIGIBLE` then `PAPER_OPEN`
 
-These **names** are reserved in the type/schema for a later watcher/spec version. In `rw0_v1`:
+These **names** are reserved in the type/schema for a later watcher/spec version. In `rw0_v3`:
 
-- Holder, bundle, creator/dev, token-rights completeness, and liquidity/execution safety are **not implemented**
+- Safety evidence can reject only; liquidity/execution safety and paper admission are **not implemented**
 - Completeness gate **PASS** is not set on any reachable path
 - `SIGNAL_PENDING_SAFETY -> PAPER_ELIGIBLE` fails closed with `safe_paper_not_implemented`
 - Callers **cannot** synthesize PASS statuses to reach PAPER
@@ -110,7 +111,7 @@ Persisted `SIGNAL_PENDING_SAFETY` must be derived inside `BEGIN IMMEDIATE` from 
 2. Later same-pair recovery confirmation
 3. Shadow entry **may** use that confirmation observation
 
-### Future safety-approved PAPER (not reachable in `rw0_v1`)
+### Future safety-approved PAPER (not reachable in `rw0_v3`)
 
 1. Recovery confirmation occurs first
 2. Safety evidence is collected
@@ -124,11 +125,11 @@ Unproven. Discovered in-sample from a tiny historical slice that used **sparse ~
 
 ### Dip observation
 
-| Field | Rule | Missing data |
-| ----- | ---- | ------------ |
+| Field           | Rule                            | Missing data                        |
+| --------------- | ------------------------------- | ----------------------------------- |
 | 5m price change | `>= -60` and `<= -40` (percent) | fail closed (`REJECTED_INCOMPLETE`) |
-| 5m volume USD | known and `>= 5000` | fail closed |
-| Observed price | known, finite, `> 0` | fail closed |
+| 5m volume USD   | known and `>= 5000`             | fail closed                         |
+| Observed price  | known, finite, `> 0`            | fail closed                         |
 
 Dip liquidity and dip V/L are **not** dip gates.
 
@@ -136,29 +137,29 @@ Dip liquidity and dip V/L are **not** dip gates.
 
 Must be **strictly later**, exact **same pair**, with:
 
-| Field | Rule | Missing data |
-| ----- | ---- | ------------ |
-| Observed price | known, finite, `> 0`, and `>` dip observed price | fail closed / not yet |
-| Liquidity USD | known and `>= 10000` | fail closed |
-| 5m volume USD | known | fail closed |
-| V/L | `volume_5m_usd / liquidity_usd`, `>= 1.0` and `< 3.0` | fail closed |
+| Field          | Rule                                                  | Missing data          |
+| -------------- | ----------------------------------------------------- | --------------------- |
+| Observed price | known, finite, `> 0`, and `>` dip observed price      | fail closed / not yet |
+| Liquidity USD  | known and `>= 10000`                                  | fail closed           |
+| 5m volume USD  | known                                                 | fail closed           |
+| V/L            | `volume_5m_usd / liquidity_usd`, `>= 1.0` and `< 3.0` | fail closed           |
 
 V/L is computed from raw confirmation volume and liquidity. A caller-supplied ratio that disagrees with those raw fields fails closed.
 
 Changing any bound requires a new signal version and fingerprint.
 
-## Operational constants (`rw0_v1` watcher spec)
+## Operational constants (`rw0_v3` watcher spec)
 
 These are fingerprinted separately from the signal so a cadence change cannot silently pretend to be the same experiment.
 
-| Constant | Slice 1 value | Meaning |
-| -------- | ------------- | ------- |
-| Watch cadence | 60_000 ms | approximate high-res poll (not exact 60.000s market sampling) |
-| Watch TTL | 7_200_000 ms (2 hours) | max **entry watch** lifetime after `watchStartedAt` |
-| Cooldown | 7_200_000 ms (2 hours) | separate fingerprinted constant; mint cooldown after terminal states |
-| Max holding | 21_600_000 ms (6 hours) | shadow max-hold **CLOSED** comparator, not `EXPIRED` |
-| Max concurrent high-res slots | 10 | all `WATCH_SLOT_STATES`, not only `RECOVERY_WATCH` |
-| Max episodes / mint / 24h | 3 | bounded re-observation, not a lifetime ban |
+| Constant                      | Slice 1 value           | Meaning                                                              |
+| ----------------------------- | ----------------------- | -------------------------------------------------------------------- |
+| Watch cadence                 | 60_000 ms               | approximate high-res poll (not exact 60.000s market sampling)        |
+| Watch TTL                     | 7_200_000 ms (2 hours)  | max **entry watch** lifetime after `watchStartedAt`                  |
+| Cooldown                      | 7_200_000 ms (2 hours)  | separate fingerprinted constant; mint cooldown after terminal states |
+| Max holding                   | 21_600_000 ms (6 hours) | shadow max-hold **CLOSED** comparator, not `EXPIRED`                 |
+| Max concurrent high-res slots | 10                      | all `WATCH_SLOT_STATES`, not only `RECOVERY_WATCH`                   |
+| Max episodes / mint / 24h     | 3                       | bounded re-observation, not a lifetime ban                           |
 
 `WATCH_SLOT_STATES`: `RECOVERY_WATCH`, `SIGNAL_PENDING_SAFETY`, `SHADOW_RESEARCH_OPEN`, and reserved `PAPER_ELIGIBLE` / `PAPER_OPEN` (unreachable here, counted if they ever appear).
 
@@ -166,7 +167,7 @@ Admission to a new `RECOVERY_WATCH` uses the persisted slot count inside `BEGIN 
 
 `RECOVERY_WATCH -> EXPIRED` is legal only when `transition.at >= watchStartedAt + RW0_WATCH_TTL_MS`. Recovery confirmation is legal only when `recoveryConfirmedAt < watchStartedAt + RW0_WATCH_TTL_MS`. Callers cannot expire a watch early, and cannot confirm at or after the frozen deadline.
 
-`SHADOW_RESEARCH_OPEN` does **not** use the 2h entry-watch `EXPIRED` transition. Shadow **exit / `CLOSED` is not implemented in `rw0_v1`**. A later dedicated slice must bind close evidence to a persisted market observation and record threshold, overshoot, and gap. Future `PAPER_OPEN` must not use entry-watch `EXPIRED`.
+`SHADOW_RESEARCH_OPEN` does **not** use the 2h entry-watch `EXPIRED` transition. Shadow **exit / `CLOSED` is not implemented in `rw0_v3`**. A later dedicated slice must bind close evidence to a persisted market observation and record threshold, overshoot, and gap. Future `PAPER_OPEN` must not use entry-watch `EXPIRED`.
 
 ## Episode identity
 
@@ -174,7 +175,7 @@ Admission to a new `RECOVERY_WATCH` uses the persisted slot count inside `BEGIN 
 
 One **active** episode per mint (application check **and** a partial UNIQUE index). Cooldown does not permanently ban the mint. A later **new** dip (new `dip_observed_at`) may open a new episode after cooldown and within the 3/24h cap.
 
-Persisted episodes must match `rw0_v1` signal/watcher/shadow/exit fingerprints and `cost_model=none` / `execution_model=discrete_observed_price_no_quote`. The recovery migration SQL digest is stored and bound into the watcher fingerprint. Drift without a version bump fails closed.
+New episodes must match `rw0_v3` signal/watcher/shadow/exit fingerprints and `cost_model=none` / `execution_model=discrete_observed_price_no_quote`. Migration 2 also recognizes the exact published `rw0_v1` watcher version/fingerprint pair so existing Slice 1/2 episodes and screenings remain readable. Active legacy episodes retain their v1 identity and drain through the frozen fail-closed `REJECTED_SAFETY_UNKNOWN` outcome without fabricating `rw0_safety_v2` evidence. New screening and safety evidence cannot be written with the legacy identity; mismatched version/fingerprint pairs fail closed. The recovery migration SQL digest is stored and bound into the watcher fingerprint. Drift without a version bump fails closed.
 
 ## State machine
 
@@ -190,43 +191,41 @@ Illegal transitions fail closed.
 
 Idempotency is exact: retrying the **same** semantic event (target, timestamp, reason, payload / event identity) may no-op. The same target state with a different event identity fails closed as a conflict.
 
-`CLOSED` is reserved in types/schema but **unreachable** in `rw0_v1`. Foundation does not generate close rows. If a later slice implements exit execution, `CloseEvidence.observedAt` and `observationCollectedAt` must identify the **same** persisted market-observation instant (same pair and price as that `rw0_market_observations` row). Unrelated timestamps must not form one exit identity. `CENSORED_UNAVAILABLE` remains separate and is never a win/loss.
+`CLOSED` is reserved in types/schema but **unreachable** in `rw0_v3`. If a later slice implements exit execution, `CloseEvidence.observedAt` and `observationCollectedAt` must identify the **same** persisted market-observation instant. `CENSORED_UNAVAILABLE` remains separate and is never a win/loss.
 
 ## Discovery coverage
 
-DexScreener latest profile/boost feeds are acceptable for `rw0_v1` **research collection**. They are **not** complete market discovery.
+DexScreener latest profile/boost feeds are acceptable for `rw0_v3` **research collection**. They are **not** complete market discovery.
 
 Tokens that never appear on those feeds, tokens dropped by production’s cap-20 persist path, and tokens that crash between polls can be missing. Discovery coverage remains a completeness **FAIL**.
 
-## Holder concentration (unresolved)
+## Frozen safety evidence (`rw0_safety_v2`)
 
-`largest_real_holder_pct <= 10%` is a **future** hard requirement. It is **not** implemented.
+The SHA-256 fingerprint covers the rules below. Every evidence row binds episode, mint, pinned pair, confirmation timestamp/event, signal identity, watcher identity, safety identity, observation time, collection time, provider, provenance, and canonical payload. Evidence before confirmation, evidence collected after a decision, future evidence, and mismatched identities fail closed.
 
-Do not use Checkpoint 05 top-1 token-account bps or Checkpoint 18 `observedTop20BalanceShareBps` as that number.
+### Token rights
 
-A future implementation must define, in writing, before any PASS:
+Slice 3A reuses Checkpoint 05 factual extension classifiers. Active mint/freeze/delegate/pause/close authority, non-transferability, active transfer hook, frozen default account state, configured transfer fee, or paused capability is `FAIL`. Known danger takes precedence even when the token program is unsupported or the fact set is incomplete. Unsupported token programs and unparsed, unclassified, or incomplete facts with no known danger are `UNKNOWN`. `PASS` requires a complete supported fact set with no dangerous or incompatible capability.
 
-- **Numerator:** aggregated beneficial owner amount after documented exclusions
-- **Denominator:** which supply (see below)
-- **Total supply vs effective circulating/tradable supply:** these are different; picking one is a spec choice, not a silent default
-- **LP / vault / burn / program exclusions:** only by **positive identification**, never by guessing
-- **Owner aggregation:** multiple token accounts of one owner, including accounts **outside** the observed top-20
-- **Incomplete owner coverage:** if aggregation or classification is incomplete, status is `UNKNOWN` (fail closed). This does **not** claim that an unexplained supply remainder above 10% proves a hidden single token account above 10%. The unresolved risk is incomplete beneficial-owner aggregation.
-- **Point-in-time evidence:** `observed_at <= entry_at`. Querying holders later must not be labeled as holder state at an old entry.
+### Holder concentration
 
-Until that spec and data exist: **holder gate = UNKNOWN**.
+The hard bound is `largest_real_holder_pct <= 10%`.
 
-## Bundle / linked wallets (unresolved)
+- **Numerator:** largest aggregate of all nonexcluded token accounts sharing one beneficial owner.
+- **Denominator:** total supply minus balances excluded by positive identification as pool, vault, burn, or program-controlled.
+- Every exclusion records kind, subject address, source, and observation timestamp. An unexplained account is never excluded.
+- Checkpoint 18 top-20 data alone can never `PASS`, even after owner aggregation.
+- An observed aggregate above 10% is sufficient to `FAIL`. At or below 10%, incomplete owner coverage or supply reconciliation is `UNKNOWN`.
+- Hard-gate comparison is exact BigInt arithmetic (`numerator * 100` versus `denominator * 10`); decimal percentages are reporting only.
+- Unavailable provider data stores `null` supply and denominator with incomplete flags, never fabricated economics.
 
-`linked_bundle_pct <= 20%` is a **future** hard requirement. It is **not** implemented.
+### Linked/bundle evidence
 
-A future implementation must define the **denominator** (same supply question as holders). Heuristic clustering (common funding, timing, transfers) is **not** proof of common ownership. An incomplete graph is `UNKNOWN`. No bundle gate may silently PASS.
+The hard bound is `linked_bundle_pct <= 20%`. Evidence persists the clustering rule, member owners and amounts, numerator inputs, effective-supply denominator, member provenance, confidence, graph completeness, and membership completeness. A heuristic cluster is not asserted to be ownership. A complete cluster above 20% is `FAIL`; any incomplete graph or membership set is `UNKNOWN`. The hard comparison uses exact BigInt arithmetic. Unavailable provider data stores a `null` denominator and no measured members.
 
-Until that spec and data exist: **bundle gate = UNKNOWN**.
+### Creator/dev evidence
 
-## Creator / dev exposure (unresolved)
-
-Not implemented. Status = `UNKNOWN`.
+Missing trustworthy creator identity is `UNKNOWN`; no identity is guessed. Retained creator control capability is `FAIL`. `PASS` requires trustworthy identity provenance, complete controlled-account coverage, no retained control, and complete zero-exposure evidence. Nonzero exposure remains `UNKNOWN` because Slice 3A freezes no arbitrary creator percentage threshold.
 
 ## Costs and execution
 
@@ -235,7 +234,7 @@ Slice 1 paper models:
 - `cost_model = none` (GROSS; fees/slippage/impact not applied)
 - `execution_model = discrete_observed_price_no_quote`
 
-`rw0_exit_v0` **is not implemented as an execution path in `rw0_v1`**. The intended later comparator still records discrete observed prices, threshold, overshoot, and gap flags, and does not invent exact fills. −10% / +20% / 6h remain **x11 comparators**, not proven optima. Foundation must not persist partially truthful close rows with null threshold/overshoot and a fake `gapFlag=false`.
+`rw0_exit_v0` **is not implemented as an execution path in `rw0_v3`**.
 
 ## Persistence
 
@@ -243,11 +242,13 @@ Recovery data lives only in the recovery SQLite file. Production `schema_migrati
 
 Transitions load the current episode **inside** `BEGIN IMMEDIATE` and apply to that persisted row. Stale caller objects cannot overwrite newer state. Create-time one-active and 3/24h checks run inside the write transaction.
 
+The generic in-memory and persisted transition APIs reject both safety-rejection targets. Only the internal persisted-evidence decision reducer can produce `REJECTED_SAFETY` or `REJECTED_SAFETY_UNKNOWN`.
+
 Market observations: exact duplicate (episode + pair + collected instant + identical semantic payload) is idempotent. Same identity/timestamp with conflicting price/liquidity/volume/source/fingerprint fails closed. Provider and source must be non-empty after trim.
 
-Holder/bundle/creator (and other) safety evidence in `rw0_v1` is **UNKNOWN-only**. PASS and FAIL for those unimplemented gates are rejected. Exact duplicate (episode + kind + observed instant + identical payload) is idempotent. Same evidence identity with a conflicting payload fails closed. A FAIL row must not be stored while the state machine ignores it.
+Token-rights, holder, bundle, and creator evidence in `rw0_v3` is hydrated through the canonical `rw0_safety_v2` evaluator. New safety evidence requires the current watcher identity on both the evidence and its episode; no `rw0_safety_v2` row can bind to a legacy `rw0_v1` episode. Exact duplicate evidence is idempotent; the same episode/kind/observed instant with a conflicting payload fails closed. Direct-SQL payload/status/identity/future-time tampering is rejected during hydration, report, and decision.
 
-Every stored observation should keep mint, pair, timestamps, provider/source, signal version/fingerprint, watcher spec/fingerprint, observed price/liquidity/volume/5m change when known. Safety evidence must not silently change episode gate status. `UNKNOWN` never becomes `PASS` from absence of evidence.
+Every stored observation keeps mint, pair, timestamps, provider/source, signal version/fingerprint, watcher spec/fingerprint, and observed economics when known. Safety status is recomputed from the persisted payload; `UNKNOWN` never becomes `PASS` from absence of evidence.
 
 Chronological comparisons use parsed UTC instants (`parseUtcInstant` / `assertTimestampOrder`), never raw timestamp-string lexicographic order. Equivalent formats (`...00Z`, `...00.1Z`, `...00.100Z`) are the same or ordered numerically.
 
@@ -265,7 +266,7 @@ Frozen screening dispositions: `DIP_PASS`, `NOT_DIP`, `INCOMPLETE`, `MARKET_UNAV
 
 Exact duplicate screening identity (`mint + screenedAt + signalFingerprint + watcherSpecFingerprint`) with the same payload is idempotent. The same identity with a conflicting payload fails closed.
 
-Screening rows must match the current frozen `recovery_v0` / `rw0_v1` versions **and** fingerprints. Mixed-definition screening evidence fails closed on insert, hydration, and report. SQL CHECKs pin the version strings only; fingerprints are validated in application code so the migration digest cannot circularly depend on the watcher fingerprint.
+New screening rows must match the current frozen `recovery_v0` / `rw0_v3` versions **and** fingerprints. Hydration/reporting also accepts only the exact published `rw0_v1` version/fingerprint pair for immutable legacy rows; mixed or forged identity pairs fail closed.
 
 Admission (`persistAdmittedDipWatch`) binds screening and market observation as the **same** observed event inside `BEGIN IMMEDIATE`: same mint, pair, UTC instant, price, liquidity, 5m volume, 5m change, frozen identities, operational `DIP_PASS`, and a **recomputed** `recovery_v0` dip filter pass from the raw economics. A caller cannot admit a non-dip by labeling it `DIP_PASS`.
 
@@ -297,7 +298,7 @@ No overlapping cycles, no `Math.random` jitter. Live flags must be false before 
 
 Discovery per screening cycle: 2 calls (latest profiles + latest boosts). Screening enrichment cap: 20. Max high-resolution watches: 10. Network timeout: 10_000 ms. Our cap is not a claim of exact DexScreener rate-limit safety.
 
-Slice 2 confirmation end state: `RECOVERY_WATCH` → `SIGNAL_PENDING_SAFETY` (bound to the persisted observation) → `REJECTED_SAFETY_UNKNOWN`. That is not a strategy loss. Safety qualification is unavailable. No shadow/paper/PnL.
+Slice 3A confirmation end state is `RECOVERY_WATCH` → `SIGNAL_PENDING_SAFETY` (bound to the persisted observation) → one of the two safety rejection states, reduced from persisted evidence. That is not a strategy loss. No shadow/paper/PnL.
 
 ## Forward-evidence freeze
 

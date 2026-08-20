@@ -14,13 +14,15 @@ import {
 } from '../src/recovery-watcher/lock.js';
 import { tempRecoveryDirectory } from './recovery-watcher-fixtures.js';
 
-function lockRecord(overrides: Partial<{
-  specVersion: string;
-  specFingerprint: string;
-  pid: number;
-  processStartedAtMs: number;
-  runtimeStartedAt: string;
-}> = {}) {
+function lockRecord(
+  overrides: Partial<{
+    specVersion: string;
+    specFingerprint: string;
+    pid: number;
+    processStartedAtMs: number;
+    runtimeStartedAt: string;
+  }> = {},
+) {
   return {
     specVersion: overrides.specVersion ?? RW0_SPEC_VERSION,
     specFingerprint: overrides.specFingerprint ?? RW0_WATCHER_DEFINITION_FINGERPRINT,
@@ -79,7 +81,9 @@ describe('recovery lock ownership', () => {
       liveness: { isAlive: () => true },
     });
     expect(acquired.record.processStartedAtMs).toBe(2000);
-    expect((JSON.parse(readFileSync(path, 'utf8')) as { processStartedAtMs: number }).processStartedAtMs).toBe(2000);
+    expect(
+      (JSON.parse(readFileSync(path, 'utf8')) as { processStartedAtMs: number }).processStartedAtMs,
+    ).toBe(2000);
     releaseRecoveryLock(acquired);
   });
 
@@ -102,9 +106,10 @@ describe('recovery lock ownership', () => {
       }),
     ).toThrow(RecoveryWatcherError);
     expect(existsSync(first.path)).toBe(true);
-    expect((JSON.parse(readFileSync(first.path, 'utf8')) as { runtimeStartedAt: string }).runtimeStartedAt).toBe(
-      '2026-08-19T00:00:00.000Z',
-    );
+    expect(
+      (JSON.parse(readFileSync(first.path, 'utf8')) as { runtimeStartedAt: string })
+        .runtimeStartedAt,
+    ).toBe('2026-08-19T00:00:00.000Z');
     releaseRecoveryLock(first);
   });
 
@@ -123,9 +128,10 @@ describe('recovery lock ownership', () => {
     );
     releaseRecoveryLock(acquired);
     expect(existsSync(acquired.path)).toBe(true);
-    expect((JSON.parse(readFileSync(acquired.path, 'utf8')) as { processStartedAtMs: number }).processStartedAtMs).toBe(
-      9999,
-    );
+    expect(
+      (JSON.parse(readFileSync(acquired.path, 'utf8')) as { processStartedAtMs: number })
+        .processStartedAtMs,
+    ).toBe(9999);
   });
 
   it('does not delete a replaced lock with a different runtimeStartedAt', () => {
@@ -149,9 +155,10 @@ describe('recovery lock ownership', () => {
     );
     releaseRecoveryLock(acquired);
     expect(existsSync(acquired.path)).toBe(true);
-    expect((JSON.parse(readFileSync(acquired.path, 'utf8')) as { runtimeStartedAt: string }).runtimeStartedAt).toBe(
-      '2026-08-19T00:00:09.000Z',
-    );
+    expect(
+      (JSON.parse(readFileSync(acquired.path, 'utf8')) as { runtimeStartedAt: string })
+        .runtimeStartedAt,
+    ).toBe('2026-08-19T00:00:09.000Z');
   });
 
   it('fails closed on malformed JSON and unknown identity', () => {
@@ -168,7 +175,7 @@ describe('recovery lock ownership', () => {
       }),
     ).toThrow(/malformed/);
     expect(readFileSync(path, 'utf8')).toBe('{not-json');
-    const unknown = serializeRecoveryLock(lockRecord({ specVersion: 'rw0_v2' }));
+    const unknown = serializeRecoveryLock(lockRecord({ specVersion: 'rw0_v999' }));
     writeFileSync(path, unknown);
     expect(classifyRecoveryLock(unknown).kind).toBe('unknown_identity');
     expect(() =>
@@ -186,21 +193,36 @@ describe('recovery lock ownership', () => {
   it('does not unlink a replacement lock after classifying a stale file', () => {
     const directory = tempRecoveryDirectory();
     const path = join(directory, RW0_LOCK_FILE_NAME);
-    const stale = lockRecord({ pid: 8, processStartedAtMs: 1000, runtimeStartedAt: '2026-08-19T00:00:00.000Z' });
-    writeFileSync(path, serializeRecoveryLock(stale));
-    const inspected = inspectRecoveryLockFile(directory, { isAlive: () => false }, {
-      current: { pid: 9, processStartedAtMs: 2000 },
+    const stale = lockRecord({
+      pid: 8,
+      processStartedAtMs: 1000,
+      runtimeStartedAt: '2026-08-19T00:00:00.000Z',
     });
+    writeFileSync(path, serializeRecoveryLock(stale));
+    const inspected = inspectRecoveryLockFile(
+      directory,
+      { isAlive: () => false },
+      {
+        current: { pid: 9, processStartedAtMs: 2000 },
+      },
+    );
     expect(inspected.kind).toBe('stale');
     if (inspected.kind !== 'stale') {
       throw new Error('expected stale lock');
     }
     const replacement = serializeRecoveryLock(
-      lockRecord({ pid: 10, processStartedAtMs: 3000, runtimeStartedAt: '2026-08-19T00:00:03.000Z' }),
+      lockRecord({
+        pid: 10,
+        processStartedAtMs: 3000,
+        runtimeStartedAt: '2026-08-19T00:00:03.000Z',
+      }),
     );
     writeFileSync(path, replacement);
     expect(() => {
-      removeStaleRecoveryLockIfUnchanged(path, { record: inspected.record, identity: inspected.identity });
+      removeStaleRecoveryLockIfUnchanged(path, {
+        record: inspected.record,
+        identity: inspected.identity,
+      });
     }).toThrow(/replaced before deletion/);
     expect(readFileSync(path, 'utf8')).toBe(replacement);
   });

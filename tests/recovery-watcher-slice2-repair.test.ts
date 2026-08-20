@@ -9,17 +9,31 @@ import type { MarketSnapshot } from '../src/market-data/types.js';
 import {
   DEFAULT_RW0_DATABASE_PATH,
   RW0_LOCK_FILE_NAME,
+  RW0_LEGACY_SPEC_VERSION,
+  RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
   RW0_MARKET_PROVIDER,
   RW0_SCREENING_FETCH_CONCURRENCY,
   RW0_SCREENING_MARKET_SOURCE,
+  RW0_SAFETY_SPEC_VERSION,
+  RW0_SPEC_VERSION,
   RW0_WATCH_FETCH_CONCURRENCY,
   RW0_WATCH_MARKET_SOURCE,
 } from '../src/recovery-watcher/constants.js';
 import { runRecoveryCycle } from '../src/recovery-watcher/cycle.js';
-import { initializeRecoveryDatabase, openRecoverySqlite, openRecoverySqliteReadOnly } from '../src/recovery-watcher/db/database.js';
+import {
+  applyRecoveryMigrations,
+  recoveryMigrationSqlDigest,
+  RW0_MIGRATIONS,
+} from '../src/recovery-watcher/db/migrations.js';
+import {
+  initializeRecoveryDatabase,
+  openRecoverySqlite,
+  openRecoverySqliteReadOnly,
+} from '../src/recovery-watcher/db/database.js';
 import { RecoveryWatcherError } from '../src/recovery-watcher/errors.js';
 import {
   RECOVERY_V0_SIGNAL_FINGERPRINT,
+  RW0_SAFETY_SPEC_FINGERPRINT,
   RW0_WATCHER_DEFINITION_FINGERPRINT,
   recoveryScreeningId,
 } from '../src/recovery-watcher/identity.js';
@@ -28,23 +42,41 @@ import {
   listEpisodesByMint,
   listMarketObservations,
   listScreeningObservations,
+  listTransitions,
+  loadEpisode,
   loadRecoveryReportSnapshot,
   persistAdmittedDipWatch,
   persistCreatedEpisode,
+  persistSafetyEvidence,
   persistScreeningObservation,
   persistTransition,
 } from '../src/recovery-watcher/persistence.js';
 import { formatRecoveryReportLines, loadRecoveryReport } from '../src/recovery-watcher/report.js';
 import { createRecoveryCycleMutex, runRecoveryWatcher } from '../src/recovery-watcher/runtime.js';
-import { createScreeningObservation, screeningFromSnapshot, snapshotToMarketObservation } from '../src/recovery-watcher/screening.js';
-import type { RecoveryWatcherConfig, ScreeningObservationRecord } from '../src/recovery-watcher/types.js';
+import { canonicalizeSafetyEvidence } from '../src/recovery-watcher/safety.js';
+import {
+  createScreeningObservation,
+  screeningFromSnapshot,
+  snapshotToMarketObservation,
+} from '../src/recovery-watcher/screening.js';
+import type {
+  RecoveryWatcherConfig,
+  RecoveryEpisode,
+  ScreeningObservationRecord,
+} from '../src/recovery-watcher/types.js';
 import {
   discoveredEpisodeInput,
+  createDiscoveredEpisode,
+  FIXTURE_CONFIRM_AT,
+  FIXTURE_DIP_AT,
+  FIXTURE_DIP_STEP_AT,
   FIXTURE_MINT,
   FIXTURE_NOW,
   FIXTURE_PAIR,
+  FIXTURE_WATCH_AT,
   openInitializedRecoveryDatabase,
   passingDipFields,
+  stepEpisode,
   tempRecoveryDatabasePath,
   tempRecoveryDirectory,
 } from './recovery-watcher-fixtures.js';
@@ -83,7 +115,9 @@ function sourceRecord(mint: string, source: SourceRecord['source']): SourceRecor
   };
 }
 
-function marketSnapshot(overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string }): MarketSnapshot {
+function marketSnapshot(
+  overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string },
+): MarketSnapshot {
   return {
     chain: 'solana',
     tokenName: 'Test',
@@ -112,7 +146,14 @@ function marketSnapshot(overrides: Partial<MarketSnapshot> & { tokenMint: string
 }
 
 function dipSnapshot(mint = FIXTURE_MINT, pair = FIXTURE_PAIR): MarketSnapshot {
-  return marketSnapshot({ tokenMint: mint, pairAddress: pair, priceUsd: 1, liquidityUsd: 8_000, volume5mUsd: 5_000, priceChange5mPct: -50 });
+  return marketSnapshot({
+    tokenMint: mint,
+    pairAddress: pair,
+    priceUsd: 1,
+    liquidityUsd: 8_000,
+    volume5mUsd: 5_000,
+    priceChange5mPct: -50,
+  });
 }
 
 function notDipSnapshot(mint = FIXTURE_MINT, pair = FIXTURE_PAIR): MarketSnapshot {
@@ -144,14 +185,21 @@ function testConfig(overrides: Partial<RecoveryWatcherConfig> = {}): RecoveryWat
 
 function idleProviders() {
   return {
-    profileFeed: { source: 'dexscreener_profile' as const, fetchRecords: () => Promise.resolve([]) },
+    profileFeed: {
+      source: 'dexscreener_profile' as const,
+      fetchRecords: () => Promise.resolve([]),
+    },
     boostFeed: { source: 'dexscreener_boost' as const, fetchRecords: () => Promise.resolve([]) },
     screeningMarket: { getSnapshot: () => Promise.resolve(dipSnapshot()) },
     exactPairMarket: { getSnapshotForPair: () => Promise.resolve(confirmSnapshot()) },
   };
 }
 
-function admitWatch(database: ReturnType<typeof openInitializedRecoveryDatabase>, mint: string, pair: string): void {
+function admitWatch(
+  database: ReturnType<typeof openInitializedRecoveryDatabase>,
+  mint: string,
+  pair: string,
+): void {
   const created = persistCreatedEpisode(
     database,
     discoveredEpisodeInput({ mint, pairAddress: pair, ...passingDipFields() }),
@@ -200,15 +248,21 @@ function insertRawScreening(
     dipFilterResult?: string;
     disposition?: string;
     reason?: string;
+    pairAddress?: string;
+    watcherSpecVersion?: string;
+    watcherSpecFingerprint?: string;
   } = {},
 ): void {
   const mint = overrides.mint ?? FIXTURE_MINT;
+  const pairAddress = overrides.pairAddress ?? FIXTURE_PAIR;
   const screenedAt = overrides.screenedAt ?? T0;
+  const watcherSpecFingerprint =
+    overrides.watcherSpecFingerprint ?? RW0_WATCHER_DEFINITION_FINGERPRINT;
   const screeningId = recoveryScreeningId({
     mint,
     screenedAt,
     signalFingerprint: RECOVERY_V0_SIGNAL_FINGERPRINT,
-    watcherSpecFingerprint: RW0_WATCHER_DEFINITION_FINGERPRINT,
+    watcherSpecFingerprint,
   });
   database
     .prepare(
@@ -226,15 +280,15 @@ function insertRawScreening(
       'dexscreener_profile',
       RW0_MARKET_PROVIDER,
       RW0_SCREENING_MARKET_SOURCE,
-      FIXTURE_PAIR,
+      pairAddress,
       overrides.priceUsd === undefined ? 1 : overrides.priceUsd,
       overrides.liquidityUsd === undefined ? 8_000 : overrides.liquidityUsd,
       overrides.volume5mUsd === undefined ? 5_000 : overrides.volume5mUsd,
       overrides.priceChange5mPct === undefined ? -10 : overrides.priceChange5mPct,
       'recovery_v0',
       RECOVERY_V0_SIGNAL_FINGERPRINT,
-      'rw0_v1',
-      RW0_WATCHER_DEFINITION_FINGERPRINT,
+      overrides.watcherSpecVersion ?? 'rw0_v3',
+      watcherSpecFingerprint,
       overrides.dipFilterResult ?? 'NOT_DIP',
       overrides.disposition ?? 'NOT_DIP',
       overrides.reason ?? 'price_change_5m_pct outside [-60, -40]',
@@ -242,7 +296,371 @@ function insertRawScreening(
     );
 }
 
+function insertLegacyEpisodeFixture(
+  database: ReturnType<typeof openRecoverySqlite>,
+): {
+  discovered: RecoveryEpisode;
+  dipCandidate: RecoveryEpisode;
+  watch: RecoveryEpisode;
+} {
+  const current = createDiscoveredEpisode({ mint: mintAt(40), pairAddress: pairAt(40) });
+  const discovered: RecoveryEpisode = {
+    ...current,
+    watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+    watcherSpecFingerprint: RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
+  };
+  const dipCandidate = stepEpisode(discovered, {
+    to: 'DIP_CANDIDATE',
+    at: FIXTURE_DIP_STEP_AT,
+    reason: 'filters_pass',
+  });
+  const watch = stepEpisode(
+    dipCandidate,
+    { to: 'RECOVERY_WATCH', at: FIXTURE_WATCH_AT, reason: 'admitted' },
+    { concurrentWatchCount: 0 },
+  );
+  database
+    .prepare(
+      `INSERT INTO rw0_episodes (
+        episode_id, mint, pair_address, dip_observed_at, signal_version, signal_fingerprint,
+        watcher_spec_version, watcher_spec_fingerprint, shadow_paper_spec_version, shadow_paper_fingerprint,
+        exit_spec_version, exit_fingerprint, state, track, safety_incomplete, completeness_gate,
+        holder_status, bundle_status, creator_status, cost_model, execution_model,
+        dip_price_usd, dip_liquidity_usd, dip_volume_5m_usd, dip_price_change_5m_pct, dip_volume_to_liquidity_5m,
+        recovery_confirmed_at, recovery_confirmation_price_usd, recovery_confirmation_liquidity_usd,
+        recovery_confirmation_volume_5m_usd, recovery_confirmation_volume_to_liquidity_5m,
+        watch_started_at, last_transition_event_id, last_from_state, safety_completed_at,
+        shadow_entry_at, shadow_entry_price_usd, safe_entry_at, safe_entry_price_usd,
+        safe_entry_observation_collected_at, closed_at, close_price_usd, close_reason,
+        close_observation_collected_at, cooldown_until, created_at, updated_at
+      ) VALUES (${Array.from({ length: 47 }, () => '?').join(',')})`,
+    )
+    .run(
+      watch.episodeId,
+      watch.mint,
+      watch.pairAddress,
+      watch.dipObservedAt,
+      watch.signalVersion,
+      watch.signalFingerprint,
+      watch.watcherSpecVersion,
+      watch.watcherSpecFingerprint,
+      watch.shadowPaperSpecVersion,
+      watch.shadowPaperFingerprint,
+      watch.exitSpecVersion,
+      watch.exitFingerprint,
+      watch.state,
+      watch.track,
+      watch.safetyIncomplete ? 1 : 0,
+      watch.completenessGate,
+      watch.holderStatus,
+      watch.bundleStatus,
+      watch.creatorStatus,
+      watch.costModel,
+      watch.executionModel,
+      watch.dipPriceUsd,
+      watch.dipLiquidityUsd,
+      watch.dipVolume5mUsd,
+      watch.dipPriceChange5mPct,
+      watch.dipVolumeToLiquidity5m,
+      watch.recoveryConfirmedAt,
+      watch.recoveryConfirmationPriceUsd,
+      watch.recoveryConfirmationLiquidityUsd,
+      watch.recoveryConfirmationVolume5mUsd,
+      watch.recoveryConfirmationVolumeToLiquidity5m,
+      watch.watchStartedAt,
+      watch.lastTransitionEventId,
+      watch.lastFromState,
+      watch.safetyCompletedAt,
+      watch.shadowEntryAt,
+      watch.shadowEntryPriceUsd,
+      watch.safeEntryAt,
+      watch.safeEntryPriceUsd,
+      watch.safeEntryObservationCollectedAt,
+      watch.closedAt,
+      watch.closePriceUsd,
+      watch.closeReason,
+      watch.closeObservationCollectedAt,
+      watch.cooldownUntil,
+      watch.createdAt,
+      watch.updatedAt,
+    );
+  const transitions = [
+    {
+      fromState: null,
+      toState: 'DISCOVERED',
+      at: discovered.createdAt,
+      reason: 'episode_created',
+      eventId: discovered.lastTransitionEventId,
+    },
+    {
+      fromState: 'DISCOVERED',
+      toState: 'DIP_CANDIDATE',
+      at: dipCandidate.updatedAt,
+      reason: 'filters_pass',
+      eventId: dipCandidate.lastTransitionEventId,
+    },
+    {
+      fromState: 'DIP_CANDIDATE',
+      toState: 'RECOVERY_WATCH',
+      at: watch.updatedAt,
+      reason: 'admitted',
+      eventId: watch.lastTransitionEventId,
+    },
+  ];
+  const transitionStatement = database.prepare(
+    `INSERT INTO rw0_state_transitions
+      (episode_id, from_state, to_state, at, reason, event_id) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const transition of transitions) {
+    transitionStatement.run(
+      watch.episodeId,
+      transition.fromState,
+      transition.toState,
+      transition.at,
+      transition.reason,
+      transition.eventId,
+    );
+  }
+  database
+    .prepare(
+      `INSERT INTO rw0_market_observations (
+        episode_id, mint, pair_address, collected_at, provider, source, price_usd, liquidity_usd,
+        volume_5m_usd, price_change_5m_pct, signal_version, signal_fingerprint,
+        watcher_spec_version, watcher_spec_fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      watch.episodeId,
+      watch.mint,
+      watch.pairAddress,
+      FIXTURE_CONFIRM_AT,
+      'fixture',
+      'pre_migration_v1',
+      1.2,
+      10_000,
+      15_000,
+      -20,
+      watch.signalVersion,
+      watch.signalFingerprint,
+      watch.watcherSpecVersion,
+      watch.watcherSpecFingerprint,
+    );
+  return { discovered, dipCandidate, watch };
+}
+
 describe('recovery watcher slice 2 repair', () => {
+  it('upgrades and safely drains exact frozen rw0_v1 evidence without accepting new legacy writes', async () => {
+    const path = tempRecoveryDatabasePath();
+    const database = openRecoverySqlite(path, {
+      configuredProductionPath: DEFAULT_DATABASE_PATH,
+    });
+    database.exec(`
+CREATE TABLE rw0_schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  sql_digest TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+) STRICT;
+`);
+    database.exec(RW0_MIGRATIONS[0]?.sql ?? '');
+    database
+      .prepare(
+        'INSERT INTO rw0_schema_migrations (version, name, sql_digest, applied_at) VALUES (1, ?, ?, ?)',
+      )
+      .run('rw0_001_initial', recoveryMigrationSqlDigest(1), T0);
+    const legacy = insertLegacyEpisodeFixture(database);
+    insertRawScreening(database, {
+      mint: legacy.watch.mint,
+      pairAddress: legacy.watch.pairAddress,
+      screenedAt: FIXTURE_DIP_AT,
+      priceChange5mPct: -50,
+      dipFilterResult: 'PASS',
+      disposition: 'DIP_PASS',
+      reason: 'recovery_v0 dip filter passed',
+      watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+      watcherSpecFingerprint: RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
+    });
+
+    expect(applyRecoveryMigrations(database)).toBe(2);
+    expect(loadEpisode(database, legacy.watch.episodeId)).toEqual(legacy.watch);
+    expect(listTransitions(database, legacy.watch.episodeId)).toEqual([
+      {
+        fromState: null,
+        toState: 'DISCOVERED',
+        at: legacy.discovered.createdAt,
+        reason: 'episode_created',
+        eventId: legacy.discovered.lastTransitionEventId,
+      },
+      {
+        fromState: 'DISCOVERED',
+        toState: 'DIP_CANDIDATE',
+        at: legacy.dipCandidate.updatedAt,
+        reason: 'filters_pass',
+        eventId: legacy.dipCandidate.lastTransitionEventId,
+      },
+      {
+        fromState: 'DIP_CANDIDATE',
+        toState: 'RECOVERY_WATCH',
+        at: legacy.watch.updatedAt,
+        reason: 'admitted',
+        eventId: legacy.watch.lastTransitionEventId,
+      },
+    ]);
+    expect(listMarketObservations(database, legacy.watch.episodeId)).toEqual([
+      {
+        episodeId: legacy.watch.episodeId,
+        mint: legacy.watch.mint,
+        pairAddress: legacy.watch.pairAddress,
+        collectedAt: FIXTURE_CONFIRM_AT,
+        provider: 'fixture',
+        source: 'pre_migration_v1',
+        priceUsd: 1.2,
+        liquidityUsd: 10_000,
+        volume5mUsd: 15_000,
+        priceChange5mPct: -20,
+        signalVersion: legacy.watch.signalVersion,
+        signalFingerprint: legacy.watch.signalFingerprint,
+        watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+        watcherSpecFingerprint: RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
+      },
+    ]);
+    const legacyRows = listScreeningObservations(database);
+    expect(legacyRows).toHaveLength(1);
+    expect(legacyRows[0]?.watcherSpecVersion).toBe(RW0_LEGACY_SPEC_VERSION);
+    const upgradedReport = loadRecoveryReportSnapshot(database);
+    expect(upgradedReport.screeningCount).toBe(1);
+    expect(upgradedReport.activeWatchCount).toBe(1);
+    expect(upgradedReport.firstObservationAt).toBe(FIXTURE_DIP_AT);
+    expect(upgradedReport.lastObservationAt).toBe(FIXTURE_CONFIRM_AT);
+
+    persistTransition(
+      database,
+      legacy.watch.episodeId,
+      {
+        to: 'SIGNAL_PENDING_SAFETY',
+        at: FIXTURE_CONFIRM_AT,
+        reason: 'legacy_recovery_confirmed',
+        recoveryConfirmedAt: FIXTURE_CONFIRM_AT,
+      },
+      { now: FIXTURE_NOW },
+    );
+    const pendingLegacy = loadEpisode(database, legacy.watch.episodeId);
+    if (pendingLegacy === null) throw new Error('legacy fixture disappeared');
+    const legacyBoundSafety = canonicalizeSafetyEvidence(
+      {
+        episodeId: pendingLegacy.episodeId,
+        mint: pendingLegacy.mint,
+        pairAddress: pendingLegacy.pairAddress,
+        confirmationObservedAt: pendingLegacy.recoveryConfirmedAt ?? '',
+        confirmationEventId: pendingLegacy.lastTransitionEventId,
+        kind: 'token_rights',
+        observedAt: '2026-08-19T11:06:00.000Z',
+        collectedAt: '2026-08-19T11:06:00.000Z',
+        provider: null,
+        provenance: 'hostile legacy-bound write',
+        signalVersion: pendingLegacy.signalVersion,
+        signalFingerprint: pendingLegacy.signalFingerprint,
+        watcherSpecVersion: pendingLegacy.watcherSpecVersion,
+        watcherSpecFingerprint: pendingLegacy.watcherSpecFingerprint,
+        safetySpecVersion: RW0_SAFETY_SPEC_VERSION,
+        safetySpecFingerprint: RW0_SAFETY_SPEC_FINGERPRINT,
+        payload: {
+          kind: 'token_rights',
+          tokenProgram: 'unsupported',
+          mintAuthority: null,
+          freezeAuthority: null,
+          extensions: [],
+          factsComplete: false,
+        },
+      },
+      FIXTURE_NOW,
+    );
+    expect(() =>
+      persistSafetyEvidence(database, legacyBoundSafety, { now: FIXTURE_NOW }),
+    ).toThrow(/cannot bind to a legacy episode/);
+
+    await runRecoveryCycle({
+      database,
+      config: testConfig(),
+      clock: { now: () => new Date(T0) },
+      ...idleProviders(),
+    });
+    expect(listEpisodesByMint(database, legacy.watch.mint)[0]?.state).toBe(
+      'REJECTED_SAFETY_UNKNOWN',
+    );
+    const legacyReport = loadRecoveryReportSnapshot(database);
+    expect(legacyReport.rejectedSafetyUnknownCount).toBe(1);
+    expect(legacyReport.safetyEvidenceCounts.token_rights.UNKNOWN).toBe(0);
+
+    const currentEpisode = persistCreatedEpisode(
+      database,
+      discoveredEpisodeInput({ mint: mintAt(41), pairAddress: pairAt(41) }),
+      { now: FIXTURE_NOW },
+    );
+    expect(currentEpisode.watcherSpecVersion).toBe(RW0_SPEC_VERSION);
+    expect(currentEpisode.watcherSpecFingerprint).toBe(RW0_WATCHER_DEFINITION_FINGERPRINT);
+
+    const rejectedLegacyWrite = createScreeningObservation({
+      mint: mintAt(42),
+      screenedAt: T1,
+      discoverySources: 'dexscreener_profile',
+      disposition: 'NOT_DIP',
+      dipFilterResult: 'NOT_DIP',
+      reason: 'legacy write must be rejected',
+      pairAddress: pairAt(42),
+      priceUsd: 1,
+      liquidityUsd: 8_000,
+      volume5mUsd: 5_000,
+      priceChange5mPct: -10,
+    });
+    const legacyFingerprint = RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT;
+    expect(() =>
+      persistScreeningObservation(
+        database,
+        {
+          ...rejectedLegacyWrite,
+          screeningId: recoveryScreeningId({
+            mint: rejectedLegacyWrite.mint,
+            screenedAt: rejectedLegacyWrite.screenedAt,
+            signalFingerprint: rejectedLegacyWrite.signalFingerprint,
+            watcherSpecFingerprint: legacyFingerprint,
+          }),
+          watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+          watcherSpecFingerprint: legacyFingerprint,
+        },
+        { now: new Date(T1) },
+      ),
+    ).toThrow(/must use the current frozen watcher identity/);
+
+    const currentScreening = createScreeningObservation({
+      mint: mintAt(43),
+      screenedAt: T1,
+      discoverySources: 'dexscreener_profile',
+      disposition: 'NOT_DIP',
+      dipFilterResult: 'NOT_DIP',
+      reason: 'current write',
+      pairAddress: pairAt(43),
+      priceUsd: 1,
+      liquidityUsd: 8_000,
+      volume5mUsd: 5_000,
+      priceChange5mPct: -10,
+    });
+    persistScreeningObservation(database, currentScreening, { now: new Date(T1) });
+    expect(
+      listScreeningObservations(database).find(
+        (row) => row.screeningId === currentScreening.screeningId,
+      )?.watcherSpecVersion,
+    ).toBe(RW0_SPEC_VERSION);
+
+    database
+      .prepare(
+        'UPDATE rw0_screening_observations SET watcher_spec_fingerprint = ? WHERE watcher_spec_version = ?',
+      )
+      .run('00'.repeat(32), RW0_LEGACY_SPEC_VERSION);
+    expect(() => listScreeningObservations(database)).toThrow(/frozen supported definition/);
+    database.close();
+  });
+
   it('polls 10 slow watches with bounded concurrency instead of serial 10x delay', async () => {
     const database = openInitializedRecoveryDatabase();
     for (let index = 1; index <= 10; index += 1) {
@@ -284,7 +702,8 @@ describe('recovery watcher slice 2 repair', () => {
       clock: { now: () => new Date(T0) },
       profileFeed: {
         source: 'dexscreener_profile',
-        fetchRecords: () => Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
+        fetchRecords: () =>
+          Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
       },
       boostFeed: { source: 'dexscreener_boost', fetchRecords: () => Promise.resolve([]) },
       screeningMarket: {
@@ -325,7 +744,8 @@ describe('recovery watcher slice 2 repair', () => {
       providers: {
         profileFeed: {
           source: 'dexscreener_profile',
-          fetchRecords: () => Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
+          fetchRecords: () =>
+            Promise.resolve(mints.map((mint) => sourceRecord(mint, 'dexscreener_profile'))),
         },
         boostFeed: { source: 'dexscreener_boost', fetchRecords: () => Promise.resolve([]) },
         screeningMarket: {
@@ -473,7 +893,9 @@ describe('recovery watcher slice 2 repair', () => {
         exactPairMarket: { getSnapshotForPair: () => Promise.resolve(confirmSnapshot()) },
       }),
     ).rejects.toBeInstanceOf(TypeError);
-    expect(listScreeningObservations(fatal).every((row) => row.disposition !== 'MARKET_UNAVAILABLE')).toBe(true);
+    expect(
+      listScreeningObservations(fatal).every((row) => row.disposition !== 'MARKET_UNAVAILABLE'),
+    ).toBe(true);
   });
 
   it('fails the runtime when a provider throws TypeError instead of counting it as provider_unavailable', async () => {
@@ -515,7 +937,11 @@ describe('recovery watcher slice 2 repair', () => {
         () => {
           persistAdmittedDipWatch(
             database,
-            { ...validAdmissionInput(), mint: mintAt(3), screening: { ...validAdmissionInput().screening, mint: mintAt(3) } },
+            {
+              ...validAdmissionInput(),
+              mint: mintAt(3),
+              screening: { ...validAdmissionInput().screening, mint: mintAt(3) },
+            },
             { now: new Date(T0) },
           );
         },
@@ -594,7 +1020,11 @@ describe('recovery watcher slice 2 repair', () => {
             database,
             {
               mint: snapshot.tokenMint,
-              observation: snapshotToMarketObservation(snapshot, 'pending', RW0_SCREENING_MARKET_SOURCE),
+              observation: snapshotToMarketObservation(
+                snapshot,
+                'pending',
+                RW0_SCREENING_MARKET_SOURCE,
+              ),
               screening: screeningFromSnapshot(snapshot, 'dexscreener_profile', {
                 disposition: 'DIP_PASS',
                 dipFilterResult: 'PASS',
@@ -718,7 +1148,7 @@ describe('recovery watcher slice 2 repair', () => {
         -10,
         'recovery_v0',
         fakeSignal,
-        'rw0_v1',
+        'rw0_v3',
         fakeWatcher,
         'NOT_DIP',
         'NOT_DIP',
@@ -748,29 +1178,49 @@ describe('recovery watcher slice 2 repair', () => {
       priceChange5mPct: -10,
     };
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, liquidityUsd: Number.NaN }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, liquidityUsd: Number.NaN }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, volume5mUsd: Number.POSITIVE_INFINITY }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, volume5mUsd: Number.POSITIVE_INFINITY }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, liquidityUsd: -1 }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, liquidityUsd: -1 }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, volume5mUsd: -5 }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, volume5mUsd: -5 }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite number >= 0/);
     expect(() =>
-      persistScreeningObservation(database, createScreeningObservation({ ...base, priceUsd: Number.POSITIVE_INFINITY }), {
-        now: new Date(T0),
-      }),
+      persistScreeningObservation(
+        database,
+        createScreeningObservation({ ...base, priceUsd: Number.POSITIVE_INFINITY }),
+        {
+          now: new Date(T0),
+        },
+      ),
     ).toThrow(/finite price > 0/);
     expect(() =>
       persistScreeningObservation(
@@ -812,8 +1262,12 @@ describe('recovery watcher slice 2 repair', () => {
       priceChange5mPct: -10,
       reason: 'forged persisted PASS',
     });
-    expect(() => listScreeningObservations(forgedPass)).toThrow(/dip_filter_result=PASS must recompute/);
-    expect(() => loadRecoveryReportSnapshot(forgedPass)).toThrow(/dip_filter_result=PASS must recompute/);
+    expect(() => listScreeningObservations(forgedPass)).toThrow(
+      /dip_filter_result=PASS must recompute/,
+    );
+    expect(() => loadRecoveryReportSnapshot(forgedPass)).toThrow(
+      /dip_filter_result=PASS must recompute/,
+    );
 
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
@@ -874,7 +1328,9 @@ describe('recovery watcher slice 2 repair', () => {
     expect(after.size).toBe(before.size);
     expect(after.mtimeMs).toBe(before.mtimeMs);
 
-    const reportDb = openRecoverySqliteReadOnly(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+    const reportDb = openRecoverySqliteReadOnly(path, {
+      configuredProductionPath: DEFAULT_DATABASE_PATH,
+    });
     expect(() => {
       reportDb.exec("UPDATE rw0_screening_observations SET reason = 'tamper'");
     }).toThrow();
@@ -929,7 +1385,10 @@ describe('recovery watcher slice 2 repair', () => {
     const snapshot = loadRecoveryReportSnapshot(database);
     expect(snapshot.firstObservationAt).toBe('2026-08-19T11:00:00.000Z');
     expect(snapshot.lastObservationAt).toBe('2026-08-19T13:00:00.000Z');
-    const market = listMarketObservations(database, listEpisodesByMint(database, FIXTURE_MINT)[0]?.episodeId ?? '');
+    const market = listMarketObservations(
+      database,
+      listEpisodesByMint(database, FIXTURE_MINT)[0]?.episodeId ?? '',
+    );
     expect(market[0]?.collectedAt).toBe(T0);
     expect(snapshot.firstObservationAt).not.toBe(T0);
     expect(snapshot.lastObservationAt).not.toBe(T0);
@@ -976,7 +1435,8 @@ describe('recovery watcher slice 2 repair', () => {
           },
           profileFeed: {
             source: 'dexscreener_profile',
-            fetchRecords: () => Promise.resolve([sourceRecord(FIXTURE_MINT, 'dexscreener_profile')]),
+            fetchRecords: () =>
+              Promise.resolve([sourceRecord(FIXTURE_MINT, 'dexscreener_profile')]),
           },
         },
       }),
@@ -1010,9 +1470,13 @@ describe('recovery watcher slice 2 repair', () => {
       screeningMarket: { getSnapshot: () => Promise.resolve(dipSnapshot()) },
       exactPairMarket: { getSnapshotForPair: () => Promise.resolve(dipSnapshot()) },
     });
-    const discoveryRows = listScreeningObservations(database).filter((row) => row.disposition === 'ALREADY_ACTIVE');
+    const discoveryRows = listScreeningObservations(database).filter(
+      (row) => row.disposition === 'ALREADY_ACTIVE',
+    );
     expect(discoveryRows).toHaveLength(1);
-    expect(Date.parse(discoveryRows[0]?.screenedAt ?? '')).toBeGreaterThanOrEqual(Date.parse(T0) + 5_000);
+    expect(Date.parse(discoveryRows[0]?.screenedAt ?? '')).toBeGreaterThanOrEqual(
+      Date.parse(T0) + 5_000,
+    );
     expect(discoveryRows[0]?.screenedAt).not.toBe(T0);
   });
 });

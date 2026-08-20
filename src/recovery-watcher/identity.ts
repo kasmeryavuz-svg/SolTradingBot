@@ -3,6 +3,8 @@ import {
   RW0_COST_MODEL,
   RW0_EXECUTION_MODEL,
   RW0_EXIT_SPEC_VERSION,
+  RW0_LEGACY_SPEC_VERSION,
+  RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
   RW0_SHADOW_PAPER_SPEC_VERSION,
   RW0_SPEC_VERSION,
   RECOVERY_V0_SIGNAL_VERSION,
@@ -18,6 +20,7 @@ import {
   type CanonicalRw0ShadowPaper,
 } from './definition.js';
 import { RecoveryWatcherError } from './errors.js';
+export { RW0_SAFETY_SPEC_FINGERPRINT } from './safety.js';
 import type {
   CompletenessGate,
   RecoveryCostModel,
@@ -57,6 +60,26 @@ export const RECOVERY_V0_SIGNAL_FINGERPRINT = fingerprintRecoveryV0Signal();
 export const RW0_SHADOW_PAPER_FINGERPRINT = fingerprintRw0ShadowPaper();
 export const RW0_EXIT_FINGERPRINT = fingerprintRw0Exit();
 export const RW0_WATCHER_DEFINITION_FINGERPRINT = fingerprintRecoveryWatcherDefinition();
+
+export function isFrozenLegacyRw0WatcherIdentity(input: {
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): boolean {
+  return (
+    input.watcherSpecVersion === RW0_LEGACY_SPEC_VERSION &&
+    input.watcherSpecFingerprint === RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT
+  );
+}
+
+export function isCurrentRw0WatcherIdentity(input: {
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): boolean {
+  return (
+    input.watcherSpecVersion === RW0_SPEC_VERSION &&
+    input.watcherSpecFingerprint === RW0_WATCHER_DEFINITION_FINGERPRINT
+  );
+}
 
 export function recoveryEpisodeId(input: {
   mint: string;
@@ -127,7 +150,8 @@ export function transitionRequestPayload(request: {
     recoveryConfirmationPriceUsd: request.recoveryConfirmationPriceUsd ?? null,
     recoveryConfirmationLiquidityUsd: request.recoveryConfirmationLiquidityUsd ?? null,
     recoveryConfirmationVolume5mUsd: request.recoveryConfirmationVolume5mUsd ?? null,
-    recoveryConfirmationVolumeToLiquidity5m: request.recoveryConfirmationVolumeToLiquidity5m ?? null,
+    recoveryConfirmationVolumeToLiquidity5m:
+      request.recoveryConfirmationVolumeToLiquidity5m ?? null,
     observationPairAddress: request.observationPairAddress ?? null,
     safetyCompletedAt: request.safetyCompletedAt ?? null,
     holderStatus: request.holderStatus ?? null,
@@ -168,7 +192,7 @@ export function assertPersistedRw0Identity(input: {
 }): void {
   if (input.state === 'PAPER_ELIGIBLE' || input.state === 'PAPER_OPEN') {
     throw new RecoveryWatcherError(
-      'Persisted PAPER_ELIGIBLE/PAPER_OPEN is unreachable in rw0_v1. Definition mismatch.',
+      'Persisted PAPER_ELIGIBLE/PAPER_OPEN is unreachable in the safety-evidence-only watcher. Definition mismatch.',
       { code: 'definition_mismatch' },
     );
   }
@@ -180,7 +204,7 @@ export function assertPersistedRw0Identity(input: {
   }
   if (input.completenessGate === 'PASS') {
     throw new RecoveryWatcherError(
-      'Persisted completeness_gate PASS is unreachable in rw0_v1. Definition mismatch.',
+      'Persisted completeness_gate PASS is unreachable in the safety-evidence-only watcher. Definition mismatch.',
       { code: 'definition_mismatch' },
     );
   }
@@ -190,13 +214,21 @@ export function assertPersistedRw0Identity(input: {
       { code: 'definition_mismatch' },
     );
   }
-  if (input.holderStatus !== 'UNKNOWN' || input.bundleStatus !== 'UNKNOWN' || input.creatorStatus !== 'UNKNOWN') {
+  if (
+    input.holderStatus !== 'UNKNOWN' ||
+    input.bundleStatus !== 'UNKNOWN' ||
+    input.creatorStatus !== 'UNKNOWN'
+  ) {
     throw new RecoveryWatcherError(
-      'Persisted holder/bundle/creator status must remain UNKNOWN in rw0_v1. Definition mismatch.',
+      'Episode summary safety columns must remain UNKNOWN; decisions are reduced from canonical persisted evidence.',
       { code: 'definition_mismatch' },
     );
   }
-  if (input.safeEntryAt !== null || input.safeEntryPriceUsd !== null || input.safeEntryObservationCollectedAt !== null) {
+  if (
+    input.safeEntryAt !== null ||
+    input.safeEntryPriceUsd !== null ||
+    input.safeEntryObservationCollectedAt !== null
+  ) {
     throw new RecoveryWatcherError(
       'Persisted safe_entry fields must remain NULL in rw0_v1. Definition mismatch.',
       { code: 'definition_mismatch' },
@@ -240,24 +272,30 @@ export function assertPersistedRw0Identity(input: {
       { code: 'definition_mismatch' },
     );
   }
-  if (input.track === 'shadow' && (input.shadowEntryAt === null || input.shadowEntryPriceUsd === null)) {
-    throw new RecoveryWatcherError(
-      'Persisted shadow track requires shadow entry evidence.',
-      { code: 'definition_mismatch' },
-    );
-  }
-  if (input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION || input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT) {
-    throw new RecoveryWatcherError('Persisted recovery signal identity does not match rw0_v1.', {
+  if (
+    input.track === 'shadow' &&
+    (input.shadowEntryAt === null || input.shadowEntryPriceUsd === null)
+  ) {
+    throw new RecoveryWatcherError('Persisted shadow track requires shadow entry evidence.', {
       code: 'definition_mismatch',
     });
   }
   if (
-    input.watcherSpecVersion !== RW0_SPEC_VERSION ||
-    input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
+    input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION ||
+    input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT
   ) {
-    throw new RecoveryWatcherError('Persisted recovery watcher identity does not match rw0_v1.', {
-      code: 'definition_mismatch',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted recovery signal identity does not match the frozen watcher signal.',
+      {
+        code: 'definition_mismatch',
+      },
+    );
+  }
+  if (!isCurrentRw0WatcherIdentity(input) && !isFrozenLegacyRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'Persisted recovery watcher identity does not match a frozen supported definition.',
+      { code: 'definition_mismatch' },
+    );
   }
   if (
     input.shadowPaperSpecVersion !== RW0_SHADOW_PAPER_SPEC_VERSION ||
@@ -267,7 +305,10 @@ export function assertPersistedRw0Identity(input: {
       code: 'definition_mismatch',
     });
   }
-  if (input.exitSpecVersion !== RW0_EXIT_SPEC_VERSION || input.exitFingerprint !== RW0_EXIT_FINGERPRINT) {
+  if (
+    input.exitSpecVersion !== RW0_EXIT_SPEC_VERSION ||
+    input.exitFingerprint !== RW0_EXIT_FINGERPRINT
+  ) {
     throw new RecoveryWatcherError('Persisted exit spec identity does not match rw0_v1.', {
       code: 'definition_mismatch',
     });
@@ -278,9 +319,12 @@ export function assertPersistedRw0Identity(input: {
     });
   }
   if (input.executionModel !== RW0_EXECUTION_MODEL) {
-    throw new RecoveryWatcherError('Persisted execution_model does not match rw0_v1 discrete observed price.', {
-      code: 'definition_mismatch',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted execution_model does not match rw0_v1 discrete observed price.',
+      {
+        code: 'definition_mismatch',
+      },
+    );
   }
 }
 
@@ -290,18 +334,41 @@ export function assertFrozenScreeningIdentity(input: {
   watcherSpecVersion: string;
   watcherSpecFingerprint: string;
 }): void {
-  if (input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION || input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT) {
+  if (
+    input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION ||
+    input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT
+  ) {
     throw new RecoveryWatcherError('Screening signal identity does not match frozen recovery_v0.', {
       code: 'definition_mismatch',
     });
   }
+  if (!isCurrentRw0WatcherIdentity(input) && !isFrozenLegacyRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'Screening watcher identity does not match a frozen supported definition.',
+      { code: 'definition_mismatch' },
+    );
+  }
+}
+
+export function assertCurrentScreeningIdentity(input: {
+  signalVersion: string;
+  signalFingerprint: string;
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): void {
   if (
-    input.watcherSpecVersion !== RW0_SPEC_VERSION ||
-    input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
+    input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION ||
+    input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT
   ) {
-    throw new RecoveryWatcherError('Screening watcher identity does not match frozen rw0_v1.', {
+    throw new RecoveryWatcherError('Screening signal identity does not match frozen recovery_v0.', {
       code: 'definition_mismatch',
     });
+  }
+  if (!isCurrentRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'New screening evidence must use the current frozen watcher identity.',
+      { code: 'definition_mismatch' },
+    );
   }
 }
 
@@ -316,9 +383,12 @@ export function asRecoveryCostModel(value: string): RecoveryCostModel {
 
 export function asRecoveryExecutionModel(value: string): RecoveryExecutionModel {
   if (value !== RW0_EXECUTION_MODEL) {
-    throw new RecoveryWatcherError('Persisted execution_model does not match rw0_v1 discrete observed price.', {
-      code: 'definition_mismatch',
-    });
+    throw new RecoveryWatcherError(
+      'Persisted execution_model does not match rw0_v1 discrete observed price.',
+      {
+        code: 'definition_mismatch',
+      },
+    );
   }
   return value;
 }
