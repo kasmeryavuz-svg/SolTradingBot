@@ -208,13 +208,10 @@ export function canonicalizeSafetyEvidence(
 }
 
 function evaluateTokenRights(payload: TokenRightsSafetyPayload) {
-  if (payload.tokenProgram === 'unsupported') {
-    return result('UNKNOWN', 'unsupported token program');
-  }
   const dangerous: string[] = [];
   if (payload.mintAuthority !== null) dangerous.push('active mint authority');
   if (payload.freezeAuthority !== null) dangerous.push('active freeze authority');
-  let unsupported = !payload.factsComplete;
+  let unsupported = payload.tokenProgram === 'unsupported' || !payload.factsComplete;
   for (const extension of payload.extensions) {
     if (!extension.parsed || !extension.classified) unsupported = true;
     if (isPermanentDelegateActive(extension)) dangerous.push('active permanent delegate');

@@ -205,7 +205,7 @@ The SHA-256 fingerprint covers the rules below. Every evidence row binds episode
 
 ### Token rights
 
-Slice 3A reuses Checkpoint 05 factual extension classifiers. Active mint/freeze/delegate/pause/close authority, non-transferability, active transfer hook, frozen default account state, configured transfer fee, or paused capability is `FAIL`. Unsupported token programs and unparsed, unclassified, or incomplete facts are `UNKNOWN`. `PASS` requires a complete supported fact set with no dangerous or incompatible capability.
+Slice 3A reuses Checkpoint 05 factual extension classifiers. Active mint/freeze/delegate/pause/close authority, non-transferability, active transfer hook, frozen default account state, configured transfer fee, or paused capability is `FAIL`. Known danger takes precedence even when the token program is unsupported or the fact set is incomplete. Unsupported token programs and unparsed, unclassified, or incomplete facts with no known danger are `UNKNOWN`. `PASS` requires a complete supported fact set with no dangerous or incompatible capability.
 
 ### Holder concentration
 
@@ -246,7 +246,7 @@ The generic in-memory and persisted transition APIs reject both safety-rejection
 
 Market observations: exact duplicate (episode + pair + collected instant + identical semantic payload) is idempotent. Same identity/timestamp with conflicting price/liquidity/volume/source/fingerprint fails closed. Provider and source must be non-empty after trim.
 
-Token-rights, holder, bundle, and creator evidence in `rw0_v3` is hydrated through the canonical `rw0_safety_v2` evaluator. Exact duplicate evidence is idempotent; the same episode/kind/observed instant with a conflicting payload fails closed. Direct-SQL payload/status/identity/future-time tampering is rejected during hydration, report, and decision.
+Token-rights, holder, bundle, and creator evidence in `rw0_v3` is hydrated through the canonical `rw0_safety_v2` evaluator. New safety evidence requires the current watcher identity on both the evidence and its episode; no `rw0_safety_v2` row can bind to a legacy `rw0_v1` episode. Exact duplicate evidence is idempotent; the same episode/kind/observed instant with a conflicting payload fails closed. Direct-SQL payload/status/identity/future-time tampering is rejected during hydration, report, and decision.
 
 Every stored observation keeps mint, pair, timestamps, provider/source, signal version/fingerprint, watcher spec/fingerprint, and observed economics when known. Safety status is recomputed from the persisted payload; `UNKNOWN` never becomes `PASS` from absence of evidence.
 
@@ -266,7 +266,7 @@ Frozen screening dispositions: `DIP_PASS`, `NOT_DIP`, `INCOMPLETE`, `MARKET_UNAV
 
 Exact duplicate screening identity (`mint + screenedAt + signalFingerprint + watcherSpecFingerprint`) with the same payload is idempotent. The same identity with a conflicting payload fails closed.
 
-Screening rows must match the current frozen `recovery_v0` / `rw0_v3` versions **and** fingerprints. Mixed-definition screening evidence fails closed on insert, hydration, and report.
+New screening rows must match the current frozen `recovery_v0` / `rw0_v3` versions **and** fingerprints. Hydration/reporting also accepts only the exact published `rw0_v1` version/fingerprint pair for immutable legacy rows; mixed or forged identity pairs fail closed.
 
 Admission (`persistAdmittedDipWatch`) binds screening and market observation as the **same** observed event inside `BEGIN IMMEDIATE`: same mint, pair, UTC instant, price, liquidity, 5m volume, 5m change, frozen identities, operational `DIP_PASS`, and a **recomputed** `recovery_v0` dip filter pass from the raw economics. A caller cannot admit a non-dip by labeling it `DIP_PASS`.
 

@@ -22,6 +22,7 @@ import {
   assertCurrentScreeningIdentity,
   assertFrozenScreeningIdentity,
   assertPersistedRw0Identity,
+  isCurrentRw0WatcherIdentity,
   recoveryEpisodeId,
   recoveryScreeningId,
 } from './identity.js';
@@ -1943,6 +1944,12 @@ function assertSafetyEvidenceBinding(
   episode: RecoveryEpisode,
   evidence: SafetyEvidenceRecord,
 ): void {
+  if (!isCurrentRw0WatcherIdentity(episode) || !isCurrentRw0WatcherIdentity(evidence)) {
+    throw new RecoveryWatcherError(
+      'New safety evidence must use the current watcher identity and cannot bind to a legacy episode.',
+      { code: 'definition_mismatch' },
+    );
+  }
   if (episode.recoveryConfirmedAt === null) {
     throw new RecoveryWatcherError('Safety evidence requires a confirmed recovery episode.', {
       code: 'evidence_invalid',

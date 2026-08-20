@@ -305,6 +305,26 @@ describe('recovery watcher Slice 3A safety evidence', () => {
       evaluateSafetyPayload({
         kind: 'token_rights',
         tokenProgram: 'unsupported',
+        mintAuthority: OWNER_A,
+        freezeAuthority: null,
+        extensions: [],
+        factsComplete: false,
+      }).status,
+    ).toBe('FAIL');
+    expect(
+      evaluateSafetyPayload({
+        kind: 'token_rights',
+        tokenProgram: 'unsupported',
+        mintAuthority: null,
+        freezeAuthority: OWNER_A,
+        extensions: [],
+        factsComplete: false,
+      }).status,
+    ).toBe('FAIL');
+    expect(
+      evaluateSafetyPayload({
+        kind: 'token_rights',
+        tokenProgram: 'unsupported',
         mintAuthority: null,
         freezeAuthority: null,
         extensions: [],
