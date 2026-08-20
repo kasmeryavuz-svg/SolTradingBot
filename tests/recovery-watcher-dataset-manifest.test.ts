@@ -38,14 +38,21 @@ import {
 import {
   listScreeningObservations,
   loadRecoveryReportSnapshot,
+  persistCreatedEpisode,
   persistScreeningObservation,
+  persistTransition,
 } from '../src/recovery-watcher/persistence.js';
 import { runRecoveryWatcher } from '../src/recovery-watcher/runtime.js';
 import type {
+  CreateEpisodeInput,
   RecoveryWatcherConfig,
   ScreeningObservationRecord,
 } from '../src/recovery-watcher/types.js';
-import { tempRecoveryDatabasePath } from './recovery-watcher-fixtures.js';
+import {
+  FIXTURE_PAIR,
+  passingDipFields,
+  tempRecoveryDatabasePath,
+} from './recovery-watcher-fixtures.js';
 
 const open: DatabaseSync[] = [];
 const BASE = {
@@ -346,7 +353,118 @@ describe('Recovery Watcher retained forward-evidence manifest', () => {
     ).rejects.toThrow(/before the dataset manifest start_at/);
     expect(providerFactoryCalled).toBe(false);
   });
+
+  it('rejects an episode with pre-start dip evidence and rolls back the episode and binding', () => {
+    const db = database();
+    const manifest = buildRecoveryDatasetManifest(BASE);
+    initializeRecoveryDatasetManifest(db, manifest);
+    activateRecoveryDatasetRuntime(db, manifest, new Date(BASE.startAt));
+    expect(() =>
+      persistCreatedEpisode(db, episodeInput('2026-08-20T08:59:59.999Z', BASE.startAt), {
+        now: new Date(BASE.startAt),
+      }),
+    ).toThrow();
+    expect(db.prepare('SELECT COUNT(*) AS count FROM rw0_episodes').get()?.['count']).toBe(0);
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM rw0_retained_evidence_bindings').get()?.['count'],
+    ).toBe(0);
+  });
+
+  it('rejects direct non-runtime mutation of a bound episode evidence field', () => {
+    const { database: runtime, path } = setupRetainedFile();
+    const created = persistCreatedEpisode(runtime, episodeInput(BASE.startAt, BASE.startAt), {
+      now: new Date(BASE.startAt),
+    });
+    const direct = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+    open.push(direct);
+    expect(() =>
+      direct
+        .prepare('UPDATE rw0_episodes SET dip_observed_at = ? WHERE episode_id = ?')
+        .run('2026-08-20T08:59:59.999Z', created.episodeId),
+    ).toThrow();
+  });
+
+  it('rejects direct non-runtime mutation of bound screening economics and disposition', () => {
+    const { database: runtime, path } = setupRetainedFile();
+    const row = currentScreening(BASE.startAt);
+    persistScreeningObservation(runtime, row, { now: new Date(BASE.startAt) });
+    const direct = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+    open.push(direct);
+    expect(() =>
+      direct
+        .prepare(
+          'UPDATE rw0_screening_observations SET price_usd = ?, disposition = ?, reason = ? WHERE screening_id = ?',
+        )
+        .run(999, 'NOT_DIP', 'forged direct update', row.screeningId),
+    ).toThrow();
+  });
+
+  it('fails hydration when a forged bound episode has another pre-start timestamp', () => {
+    const db = database();
+    const manifest = buildRecoveryDatasetManifest(BASE);
+    initializeRecoveryDatasetManifest(db, manifest);
+    activateRecoveryDatasetRuntime(db, manifest, new Date(BASE.startAt));
+    const created = persistCreatedEpisode(db, episodeInput(BASE.startAt, BASE.startAt), {
+      now: new Date(BASE.startAt),
+    });
+    const updateSql = requireSchemaSql(db, 'trigger', 'rw0_retained_update_episodes');
+    const identitySql = requireSchemaSql(db, 'trigger', 'rw0_retained_identity_episodes');
+    db.exec('DROP TRIGGER rw0_retained_update_episodes');
+    db.exec('DROP TRIGGER rw0_retained_identity_episodes');
+    db.prepare('UPDATE rw0_episodes SET dip_observed_at = ? WHERE episode_id = ?').run(
+      '2026-08-20T08:59:59.999Z',
+      created.episodeId,
+    );
+    db.exec(updateSql);
+    db.exec(identitySql);
+    expect(() => inspectRecoveryDatasetManifest(db, ':memory:')).toThrow(
+      /before manifest start_at/,
+    );
+  });
+
+  it('permits legitimate runtime episode transitions with the update capability guard', () => {
+    const db = database();
+    const manifest = buildRecoveryDatasetManifest(BASE);
+    initializeRecoveryDatasetManifest(db, manifest);
+    activateRecoveryDatasetRuntime(db, manifest, new Date(BASE.startAt));
+    const created = persistCreatedEpisode(db, episodeInput(BASE.startAt, BASE.startAt), {
+      now: new Date(BASE.startAt),
+    });
+    const at = '2026-08-20T09:00:01.000Z';
+    persistTransition(
+      db,
+      created.episodeId,
+      { to: 'DIP_CANDIDATE', at, reason: 'filters_pass' },
+      { now: new Date(at) },
+    );
+    expect(
+      loadRecoveryReportSnapshot(db, { now: new Date(at), databasePath: ':memory:' })
+        .screeningCount,
+    ).toBe(0);
+    expect(inspectRecoveryDatasetManifest(db, ':memory:').populated).toBe(true);
+  });
 });
+
+function setupRetainedFile(): { database: DatabaseSync; path: string } {
+  const path = tempRecoveryDatabasePath();
+  const database = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+  open.push(database);
+  initializeRecoveryDatabase(database);
+  const manifest = buildRecoveryDatasetManifest({ ...BASE, databasePath: path });
+  initializeRecoveryDatasetManifest(database, manifest);
+  activateRecoveryDatasetRuntime(database, manifest, new Date(BASE.startAt));
+  return { database, path };
+}
+
+function episodeInput(dipObservedAt: string, createdAt: string): CreateEpisodeInput {
+  return {
+    mint: 'So11111111111111111111111111111111111111112',
+    pairAddress: FIXTURE_PAIR,
+    dipObservedAt,
+    createdAt,
+    ...passingDipFields(),
+  };
+}
 
 function currentScreening(screenedAt: string): ScreeningObservationRecord {
   const mint = 'So11111111111111111111111111111111111111112';

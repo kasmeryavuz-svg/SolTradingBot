@@ -95,26 +95,77 @@ type RetainedTableBinding = {
   table: (typeof DATA_TABLES)[number];
   identityColumn: string;
   timestampColumn: string;
+  timestampColumns: readonly string[];
 };
 
 const RETAINED_TABLE_BINDINGS: readonly RetainedTableBinding[] = [
-  { table: 'rw0_episodes', identityColumn: 'episode_id', timestampColumn: 'created_at' },
-  { table: 'rw0_state_transitions', identityColumn: 'id', timestampColumn: 'at' },
-  { table: 'rw0_market_observations', identityColumn: 'id', timestampColumn: 'collected_at' },
-  { table: 'rw0_safety_evidence', identityColumn: 'id', timestampColumn: 'observed_at' },
-  { table: 'rw0_shadow_positions', identityColumn: 'id', timestampColumn: 'opened_at' },
-  { table: 'rw0_shadow_exit_observations', identityColumn: 'id', timestampColumn: 'observed_at' },
+  {
+    table: 'rw0_episodes',
+    identityColumn: 'episode_id',
+    timestampColumn: 'created_at',
+    timestampColumns: [
+      'dip_observed_at',
+      'created_at',
+      'updated_at',
+      'recovery_confirmed_at',
+      'watch_started_at',
+      'safety_completed_at',
+      'shadow_entry_at',
+      'safe_entry_at',
+      'safe_entry_observation_collected_at',
+      'closed_at',
+      'close_observation_collected_at',
+      'cooldown_until',
+    ],
+  },
+  {
+    table: 'rw0_state_transitions',
+    identityColumn: 'id',
+    timestampColumn: 'at',
+    timestampColumns: ['at'],
+  },
+  {
+    table: 'rw0_market_observations',
+    identityColumn: 'id',
+    timestampColumn: 'collected_at',
+    timestampColumns: ['collected_at'],
+  },
+  {
+    table: 'rw0_safety_evidence',
+    identityColumn: 'id',
+    timestampColumn: 'observed_at',
+    timestampColumns: ['observed_at'],
+  },
+  {
+    table: 'rw0_shadow_positions',
+    identityColumn: 'id',
+    timestampColumn: 'opened_at',
+    timestampColumns: ['opened_at', 'entry_observation_collected_at'],
+  },
+  {
+    table: 'rw0_shadow_exit_observations',
+    identityColumn: 'id',
+    timestampColumn: 'observed_at',
+    timestampColumns: ['observed_at'],
+  },
   {
     table: 'rw0_screening_observations',
     identityColumn: 'screening_id',
     timestampColumn: 'screened_at',
+    timestampColumns: ['screened_at'],
   },
   {
     table: 'rw0_safety_evidence_v2',
     identityColumn: 'evidence_id',
     timestampColumn: 'collected_at',
+    timestampColumns: ['confirmation_observed_at', 'observed_at', 'collected_at'],
   },
-  { table: 'rw0_safety_decisions', identityColumn: 'decision_id', timestampColumn: 'decided_at' },
+  {
+    table: 'rw0_safety_decisions',
+    identityColumn: 'decision_id',
+    timestampColumn: 'decided_at',
+    timestampColumns: ['decided_at'],
+  },
 ];
 
 const RETAINED_BINDING_TABLE_SQL = `CREATE TABLE rw0_retained_evidence_bindings (
@@ -314,6 +365,15 @@ export function activateRecoveryDatasetRuntime(
   if (manifest.evidenceClass !== 'retained_forward') return;
   assertRetainedBindingContract(database);
   database.function('rw0_retained_capability', () => manifest.manifestFingerprint);
+  database.function('rw0_validate_retained_timestamp', (value, label) => {
+    if (value === null) return 1;
+    if (typeof value !== 'string' || typeof label !== 'string') {
+      throw manifestError('Retained timestamp provenance arguments are malformed.');
+    }
+    const timestamp = canonicalInstant(value, label);
+    assertAtOrAfterDatasetStart(timestamp, manifest.startAt, label);
+    return 1;
+  });
   database.function('rw0_retained_binding_fingerprint', (tableName, rowIdentity, rowTimestamp) => {
     if (
       typeof tableName !== 'string' ||
@@ -475,6 +535,18 @@ function retainedDataTriggerObjects(
   const oldIdentity = `CAST(OLD.${quoteIdentifier(binding.identityColumn)} AS TEXT)`;
   const timestamp = `NEW.${quoteIdentifier(binding.timestampColumn)}`;
   const oldTimestamp = `OLD.${quoteIdentifier(binding.timestampColumn)}`;
+  const validateNewTimestamps = binding.timestampColumns
+    .map(
+      (column) =>
+        `  SELECT rw0_validate_retained_timestamp(NEW.${quoteIdentifier(column)}, '${binding.table}.${column}');`,
+    )
+    .join('\n');
+  const validateUpdatedTimestamps = binding.timestampColumns
+    .map(
+      (column) =>
+        `  SELECT rw0_validate_retained_timestamp(NEW.${quoteIdentifier(column)}, '${binding.table}.${column}');`,
+    )
+    .join('\n');
   return [
     {
       type: 'trigger',
@@ -488,6 +560,7 @@ BEGIN
     )
     THEN RAISE(ABORT, 'retained runtime capability rejected')
   END;
+${validateNewTimestamps}
   INSERT INTO rw0_retained_evidence_bindings (
     table_name, row_identity, row_timestamp, dataset_id, evidence_class,
     manifest_fingerprint, binding_fingerprint, bound_at
@@ -499,6 +572,21 @@ BEGIN
     ${timestamp}
   FROM rw0_dataset_manifest
   WHERE singleton_id = 1 AND evidence_class = 'retained_forward';
+END;`,
+    },
+    {
+      type: 'trigger',
+      name: `rw0_retained_update_${suffix}`,
+      sql: `CREATE TRIGGER rw0_retained_update_${suffix}
+BEFORE UPDATE ON ${quoteIdentifier(binding.table)}
+BEGIN
+  SELECT CASE
+    WHEN rw0_retained_capability() != (
+      SELECT manifest_fingerprint FROM rw0_dataset_manifest WHERE singleton_id = 1
+    )
+    THEN RAISE(ABORT, 'retained update capability rejected')
+  END;
+${validateUpdatedTimestamps}
 END;`,
     },
     {
@@ -573,7 +661,8 @@ function assertRetainedEvidenceIntegrity(
   for (const definition of RETAINED_TABLE_BINDINGS) {
     const rows = database
       .prepare(
-        `SELECT CAST(${quoteIdentifier(definition.identityColumn)} AS TEXT) AS row_identity,
+        `SELECT *,
+                CAST(${quoteIdentifier(definition.identityColumn)} AS TEXT) AS row_identity,
                 ${quoteIdentifier(definition.timestampColumn)} AS row_timestamp
          FROM ${quoteIdentifier(definition.table)}`,
       )
@@ -585,6 +674,15 @@ function assertRetainedEvidenceIntegrity(
         `${definition.table} retained timestamp`,
       );
       assertAtOrAfterDatasetStart(rowTimestamp, manifest.startAt, definition.table);
+      for (const column of definition.timestampColumns) {
+        const value = row[column];
+        if (value === null) continue;
+        if (typeof value !== 'string') {
+          throw manifestError(`${definition.table}.${column} timestamp provenance is malformed.`);
+        }
+        const timestamp = canonicalInstant(value, `${definition.table}.${column}`);
+        assertAtOrAfterDatasetStart(timestamp, manifest.startAt, `${definition.table}.${column}`);
+      }
       const key = retainedBindingKey(definition.table, rowIdentity);
       const binding = bindings.get(key);
       if (binding === undefined) {
