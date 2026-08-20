@@ -1,8 +1,8 @@
-export const RW0_SPEC_VERSION = 'rw0_v2';
+export const RW0_SPEC_VERSION = 'rw0_v3';
 export const RW0_SPEC_NAME = 'recovery_watcher_safety_evidence_only';
 export const RW0_CHECKPOINT = 'rw0';
 
-export const RW0_SAFETY_SPEC_VERSION = 'rw0_safety_v1';
+export const RW0_SAFETY_SPEC_VERSION = 'rw0_safety_v2';
 export const RW0_SAFETY_SPEC_NAME = 'persisted_fail_closed_safety_evidence';
 export const RW0_HOLDER_MAX_PCT = 10;
 export const RW0_LINKED_BUNDLE_MAX_PCT = 20;

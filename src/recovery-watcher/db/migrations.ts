@@ -258,7 +258,7 @@ CREATE TABLE rw0_screening_observations (
   price_change_5m_pct REAL,
   signal_version TEXT NOT NULL CHECK (signal_version = 'recovery_v0'),
   signal_fingerprint TEXT NOT NULL,
-  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version IN ('rw0_v1', 'rw0_v2')),
+  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version IN ('rw0_v1', 'rw0_v3')),
   watcher_spec_fingerprint TEXT NOT NULL,
   dip_filter_result TEXT NOT NULL CHECK (
     dip_filter_result IN ('PASS', 'NOT_DIP', 'INCOMPLETE', 'NOT_EVALUATED')
@@ -297,9 +297,9 @@ CREATE TABLE rw0_safety_evidence_v2 (
   provenance TEXT NOT NULL CHECK (length(trim(provenance)) > 0),
   signal_version TEXT NOT NULL CHECK (signal_version = 'recovery_v0'),
   signal_fingerprint TEXT NOT NULL,
-  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version = 'rw0_v2'),
+  watcher_spec_version TEXT NOT NULL CHECK (watcher_spec_version = 'rw0_v3'),
   watcher_spec_fingerprint TEXT NOT NULL,
-  safety_spec_version TEXT NOT NULL CHECK (safety_spec_version = 'rw0_safety_v1'),
+  safety_spec_version TEXT NOT NULL CHECK (safety_spec_version = 'rw0_safety_v2'),
   safety_spec_fingerprint TEXT NOT NULL,
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
   reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),

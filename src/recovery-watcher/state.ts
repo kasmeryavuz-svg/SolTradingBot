@@ -254,10 +254,21 @@ export function applyTransition(
   request: TransitionRequest,
   context: TransitionContext,
 ): TransitionResult {
+  if (request.to === 'REJECTED_SAFETY' || request.to === 'REJECTED_SAFETY_UNKNOWN') {
+    throw new RecoveryWatcherError(
+      'Safety rejection transitions are reserved for the persisted safety-decision reducer.',
+      { code: 'illegal_transition' },
+    );
+  }
   return applyTransitionWithPersistedSafety(episode, request, context);
 }
 
-export function applyPersistedSafetyRejection(
+/**
+ * Internal persistence boundary. This is intentionally not re-exported from
+ * the Recovery Watcher public API; generic transition callers cannot invoke a
+ * safety decision.
+ */
+export function applyPersistedSafetyRejectionInternal(
   episode: RecoveryEpisode,
   request: TransitionRequest,
   context: TransitionContext,
@@ -361,7 +372,7 @@ function applyTransitionWithPersistedSafety(
   applyWatchTtlRules(episode, request);
   applyRecoveryConfirmationRules(episode, next, request);
   applyShadowRules(episode, next, request);
-  applySafetyRejectRules(next, request, persistedStatuses);
+  applySafetyRejectRules(request, persistedStatuses);
   applyTerminalCooldown(next, request.at);
 
   if (next.completenessGate === 'PASS') {
@@ -588,34 +599,25 @@ function applyShadowRules(
 }
 
 function applySafetyRejectRules(
-  next: RecoveryEpisode,
   request: TransitionRequest,
   persistedStatuses?: readonly SafetyGateStatus[],
 ): void {
-  const statuses = persistedStatuses ?? [next.holderStatus, next.bundleStatus, next.creatorStatus];
-  if (request.to === 'REJECTED_SAFETY_UNKNOWN') {
-    if (statuses.some((status) => status === 'FAIL')) {
-      throw new RecoveryWatcherError('Use REJECTED_SAFETY when a hard gate FAILs.', {
-        code: 'illegal_transition',
-      });
-    }
-    if (!statuses.some((status) => status === 'UNKNOWN') && persistedStatuses === undefined) {
-      throw new RecoveryWatcherError(
-        'REJECTED_SAFETY_UNKNOWN requires at least one UNKNOWN hard gate.',
-        {
-          code: 'illegal_transition',
-        },
-      );
-    }
+  if (request.to !== 'REJECTED_SAFETY' && request.to !== 'REJECTED_SAFETY_UNKNOWN') {
+    return;
   }
-
-  if (request.to === 'REJECTED_SAFETY') {
-    if (!statuses.some((status) => status === 'FAIL')) {
-      throw new RecoveryWatcherError(
-        'REJECTED_SAFETY requires at least one FAIL hard gate. rw0_v1 cannot synthesize FAIL; gates remain UNKNOWN.',
-        { code: 'illegal_transition' },
-      );
-    }
+  if (persistedStatuses === undefined || persistedStatuses.length !== 4) {
+    throw new RecoveryWatcherError(
+      'Safety rejection requires four canonical statuses from persisted evidence.',
+      { code: 'illegal_transition' },
+    );
+  }
+  const hasFail = persistedStatuses.some((status) => status === 'FAIL');
+  const expected = hasFail ? 'REJECTED_SAFETY' : 'REJECTED_SAFETY_UNKNOWN';
+  if (request.to !== expected) {
+    throw new RecoveryWatcherError(
+      `Persisted safety statuses require ${expected}.`,
+      { code: 'illegal_transition' },
+    );
   }
 }
 

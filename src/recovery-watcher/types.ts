@@ -80,8 +80,8 @@ export type TokenRightsSafetyPayload = {
 export type HolderSafetyPayload = {
   kind: 'holder';
   denominatorKind: 'effective_circulating_supply';
-  totalSupplyRaw: string;
-  denominatorRaw: string;
+  totalSupplyRaw: string | null;
+  denominatorRaw: string | null;
   supplyReconciled: boolean;
   ownerCoverageComplete: boolean;
   sourceIsTop20Only: boolean;
@@ -97,7 +97,7 @@ export type BundleSafetyPayload = {
   kind: 'bundle';
   rule: string;
   denominatorKind: 'effective_circulating_supply';
-  denominatorRaw: string;
+  denominatorRaw: string | null;
   graphComplete: boolean;
   membershipComplete: boolean;
   confidence: 'high' | 'medium' | 'low';

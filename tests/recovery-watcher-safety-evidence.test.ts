@@ -21,6 +21,7 @@ import {
   evaluateSafetyPayload,
 } from '../src/recovery-watcher/safety.js';
 import type { HolderSafetyPayload, SafetyEvidencePayload } from '../src/recovery-watcher/types.js';
+import { applyTransition } from '../src/recovery-watcher/state.js';
 import {
   discoveredEpisodeInput,
   FIXTURE_CONFIRM_AT,
@@ -207,6 +208,58 @@ describe('recovery watcher Slice 3A safety evidence', () => {
     ).toBe('UNKNOWN');
   });
 
+  it('compares holder and linked-cluster hard gates with exact BigInt ratios', () => {
+    expect(
+      evaluateSafetyPayload(
+        holder({
+          totalSupplyRaw: '100000000',
+          denominatorRaw: '100000000',
+          accounts: [
+            {
+              tokenAccount: ACCOUNT_A,
+              owner: OWNER_A,
+              amountRaw: '10000001',
+              exclusion: null,
+            },
+          ],
+        }),
+      ).status,
+    ).toBe('FAIL');
+    expect(
+      evaluateSafetyPayload(
+        holder({
+          totalSupplyRaw: '100000000',
+          denominatorRaw: '100000000',
+          accounts: [
+            {
+              tokenAccount: ACCOUNT_A,
+              owner: OWNER_A,
+              amountRaw: '10000000',
+              exclusion: null,
+            },
+          ],
+        }),
+      ).status,
+    ).toBe('PASS');
+    const bundle = {
+      kind: 'bundle' as const,
+      rule: 'complete fixture rule',
+      denominatorKind: 'effective_circulating_supply' as const,
+      denominatorRaw: '100000000',
+      graphComplete: true,
+      membershipComplete: true,
+      confidence: 'high' as const,
+      members: [{ owner: OWNER_A, amountRaw: '20000001', provenance: 'fixture' }],
+    };
+    expect(evaluateSafetyPayload(bundle).status).toBe('FAIL');
+    expect(
+      evaluateSafetyPayload({
+        ...bundle,
+        members: [{ owner: OWNER_A, amountRaw: '20000000', provenance: 'fixture' }],
+      }).status,
+    ).toBe('PASS');
+  });
+
   it('FAILs a complete linked cluster above 20% and keeps an incomplete graph UNKNOWN', () => {
     const payload = {
       kind: 'bundle' as const,
@@ -258,6 +311,113 @@ describe('recovery watcher Slice 3A safety evidence', () => {
         factsComplete: false,
       }).status,
     ).toBe('UNKNOWN');
+  });
+
+  it('strictly validates runtime payload discriminants, enums, booleans, and provenance', () => {
+    const { database, episode } = pendingEpisode();
+    const tokenRights = {
+      kind: 'token_rights' as const,
+      tokenProgram: 'spl_token' as const,
+      mintAuthority: null,
+      freezeAuthority: null,
+      extensions: [],
+      factsComplete: true,
+    };
+    expect(() => evidenceFor(episode, tokenRights, { kind: 'holder' })).toThrow(
+      /outer kind must match payload kind/,
+    );
+    const malformed = [
+      { ...tokenRights, tokenProgram: 'unknown_program' },
+      { ...tokenRights, factsComplete: 'true' },
+      {
+        ...holder(),
+        supplyReconciled: 'true',
+      },
+      {
+        ...holder(),
+        accounts: [
+          {
+            tokenAccount: ACCOUNT_A,
+            owner: OWNER_A,
+            amountRaw: '1',
+            exclusion: {
+              kind: 'guess',
+              source: 'fixture',
+              observedAt: EVIDENCE_AT,
+              subjectAddress: ACCOUNT_A,
+            },
+          },
+        ],
+      },
+      {
+        kind: 'bundle',
+        rule: 'fixture',
+        denominatorKind: 'circulating_guess',
+        denominatorRaw: '100',
+        graphComplete: true,
+        membershipComplete: true,
+        confidence: 'certain',
+        members: [],
+      },
+    ];
+    for (const payload of malformed) {
+      expect(() => evaluateSafetyPayload(payload as SafetyEvidencePayload)).toThrow();
+    }
+    database.close();
+  });
+
+  it('represents unavailable holder and bundle economics with null rather than fabricated amounts', () => {
+    const holderUnavailable = evaluateSafetyPayload({
+      kind: 'holder',
+      denominatorKind: 'effective_circulating_supply',
+      totalSupplyRaw: null,
+      denominatorRaw: null,
+      supplyReconciled: false,
+      ownerCoverageComplete: false,
+      sourceIsTop20Only: false,
+      accounts: [],
+    });
+    expect(holderUnavailable).toMatchObject({ status: 'UNKNOWN', percentage: null });
+    const bundleUnavailable = evaluateSafetyPayload({
+      kind: 'bundle',
+      rule: 'unavailable:no_provider',
+      denominatorKind: 'effective_circulating_supply',
+      denominatorRaw: null,
+      graphComplete: false,
+      membershipComplete: false,
+      confidence: 'low',
+      members: [],
+    });
+    expect(bundleUnavailable).toMatchObject({ status: 'UNKNOWN', percentage: null });
+    expect(() =>
+      evaluateSafetyPayload({
+        kind: 'holder',
+        denominatorKind: 'effective_circulating_supply',
+        totalSupplyRaw: null,
+        denominatorRaw: null,
+        supplyReconciled: true,
+        ownerCoverageComplete: false,
+        sourceIsTop20Only: false,
+        accounts: [],
+      }),
+    ).toThrow(/Unavailable holder economics/);
+  });
+
+  it('blocks generic in-memory and persisted safety-rejection transition bypasses', () => {
+    const { database, episode } = pendingEpisode();
+    const request = {
+      to: 'REJECTED_SAFETY_UNKNOWN' as const,
+      at: DECISION_AT,
+      reason: 'generic_bypass',
+    };
+    expect(() => applyTransition(episode, request, { now: FIXTURE_NOW })).toThrow(
+      /reserved for the persisted safety-decision reducer/,
+    );
+    expect(() =>
+      persistTransition(database, episode.episodeId, request, { now: FIXTURE_NOW }),
+    ).toThrow(/reserved for the persisted safety-decision reducer/);
+    expect(loadEpisode(database, episode.episodeId)?.state).toBe('SIGNAL_PENDING_SAFETY');
+    database.close();
   });
 
   it('binds persisted evidence, rejects future/mismatch, and enforces retry semantics', () => {
@@ -324,6 +484,27 @@ describe('recovery watcher Slice 3A safety evidence', () => {
       persistSafetyDecision(database, episode.episodeId, DECISION_AT, { now: FIXTURE_NOW }),
     ).toThrow(/canonical evaluator/);
     expect(loadEpisode(database, episode.episodeId)?.state).toBe('SIGNAL_PENDING_SAFETY');
+    database.close();
+  });
+
+  it('fails closed on future direct-SQL evidence in list and report hydration', () => {
+    const { database, episode } = pendingEpisode();
+    const evidence = evidenceFor(
+      episode,
+      holder({
+        accounts: [{ tokenAccount: ACCOUNT_A, owner: OWNER_A, amountRaw: '11', exclusion: null }],
+      }),
+    );
+    persistSafetyEvidence(database, evidence, { now: FIXTURE_NOW });
+    database
+      .prepare(
+        'UPDATE rw0_safety_evidence_v2 SET observed_at = ?, collected_at = ? WHERE evidence_id = ?',
+      )
+      .run('2099-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z', evidence.evidenceId);
+    expect(() =>
+      listSafetyEvidence(database, episode.episodeId, { now: FIXTURE_NOW }),
+    ).toThrow(/future/);
+    expect(() => loadRecoveryReportSnapshot(database, { now: FIXTURE_NOW })).toThrow(/future/);
     database.close();
   });
 });

@@ -36,10 +36,10 @@ import {
   RW0_SAFETY_SPEC_FINGERPRINT,
 } from '../src/recovery-watcher/identity.js';
 
-describe('rw0_v2 frozen definitions', () => {
+describe('rw0_v3 frozen definitions', () => {
   it('freezes spec names and deterministic fingerprints', () => {
-    expect(RW0_SPEC_VERSION).toBe('rw0_v2');
-    expect(RW0_SAFETY_SPEC_VERSION).toBe('rw0_safety_v1');
+    expect(RW0_SPEC_VERSION).toBe('rw0_v3');
+    expect(RW0_SAFETY_SPEC_VERSION).toBe('rw0_safety_v2');
     expect(RECOVERY_V0_SIGNAL_VERSION).toBe('recovery_v0');
     expect(RW0_SHADOW_PAPER_SPEC_VERSION).toBe('rw0_shadow_paper_v0');
     expect(RW0_EXIT_SPEC_VERSION).toBe('rw0_exit_v0');
@@ -57,16 +57,16 @@ describe('rw0_v2 frozen definitions', () => {
       'fda2db41481e11970451621c9c162ed14555c648a1c496bc81a2dd0a21f023f4',
     );
     expect(RW0_SAFETY_SPEC_FINGERPRINT).toBe(
-      '08fbd490317c02511dbf52dd8018ed05963c59177129a6a15d97ee4b75b7dd75',
+      'f4282f42d979fcd8f1682f5223be72b8a3476c78875e164826cf0ac4ff2fe808',
     );
     expect(RW0_WATCHER_DEFINITION_FINGERPRINT).toBe(
-      '859abe6200ed786eaa89f1fd196bcd27f8b335065e9980758da7f6412dd249f6',
+      'ef65622c7b4b70790c16d959d5de69dcdb34a76f2d877ca58672ab779ba184db',
     );
     expect(recoveryMigrationSqlDigest(1)).toBe(
       '84832895ff70d1d6362058699a2301ed590eb3b5e6ce70bf598b2eb41060f234',
     );
     expect(recoveryMigrationSqlDigest(2)).toBe(
-      'bb58bf449ba8bc7a3d193b27476eddc2249f329a37ba0c2dd491dc028e5736a9',
+      'bea11ee4cb756d12560b238e205085d0c9446f2d3ad80934e87c0e68ab9a626a',
     );
     expect(fingerprintRecoveryV0Signal()).toBe(RECOVERY_V0_SIGNAL_FINGERPRINT);
     expect(fingerprintRecoveryWatcherDefinition()).toBe(RW0_WATCHER_DEFINITION_FINGERPRINT);

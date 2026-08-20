@@ -28,6 +28,7 @@ import type {
   SafetyGateStatus,
   TokenRightsSafetyPayload,
 } from './types.js';
+import type { TokenExtensionObservation } from '../risk/types.js';
 
 export const RW0_SAFETY_GATE_KINDS = ['token_rights', 'holder', 'bundle', 'creator'] as const;
 
@@ -39,6 +40,8 @@ export function canonicalRecoverySafetySpec() {
     paperEligibleReachable: false,
     paperOpenReachable: false,
     decisionFromPersistedCanonicalEvidenceOnly: true,
+    genericTransitionApiCannotProduceSafetyRejection: true,
+    strictRuntimePayloadValidation: true,
     evidenceBinding: [
       'episode_id',
       'mint',
@@ -71,6 +74,8 @@ export function canonicalRecoverySafetySpec() {
       exclusionsRequireKindSubjectSourceAndTimestamp: true,
       incompleteCoverageAtOrBelowThreshold: 'UNKNOWN',
       observedLowerBoundAboveThreshold: 'FAIL',
+      hardGateComparison: 'exact_bigint_ratio',
+      unavailableEconomics: 'null_supply_and_denominator',
     },
     bundle: {
       maxPctInclusive: RW0_LINKED_BUNDLE_MAX_PCT,
@@ -79,6 +84,8 @@ export function canonicalRecoverySafetySpec() {
       heuristicClusterIsOwnership: false,
       persistRuleMembersNumeratorDenominatorProvenanceConfidenceCompleteness: true,
       incompleteGraph: 'UNKNOWN',
+      hardGateComparison: 'exact_bigint_ratio',
+      unavailableEconomics: 'null_denominator',
     },
     creator: {
       missingTrustworthyIdentity: 'UNKNOWN',
@@ -99,6 +106,14 @@ export const RW0_SAFETY_SPEC_FINGERPRINT = createHash('sha256')
   .digest('hex');
 
 export function evaluateSafetyPayload(payload: SafetyEvidencePayload): {
+  status: SafetyGateStatus;
+  reason: string;
+  percentage: number | null;
+} {
+  return evaluateCanonicalSafetyPayload(validateSafetyPayload(payload));
+}
+
+function evaluateCanonicalSafetyPayload(payload: SafetyEvidencePayload): {
   status: SafetyGateStatus;
   reason: string;
   percentage: number | null;
@@ -129,9 +144,18 @@ export function canonicalizeSafetyEvidence(
   },
   now: Date,
 ): SafetyEvidenceRecord {
-  if (!(RW0_SAFETY_GATE_KINDS as readonly string[]).includes(input.kind)) {
+  if (
+    typeof input.kind !== 'string' ||
+    !(RW0_SAFETY_GATE_KINDS as readonly string[]).includes(input.kind)
+  ) {
     throw evidenceError('Unsupported safety evidence kind.');
   }
+  const payload = validateSafetyPayload(input.payload);
+  if (input.kind !== payload.kind) {
+    throw evidenceError('Safety evidence outer kind must match payload kind.');
+  }
+  nonEmpty(input.episodeId, 'Safety evidence episodeId');
+  nonEmpty(input.confirmationEventId, 'Safety evidence confirmationEventId');
   assertAddress(input.mint, 'Safety evidence mint');
   assertAddress(input.pairAddress, 'Safety evidence pair');
   assertNotFuture(input.observedAt, now, 'safety evidence observedAt');
@@ -146,8 +170,8 @@ export function canonicalizeSafetyEvidence(
     input.collectedAt,
     'Safety evidence collectedAt must be at or after observedAt.',
   );
-  if (input.payload.kind === 'holder') {
-    for (const account of input.payload.accounts) {
+  if (payload.kind === 'holder') {
+    for (const account of payload.accounts) {
       if (account.exclusion !== null) {
         assertNotFuture(account.exclusion.observedAt, now, 'holder exclusion observedAt');
         assertTimestampOrder(
@@ -161,7 +185,7 @@ export function canonicalizeSafetyEvidence(
   const provider =
     input.provider === null ? null : nonEmpty(input.provider, 'Safety evidence provider');
   const provenance = nonEmpty(input.provenance, 'Safety evidence provenance');
-  const evaluated = evaluateSafetyPayload(input.payload);
+  const evaluated = evaluateCanonicalSafetyPayload(payload);
   if (input.status !== undefined && input.status !== evaluated.status) {
     throw evidenceError('Caller-supplied safety status does not match the canonical evaluator.');
   }
@@ -170,6 +194,7 @@ export function canonicalizeSafetyEvidence(
   }
   const withoutId: Omit<SafetyEvidenceRecord, 'evidenceId'> = {
     ...input,
+    payload,
     provider,
     provenance,
     status: evaluated.status,
@@ -212,6 +237,20 @@ function evaluateTokenRights(payload: TokenRightsSafetyPayload) {
 }
 
 function evaluateHolder(payload: HolderSafetyPayload) {
+  if (payload.totalSupplyRaw === null || payload.denominatorRaw === null) {
+    if (
+      payload.totalSupplyRaw !== null ||
+      payload.denominatorRaw !== null ||
+      payload.supplyReconciled ||
+      payload.ownerCoverageComplete ||
+      payload.accounts.length !== 0
+    ) {
+      throw evidenceError(
+        'Unavailable holder economics must use null supply/denominator, incomplete flags, and no measured accounts.',
+      );
+    }
+    return result('UNKNOWN', 'holder supply and denominator are unavailable');
+  }
   const totalSupply = rawAmount(payload.totalSupplyRaw, 'holder totalSupplyRaw');
   const denominator = positiveRawAmount(payload.denominatorRaw, 'holder denominatorRaw');
   const tokenAccounts = new Set<string>();
@@ -247,7 +286,7 @@ function evaluateHolder(payload: HolderSafetyPayload) {
   }
   const largest = [...owners.values()].reduce((max, amount) => (amount > max ? amount : max), 0n);
   const percentage = percentageOf(largest, denominator, 'holder');
-  if (percentage > RW0_HOLDER_MAX_PCT) {
+  if (ratioExceedsPercent(largest, denominator, RW0_HOLDER_MAX_PCT)) {
     return result(
       'FAIL',
       `largest aggregated real holder is ${formatPct(percentage)}%`,
@@ -266,6 +305,14 @@ function evaluateHolder(payload: HolderSafetyPayload) {
 
 function evaluateBundle(payload: BundleSafetyPayload) {
   nonEmpty(payload.rule, 'Bundle rule');
+  if (payload.denominatorRaw === null) {
+    if (payload.graphComplete || payload.membershipComplete || payload.members.length !== 0) {
+      throw evidenceError(
+        'Unavailable bundle economics must use a null denominator, incomplete flags, and no measured members.',
+      );
+    }
+    return result('UNKNOWN', 'linked-wallet denominator and graph are unavailable');
+  }
   const denominator = positiveRawAmount(payload.denominatorRaw, 'bundle denominatorRaw');
   const owners = new Set<string>();
   let numerator = 0n;
@@ -280,7 +327,7 @@ function evaluateBundle(payload: BundleSafetyPayload) {
   if (!payload.graphComplete || !payload.membershipComplete) {
     return result('UNKNOWN', 'linked-wallet graph or cluster membership is incomplete', percentage);
   }
-  if (percentage > RW0_LINKED_BUNDLE_MAX_PCT) {
+  if (ratioExceedsPercent(numerator, denominator, RW0_LINKED_BUNDLE_MAX_PCT)) {
     return result('FAIL', `complete linked cluster is ${formatPct(percentage)}%`, percentage);
   }
   return result('PASS', `complete linked cluster is ${formatPct(percentage)}%`, percentage);
@@ -309,12 +356,13 @@ function evaluateCreator(payload: CreatorSafetyPayload) {
   if (payload.controlledBalanceRaw === null || payload.denominatorRaw === null) {
     return result('UNKNOWN', 'creator exposure denominator is incomplete');
   }
-  const percentage = percentageOf(
-    rawAmount(payload.controlledBalanceRaw, 'creator controlledBalanceRaw'),
-    positiveRawAmount(payload.denominatorRaw, 'creator denominatorRaw'),
-    'creator',
+  const controlledBalance = rawAmount(
+    payload.controlledBalanceRaw,
+    'creator controlledBalanceRaw',
   );
-  if (percentage !== 0) {
+  const denominator = positiveRawAmount(payload.denominatorRaw, 'creator denominatorRaw');
+  const percentage = percentageOf(controlledBalance, denominator, 'creator');
+  if (controlledBalance !== 0n) {
     return result(
       'UNKNOWN',
       `creator exposure is ${formatPct(percentage)}%; no exposure threshold is defined`,
@@ -322,6 +370,256 @@ function evaluateCreator(payload: CreatorSafetyPayload) {
     );
   }
   return result('PASS', 'trustworthy creator identity has complete zero-exposure evidence', 0);
+}
+
+function validateSafetyPayload(payload: unknown): SafetyEvidencePayload {
+  const record = requireRecord(payload, 'Safety evidence payload');
+  const kind = record['kind'];
+  if (typeof kind !== 'string' || !(RW0_SAFETY_GATE_KINDS as readonly string[]).includes(kind)) {
+    throw evidenceError('Safety evidence payload kind is unsupported.');
+  }
+  switch (kind) {
+    case 'token_rights':
+      return validateTokenRightsPayload(record);
+    case 'holder':
+      return validateHolderPayload(record);
+    case 'bundle':
+      return validateBundlePayload(record);
+    case 'creator':
+      return validateCreatorPayload(record);
+  }
+  throw evidenceError('Safety evidence payload kind is unsupported.');
+}
+
+function validateTokenRightsPayload(record: Record<string, unknown>): TokenRightsSafetyPayload {
+  assertOnlyKeys(record, [
+    'kind',
+    'tokenProgram',
+    'mintAuthority',
+    'freezeAuthority',
+    'extensions',
+    'factsComplete',
+  ], 'Token-rights payload');
+  const tokenProgram = requireEnum(
+    record['tokenProgram'],
+    ['spl_token', 'token_2022', 'unsupported'] as const,
+    'Token-rights tokenProgram',
+  );
+  const extensions = requireArray(record['extensions'], 'Token-rights extensions').map(
+    validateTokenExtension,
+  );
+  return {
+    kind: 'token_rights',
+    tokenProgram,
+    mintAuthority: requireNullableAddress(record['mintAuthority'], 'Token-rights mintAuthority'),
+    freezeAuthority: requireNullableAddress(
+      record['freezeAuthority'],
+      'Token-rights freezeAuthority',
+    ),
+    extensions,
+    factsComplete: requireBoolean(record['factsComplete'], 'Token-rights factsComplete'),
+  };
+}
+
+function validateHolderPayload(record: Record<string, unknown>): HolderSafetyPayload {
+  assertOnlyKeys(record, [
+    'kind',
+    'denominatorKind',
+    'totalSupplyRaw',
+    'denominatorRaw',
+    'supplyReconciled',
+    'ownerCoverageComplete',
+    'sourceIsTop20Only',
+    'accounts',
+  ], 'Holder payload');
+  const accounts = requireArray(record['accounts'], 'Holder accounts').map((value) => {
+    const account = requireRecord(value, 'Holder account');
+    assertOnlyKeys(
+      account,
+      ['tokenAccount', 'owner', 'amountRaw', 'exclusion'],
+      'Holder account',
+    );
+    const exclusionValue = account['exclusion'];
+    let exclusion: HolderSafetyPayload['accounts'][number]['exclusion'] = null;
+    if (exclusionValue !== null) {
+      const item = requireRecord(exclusionValue, 'Holder exclusion');
+      assertOnlyKeys(
+        item,
+        ['kind', 'source', 'observedAt', 'subjectAddress'],
+        'Holder exclusion',
+      );
+      exclusion = {
+        kind: requireEnum(
+          item['kind'],
+          ['pool', 'vault', 'burn', 'program_controlled'] as const,
+          'Holder exclusion kind',
+        ),
+        source: requireNonEmptyString(item['source'], 'Holder exclusion source'),
+        observedAt: requireNonEmptyString(item['observedAt'], 'Holder exclusion observedAt'),
+        subjectAddress: requireAddress(item['subjectAddress'], 'Holder exclusion subjectAddress'),
+      };
+    }
+    return {
+      tokenAccount: requireAddress(account['tokenAccount'], 'Holder tokenAccount'),
+      owner: requireAddress(account['owner'], 'Holder owner'),
+      amountRaw: requireRawAmount(account['amountRaw'], 'Holder amountRaw'),
+      exclusion,
+    };
+  });
+  return {
+    kind: 'holder',
+    denominatorKind: requireEnum(
+      record['denominatorKind'],
+      ['effective_circulating_supply'] as const,
+      'Holder denominatorKind',
+    ),
+    totalSupplyRaw: requireNullableRawAmount(record['totalSupplyRaw'], 'Holder totalSupplyRaw'),
+    denominatorRaw: requireNullableRawAmount(record['denominatorRaw'], 'Holder denominatorRaw'),
+    supplyReconciled: requireBoolean(record['supplyReconciled'], 'Holder supplyReconciled'),
+    ownerCoverageComplete: requireBoolean(
+      record['ownerCoverageComplete'],
+      'Holder ownerCoverageComplete',
+    ),
+    sourceIsTop20Only: requireBoolean(record['sourceIsTop20Only'], 'Holder sourceIsTop20Only'),
+    accounts,
+  };
+}
+
+function validateBundlePayload(record: Record<string, unknown>): BundleSafetyPayload {
+  assertOnlyKeys(record, [
+    'kind',
+    'rule',
+    'denominatorKind',
+    'denominatorRaw',
+    'graphComplete',
+    'membershipComplete',
+    'confidence',
+    'members',
+  ], 'Bundle payload');
+  const members = requireArray(record['members'], 'Bundle members').map((value) => {
+    const member = requireRecord(value, 'Bundle member');
+    assertOnlyKeys(member, ['owner', 'amountRaw', 'provenance'], 'Bundle member');
+    return {
+      owner: requireAddress(member['owner'], 'Bundle member owner'),
+      amountRaw: requireRawAmount(member['amountRaw'], 'Bundle member amountRaw'),
+      provenance: requireNonEmptyString(member['provenance'], 'Bundle member provenance'),
+    };
+  });
+  return {
+    kind: 'bundle',
+    rule: requireNonEmptyString(record['rule'], 'Bundle rule'),
+    denominatorKind: requireEnum(
+      record['denominatorKind'],
+      ['effective_circulating_supply'] as const,
+      'Bundle denominatorKind',
+    ),
+    denominatorRaw: requireNullableRawAmount(record['denominatorRaw'], 'Bundle denominatorRaw'),
+    graphComplete: requireBoolean(record['graphComplete'], 'Bundle graphComplete'),
+    membershipComplete: requireBoolean(
+      record['membershipComplete'],
+      'Bundle membershipComplete',
+    ),
+    confidence: requireEnum(
+      record['confidence'],
+      ['high', 'medium', 'low'] as const,
+      'Bundle confidence',
+    ),
+    members,
+  };
+}
+
+function validateCreatorPayload(record: Record<string, unknown>): CreatorSafetyPayload {
+  assertOnlyKeys(record, [
+    'kind',
+    'creatorIdentity',
+    'identityProvenance',
+    'identityTrustworthy',
+    'controlledAccountsComplete',
+    'retainedControlCapabilities',
+    'controlledBalanceRaw',
+    'denominatorRaw',
+  ], 'Creator payload');
+  const retainedControlCapabilities = requireArray(
+    record['retainedControlCapabilities'],
+    'Creator retainedControlCapabilities',
+  ).map((value) => requireNonEmptyString(value, 'Creator retained control capability'));
+  return {
+    kind: 'creator',
+    creatorIdentity: requireNullableAddress(record['creatorIdentity'], 'Creator identity'),
+    identityProvenance: requireNullableNonEmptyString(
+      record['identityProvenance'],
+      'Creator identityProvenance',
+    ),
+    identityTrustworthy: requireBoolean(
+      record['identityTrustworthy'],
+      'Creator identityTrustworthy',
+    ),
+    controlledAccountsComplete: requireBoolean(
+      record['controlledAccountsComplete'],
+      'Creator controlledAccountsComplete',
+    ),
+    retainedControlCapabilities,
+    controlledBalanceRaw: requireNullableRawAmount(
+      record['controlledBalanceRaw'],
+      'Creator controlledBalanceRaw',
+    ),
+    denominatorRaw: requireNullableRawAmount(
+      record['denominatorRaw'],
+      'Creator denominatorRaw',
+    ),
+  };
+}
+
+function validateTokenExtension(value: unknown): TokenExtensionObservation {
+  const extension = requireRecord(value, 'Token extension');
+  assertOnlyKeys(extension, [
+    'name',
+    'rawName',
+    'authority',
+    'programId',
+    'state',
+    'transferFeeBasisPoints',
+    'maximumFeeRaw',
+    'olderTransferFeeBasisPoints',
+    'newerTransferFeeBasisPoints',
+    'olderMaximumFeeRaw',
+    'newerMaximumFeeRaw',
+    'parsed',
+    'classified',
+  ], 'Token extension');
+  return {
+    name: requireNonEmptyString(extension['name'], 'Token extension name'),
+    rawName: requireNonEmptyString(extension['rawName'], 'Token extension rawName'),
+    authority: requireNullableAddress(extension['authority'], 'Token extension authority'),
+    programId: requireNullableAddress(extension['programId'], 'Token extension programId'),
+    state: requireNullableNonEmptyString(extension['state'], 'Token extension state'),
+    transferFeeBasisPoints: requireNullableBasisPoints(
+      extension['transferFeeBasisPoints'],
+      'Token extension transferFeeBasisPoints',
+    ),
+    maximumFeeRaw: requireNullableRawAmount(
+      extension['maximumFeeRaw'],
+      'Token extension maximumFeeRaw',
+    ),
+    olderTransferFeeBasisPoints: requireNullableBasisPoints(
+      extension['olderTransferFeeBasisPoints'],
+      'Token extension olderTransferFeeBasisPoints',
+    ),
+    newerTransferFeeBasisPoints: requireNullableBasisPoints(
+      extension['newerTransferFeeBasisPoints'],
+      'Token extension newerTransferFeeBasisPoints',
+    ),
+    olderMaximumFeeRaw: requireNullableRawAmount(
+      extension['olderMaximumFeeRaw'],
+      'Token extension olderMaximumFeeRaw',
+    ),
+    newerMaximumFeeRaw: requireNullableRawAmount(
+      extension['newerMaximumFeeRaw'],
+      'Token extension newerMaximumFeeRaw',
+    ),
+    parsed: requireBoolean(extension['parsed'], 'Token extension parsed'),
+    classified: requireBoolean(extension['classified'], 'Token extension classified'),
+  };
 }
 
 function canonicalEvidenceIdentity(input: Omit<SafetyEvidenceRecord, 'evidenceId'>): unknown {
@@ -352,6 +650,88 @@ function result(status: SafetyGateStatus, reason: string, percentage: number | n
   return { status, reason, percentage };
 }
 
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw evidenceError(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertOnlyKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+  label: string,
+): void {
+  const allowed = new Set(keys);
+  const unexpected = Object.keys(value).find((key) => !allowed.has(key));
+  if (unexpected !== undefined) {
+    throw evidenceError(`${label} contains unsupported field ${unexpected}.`);
+  }
+}
+
+function requireArray(value: unknown, label: string): unknown[] {
+  if (!Array.isArray(value)) throw evidenceError(`${label} must be an array.`);
+  return value;
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw evidenceError(`${label} must be boolean.`);
+  return value;
+}
+
+function requireEnum<const T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+  label: string,
+): T[number] {
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw evidenceError(`${label} is unsupported.`);
+  }
+  return value as T[number];
+}
+
+function requireNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw evidenceError(`${label} must be a string.`);
+  return nonEmpty(value, label);
+}
+
+function requireNullableNonEmptyString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requireNonEmptyString(value, label);
+}
+
+function requireAddress(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw evidenceError(`${label} must be a string.`);
+  assertAddress(value, label);
+  return value;
+}
+
+function requireNullableAddress(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requireAddress(value, label);
+}
+
+function requireRawAmount(value: unknown, label: string): string {
+  if (typeof value !== 'string') {
+    throw evidenceError(`${label} must be a canonical non-negative integer string.`);
+  }
+  rawAmount(value, label);
+  return value;
+}
+
+function requireNullableRawAmount(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requireRawAmount(value, label);
+}
+
+function requireNullableBasisPoints(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10_000) {
+    throw evidenceError(`${label} must be an integer within [0,10000] or null.`);
+  }
+  return value;
+}
+
 function rawAmount(value: string, label: string): bigint {
   if (!/^(0|[1-9]\d*)$/.test(value))
     throw evidenceError(`${label} must be a canonical non-negative integer.`);
@@ -371,6 +751,10 @@ function percentageOf(numerator: bigint, denominator: bigint, label: string): nu
     throw evidenceError(`${label} percentage must be finite and within [0,100].`);
   }
   return scaled;
+}
+
+function ratioExceedsPercent(numerator: bigint, denominator: bigint, threshold: number): boolean {
+  return numerator * 100n > denominator * BigInt(threshold);
 }
 
 function formatPct(value: number): string {

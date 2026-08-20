@@ -76,7 +76,7 @@ export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string
     'Shadow exit/CLOSED: NOT IMPLEMENTED; SHADOW_RESEARCH_OPEN cannot CLOSED until a dedicated exit slice',
     'Recovery confirmation: legal only when recoveryConfirmedAt < watchStartedAt + 2h TTL; exact expiry belongs to EXPIRED',
     'Confirmation persist: derived from a stored rw0_market_observations row; caller economics cannot override',
-    'Safety-approved paper: PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v2',
+    'Safety-approved paper: PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v3',
     'Safety decisions are reduced from canonical persisted evidence only; caller-supplied gate status cannot reach PAPER',
     'Token-rights, holder, bundle, and creator evidence: persisted PASS/FAIL/UNKNOWN with fail-closed reduction',
     'Runtime RW0_DATABASE_PATH=:memory: REJECTED; :memory: is test-only via openRecoveryMemoryDatabase',

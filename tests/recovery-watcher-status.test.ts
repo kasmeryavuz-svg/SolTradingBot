@@ -8,7 +8,7 @@ import { loadRecoveryWatcherConfig } from '../src/recovery-watcher/config.js';
 import { prepareRecoveryStatusCommand } from '../src/recovery-watcher/command.js';
 
 describe('recovery:status', () => {
-  it('reports rw0_v2 safety-evidence identity and the isolated DB path', () => {
+  it('reports rw0_v3 safety-evidence identity and the isolated DB path', () => {
     const config = prepareRecoveryStatusCommand({
       TRADING_ENABLED: 'false',
       LIVE_BROADCAST_ENABLED: 'false',
@@ -16,7 +16,7 @@ describe('recovery:status', () => {
     const text = formatRecoveryStatusLines(config).join('\n');
     expect(config.databasePath).toBe(DEFAULT_RW0_DATABASE_PATH);
     expect(config.databasePath).not.toBe(DEFAULT_DATABASE_PATH);
-    expect(text).toContain('Spec: rw0_v2');
+    expect(text).toContain('Spec: rw0_v3');
     expect(text).toContain(`Watcher fingerprint: ${RW0_WATCHER_DEFINITION_FINGERPRINT}`);
     expect(text).toContain('Mode: PAPER / DATA RESEARCH ONLY');
     expect(text).toContain('TRADING_ENABLED: false');
@@ -28,7 +28,7 @@ describe('recovery:status', () => {
     expect(text).toContain('Bundle gate: complete linked cluster <=20%');
     expect(text).toContain('SHADOW_RESEARCH_OPEN is the only simulation path');
     expect(text).toContain(
-      'PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v2',
+      'PAPER_ELIGIBLE / PAPER_OPEN names are reserved and unreachable in rw0_v3',
     );
     expect(text).toContain('caller-supplied gate status cannot reach PAPER');
     expect(text).toContain('historical percentages are not proof');

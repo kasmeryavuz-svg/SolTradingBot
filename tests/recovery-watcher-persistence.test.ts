@@ -441,7 +441,7 @@ describe('recovery watcher isolated persistence', () => {
           signalFingerprint: created.signalFingerprint,
           watcherSpecVersion: created.watcherSpecVersion,
           watcherSpecFingerprint: created.watcherSpecFingerprint,
-          safetySpecVersion: 'rw0_safety_v1',
+          safetySpecVersion: 'rw0_safety_v2',
           safetySpecFingerprint: 'missing',
           payload: {
             kind: 'holder',

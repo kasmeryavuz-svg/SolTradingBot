@@ -154,13 +154,14 @@ describe('recovery episode state machine', () => {
     expect(pending.completenessGate).not.toBe('PASS');
   });
 
-  it('routes UNKNOWN gates to REJECTED_SAFETY_UNKNOWN and refuses synthesized FAIL', () => {
-    const unknown = stepEpisode(toSignalPending(), {
-      to: 'REJECTED_SAFETY_UNKNOWN',
-      at: '2026-08-19T11:06:00.000Z',
-      reason: 'holder_unknown',
-    });
-    expect(unknown.state).toBe('REJECTED_SAFETY_UNKNOWN');
+  it('reserves both safety rejection transitions for the persisted reducer', () => {
+    expect(() =>
+      stepEpisode(toSignalPending(), {
+        to: 'REJECTED_SAFETY_UNKNOWN',
+        at: '2026-08-19T11:06:00.000Z',
+        reason: 'holder_unknown',
+      }),
+    ).toThrow(/reserved for the persisted safety-decision reducer/);
     expect(() =>
       applyTransition(
         toSignalPending(
@@ -177,7 +178,7 @@ describe('recovery episode state machine', () => {
         },
         { now: FIXTURE_NOW },
       ),
-    ).toThrow(/cannot synthesize safety gate status/);
+    ).toThrow(/reserved for the persisted safety-decision reducer/);
   });
 
   it('treats censoring as not a win or loss', () => {

@@ -36,7 +36,7 @@ import {
   applyTransition,
   assertCanCreateEpisode,
   createEpisode,
-  applyPersistedSafetyRejection,
+  applyPersistedSafetyRejectionInternal,
   isActiveRecoveryEpisode,
   isShadowExitAction,
   isShadowResearch,
@@ -584,6 +584,7 @@ export function persistSafetyEvidence(
 export function listSafetyEvidence(
   database: DatabaseSync,
   episodeId: string,
+  context: { now: Date } = { now: new Date() },
 ): SafetyEvidenceRecord[] {
   assertRecoverySchema(database);
   const episode = requireEpisode(database, episodeId);
@@ -592,7 +593,7 @@ export function listSafetyEvidence(
       'SELECT * FROM rw0_safety_evidence_v2 WHERE episode_id = ? ORDER BY collected_at ASC, evidence_id ASC',
     )
     .all(episodeId)
-    .map((row) => hydrateSafetyEvidence(database, row, episode, new Date(8_640_000_000_000_000)));
+    .map((row) => hydrateSafetyEvidence(database, row, episode, context.now));
 }
 
 export function persistSafetyDecision(
@@ -664,7 +665,7 @@ export function persistSafetyDecision(
       statuses,
       evidenceIds,
     });
-    const transition = applyPersistedSafetyRejection(
+    const transition = applyPersistedSafetyRejectionInternal(
       episode,
       { to: outcome, at: decidedAt, reason: `slice3a:${decisionId}` },
       { now: context.now },
@@ -846,7 +847,10 @@ export function countShadowPositions(database: DatabaseSync): number {
   return Number(row?.['count'] ?? 0);
 }
 
-export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryReportSnapshot {
+export function loadRecoveryReportSnapshot(
+  database: DatabaseSync,
+  context: { now: Date } = { now: new Date() },
+): RecoveryReportSnapshot {
   assertRecoverySchema(database);
   const screeningRows = listScreeningObservations(database);
   const screeningByDisposition = emptyScreeningDispositionCounts();
@@ -882,7 +886,7 @@ export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryRepo
     .all()
     .map((row) => hydrateEpisode(row).episodeId);
   for (const episodeId of episodeIds) {
-    for (const evidence of listSafetyEvidence(database, episodeId)) {
+    for (const evidence of listSafetyEvidence(database, episodeId, context)) {
       safetyEvidenceCounts[evidence.kind][evidence.status] += 1;
     }
   }
@@ -890,7 +894,7 @@ export function loadRecoveryReportSnapshot(database: DatabaseSync): RecoveryRepo
   for (const row of database.prepare('SELECT * FROM rw0_safety_decisions').all()) {
     const decision = hydrateSafetyDecision(row);
     const episode = requireEpisode(database, decision.episodeId);
-    assertPersistedSafetyDecision(database, episode, decision, new Date(8_640_000_000_000_000));
+    assertPersistedSafetyDecision(database, episode, decision, context.now);
     safetyDecisionReasons[decision.reason] = (safetyDecisionReasons[decision.reason] ?? 0) + 1;
   }
   return {

@@ -273,7 +273,7 @@ export function assertPersistedRw0Identity(input: {
     input.watcherSpecVersion !== RW0_SPEC_VERSION ||
     input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
   ) {
-    throw new RecoveryWatcherError('Persisted recovery watcher identity does not match rw0_v2.', {
+    throw new RecoveryWatcherError('Persisted recovery watcher identity does not match rw0_v3.', {
       code: 'definition_mismatch',
     });
   }
@@ -326,7 +326,7 @@ export function assertFrozenScreeningIdentity(input: {
     input.watcherSpecVersion !== RW0_SPEC_VERSION ||
     input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
   ) {
-    throw new RecoveryWatcherError('Screening watcher identity does not match frozen rw0_v2.', {
+    throw new RecoveryWatcherError('Screening watcher identity does not match frozen rw0_v3.', {
       code: 'definition_mismatch',
     });
   }
