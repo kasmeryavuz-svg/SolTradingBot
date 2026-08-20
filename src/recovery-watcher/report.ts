@@ -120,6 +120,7 @@ function formatDatasetMetadataLines(metadata: RecoveryReportSnapshot['dataset'])
     `Frozen signal: ${manifest.signalVersion} ${manifest.signalFingerprint}`,
     `Frozen recovery schema: ${String(manifest.recoverySchemaVersion)}`,
     `Frozen recovery migrations: ${manifest.recoveryMigrations.map((item) => `${String(item.version)}:${item.name}:${item.sqlDigest}`).join(', ')}`,
+    `Frozen retained binding contract: ${manifest.bindingContractVersion} ${manifest.bindingContractDigest}`,
   );
   return lines;
 }

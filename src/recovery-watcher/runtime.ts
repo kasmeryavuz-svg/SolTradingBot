@@ -9,7 +9,10 @@ import {
   openRecoverySqliteFromConfig,
 } from './db/database.js';
 import { RecoveryWatcherError } from './errors.js';
-import { requireRecoveryDatasetManifest } from './dataset-manifest.js';
+import {
+  activateRecoveryDatasetRuntime,
+  requireRecoveryDatasetManifest,
+} from './dataset-manifest.js';
 import { systemRecoveryProcessLiveness } from './liveness.js';
 import { acquireRecoveryLock, releaseRecoveryLock, type AcquiredRecoveryLock } from './lock.js';
 import { currentRecoveryProcessStartedAtMs } from './process-identity.js';
@@ -36,6 +39,9 @@ export type RecoveryRuntimeOptions = {
   abort?: AbortSignal;
   once?: boolean;
   providers?: RecoveryProviderSet;
+  providerFactory?: (
+    options: Parameters<typeof createRecoveryProviderSet>[0],
+  ) => RecoveryProviderSet;
   fetchImpl?: RecoveryFetchLike;
   liveness?: RecoveryProcessLiveness;
   pid?: number;
@@ -102,11 +108,12 @@ export async function runRecoveryWatcher(
   try {
     database = openRecoverySqliteFromConfig(options.config);
     initializeRecoveryDatabase(database);
-    requireRecoveryDatasetManifest(database, options.config.databasePath);
+    const manifest = requireRecoveryDatasetManifest(database, options.config.databasePath);
+    activateRecoveryDatasetRuntime(database, manifest, now);
     const opened: DatabaseSync = database;
     const providers =
       options.providers ??
-      createRecoveryProviderSet({
+      (options.providerFactory ?? createRecoveryProviderSet)({
         timeoutMs: options.config.networkTimeoutMs,
         clock,
         ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),

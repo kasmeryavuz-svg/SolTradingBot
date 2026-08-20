@@ -85,6 +85,7 @@ export function formatRecoveryStatusLines(
           `Frozen signal: ${manifest.signalVersion} ${manifest.signalFingerprint}`,
           `Frozen recovery schema: ${String(manifest.recoverySchemaVersion)}`,
           `Frozen recovery migrations: ${manifest.recoveryMigrations.map((item) => `${String(item.version)}:${item.name}:${item.sqlDigest}`).join(', ')}`,
+          `Frozen retained binding contract: ${manifest.bindingContractVersion} ${manifest.bindingContractDigest}`,
         ]),
     'Production schema: untouched (must remain 9; migration 010 ABSENT)',
     `Watch cadence ms: ${String(RW0_WATCH_CADENCE_MS)}`,

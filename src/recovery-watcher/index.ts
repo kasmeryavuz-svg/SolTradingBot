@@ -27,6 +27,10 @@ export {
   initializeRecoveryDatasetManifest,
   inspectRecoveryDatasetManifest,
   requireRecoveryDatasetManifest,
+  activateRecoveryDatasetRuntime,
+  assertRecoveryRuntimeStartBoundary,
   RW0_DATASET_MANIFEST_VERSION,
   RW0_DATASET_MANIFEST_SCHEMA_DIGEST,
+  RW0_RETAINED_BINDING_CONTRACT_VERSION,
+  RW0_RETAINED_BINDING_CONTRACT_DIGEST,
 } from './dataset-manifest.js';
