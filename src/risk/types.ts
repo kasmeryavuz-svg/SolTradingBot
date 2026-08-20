@@ -5,6 +5,14 @@ export class RiskScanError extends Error {
   }
 }
 
+/** A provider could not obtain the RPC response; callers may retry safely. */
+export class RiskProviderUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'RiskProviderUnavailableError';
+  }
+}
+
 export const RISK_CHECK_NAMES = ['mint_account', 'supply', 'largest_accounts'] as const;
 export const RISK_FINDING_CATEGORIES = [
   'authority',

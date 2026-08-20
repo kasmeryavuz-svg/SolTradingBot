@@ -16,7 +16,25 @@ export type ParsedMintAccount = {
   extensions: TokenExtensionObservation[];
 };
 
+export type ParsedMintAccountWithUnsupported = Omit<ParsedMintAccount, 'tokenProgram'> & {
+  tokenProgram: TokenProgramKind | 'unsupported';
+};
+
 export function parseMintAccountResponse(response: RiskMintAccountResponse): ParsedMintAccount {
+  return parseMintAccountResponseInternal(response, false) as ParsedMintAccount;
+}
+
+/** Parses all mint invariants while retaining an unsupported owner as incomplete facts. */
+export function parseMintAccountResponseAllowUnsupported(
+  response: RiskMintAccountResponse,
+): ParsedMintAccountWithUnsupported {
+  return parseMintAccountResponseInternal(response, true);
+}
+
+function parseMintAccountResponseInternal(
+  response: RiskMintAccountResponse,
+  allowUnsupported: boolean,
+): ParsedMintAccountWithUnsupported {
   if (response.value === null) {
     throw new RiskScanError('Token mint account was not found.');
   }
@@ -30,7 +48,7 @@ export function parseMintAccountResponse(response: RiskMintAccountResponse): Par
     throw new RiskScanError('Mint account payload is malformed.');
   }
 
-  const tokenProgram = tokenProgramFromOwner(owner);
+  const tokenProgram = tokenProgramFromOwner(owner, allowUnsupported);
   const parsed = readParsedMint(response.value['data']);
   if (parsed.info['isInitialized'] !== true) {
     throw new RiskScanError('Mint account is not initialized.');
@@ -59,7 +77,7 @@ export function parseSupplyResponse(response: RiskTokenSupplyResponse): {
   };
 }
 
-function tokenProgramFromOwner(owner: string): TokenProgramKind {
+function tokenProgramFromOwner(owner: string, allowUnsupported: boolean): TokenProgramKind | 'unsupported' {
   if (owner === SPL_TOKEN_PROGRAM_ID) {
     return 'spl_token';
   }
@@ -68,6 +86,7 @@ function tokenProgramFromOwner(owner: string): TokenProgramKind {
     return 'token_2022';
   }
 
+  if (allowUnsupported) return 'unsupported';
   throw new RiskScanError('Account owner is not a supported token program.');
 }
 
