@@ -2,6 +2,12 @@ export const RW0_SPEC_VERSION = 'rw0_v3';
 export const RW0_SPEC_NAME = 'recovery_watcher_safety_evidence_only';
 export const RW0_CHECKPOINT = 'rw0';
 
+// These values identify the published Slice 1/2 rows. They are compatibility
+// constants only: new episodes, screenings, and safety evidence use RW0_SPEC_VERSION.
+export const RW0_LEGACY_SPEC_VERSION = 'rw0_v1';
+export const RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT =
+  '5dc65c1129485f77b337be22a42dc81ba76aa24c89d2661fce50ef6d70cbd297';
+
 export const RW0_SAFETY_SPEC_VERSION = 'rw0_safety_v2';
 export const RW0_SAFETY_SPEC_NAME = 'persisted_fail_closed_safety_evidence';
 export const RW0_HOLDER_MAX_PCT = 10;

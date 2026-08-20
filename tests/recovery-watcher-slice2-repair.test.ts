@@ -9,6 +9,8 @@ import type { MarketSnapshot } from '../src/market-data/types.js';
 import {
   DEFAULT_RW0_DATABASE_PATH,
   RW0_LOCK_FILE_NAME,
+  RW0_LEGACY_SPEC_VERSION,
+  RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
   RW0_MARKET_PROVIDER,
   RW0_SCREENING_FETCH_CONCURRENCY,
   RW0_SCREENING_MARKET_SOURCE,
@@ -16,6 +18,11 @@ import {
   RW0_WATCH_MARKET_SOURCE,
 } from '../src/recovery-watcher/constants.js';
 import { runRecoveryCycle } from '../src/recovery-watcher/cycle.js';
+import {
+  applyRecoveryMigrations,
+  recoveryMigrationSqlDigest,
+  RW0_MIGRATIONS,
+} from '../src/recovery-watcher/db/migrations.js';
 import {
   initializeRecoveryDatabase,
   openRecoverySqlite,
@@ -227,15 +234,19 @@ function insertRawScreening(
     dipFilterResult?: string;
     disposition?: string;
     reason?: string;
+    watcherSpecVersion?: string;
+    watcherSpecFingerprint?: string;
   } = {},
 ): void {
   const mint = overrides.mint ?? FIXTURE_MINT;
   const screenedAt = overrides.screenedAt ?? T0;
+  const watcherSpecFingerprint =
+    overrides.watcherSpecFingerprint ?? RW0_WATCHER_DEFINITION_FINGERPRINT;
   const screeningId = recoveryScreeningId({
     mint,
     screenedAt,
     signalFingerprint: RECOVERY_V0_SIGNAL_FINGERPRINT,
-    watcherSpecFingerprint: RW0_WATCHER_DEFINITION_FINGERPRINT,
+    watcherSpecFingerprint,
   });
   database
     .prepare(
@@ -260,8 +271,8 @@ function insertRawScreening(
       overrides.priceChange5mPct === undefined ? -10 : overrides.priceChange5mPct,
       'recovery_v0',
       RECOVERY_V0_SIGNAL_FINGERPRINT,
-      'rw0_v3',
-      RW0_WATCHER_DEFINITION_FINGERPRINT,
+      overrides.watcherSpecVersion ?? 'rw0_v3',
+      watcherSpecFingerprint,
       overrides.dipFilterResult ?? 'NOT_DIP',
       overrides.disposition ?? 'NOT_DIP',
       overrides.reason ?? 'price_change_5m_pct outside [-60, -40]',
@@ -270,6 +281,123 @@ function insertRawScreening(
 }
 
 describe('recovery watcher slice 2 repair', () => {
+  it('upgrades and safely drains exact frozen rw0_v1 evidence without accepting new legacy writes', async () => {
+    const path = tempRecoveryDatabasePath();
+    const database = openRecoverySqlite(path, {
+      configuredProductionPath: DEFAULT_DATABASE_PATH,
+    });
+    database.exec(`
+CREATE TABLE rw0_schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  sql_digest TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+) STRICT;
+`);
+    database.exec(RW0_MIGRATIONS[0]?.sql ?? '');
+    database
+      .prepare(
+        'INSERT INTO rw0_schema_migrations (version, name, sql_digest, applied_at) VALUES (1, ?, ?, ?)',
+      )
+      .run('rw0_001_initial', recoveryMigrationSqlDigest(1), T0);
+    insertRawScreening(database, {
+      watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+      watcherSpecFingerprint: RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
+    });
+
+    expect(applyRecoveryMigrations(database)).toBe(2);
+    const legacyRows = listScreeningObservations(database);
+    expect(legacyRows).toHaveLength(1);
+    expect(legacyRows[0]?.watcherSpecVersion).toBe(RW0_LEGACY_SPEC_VERSION);
+    expect(loadRecoveryReportSnapshot(database).screeningCount).toBe(1);
+
+    const created = persistCreatedEpisode(
+      database,
+      discoveredEpisodeInput({ mint: mintAt(40), pairAddress: pairAt(40) }),
+      { now: FIXTURE_NOW },
+    );
+    database
+      .prepare(
+        'UPDATE rw0_episodes SET watcher_spec_version = ?, watcher_spec_fingerprint = ? WHERE episode_id = ?',
+      )
+      .run(
+        RW0_LEGACY_SPEC_VERSION,
+        RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
+        created.episodeId,
+      );
+    expect(listEpisodesByMint(database, created.mint)[0]?.watcherSpecVersion).toBe(
+      RW0_LEGACY_SPEC_VERSION,
+    );
+    expect(loadRecoveryReportSnapshot(database).screeningCount).toBe(1);
+    persistTransition(
+      database,
+      created.episodeId,
+      { to: 'DIP_CANDIDATE', at: '2026-08-19T11:00:01.000Z', reason: 'legacy_filters_pass' },
+      { now: FIXTURE_NOW },
+    );
+    persistTransition(
+      database,
+      created.episodeId,
+      { to: 'RECOVERY_WATCH', at: '2026-08-19T11:00:02.000Z', reason: 'legacy_admitted' },
+      { now: FIXTURE_NOW },
+    );
+    await runRecoveryCycle({
+      database,
+      config: testConfig(),
+      clock: { now: () => new Date(T0) },
+      ...idleProviders(),
+      exactPairMarket: {
+        getSnapshotForPair: () => Promise.resolve(confirmSnapshot(created.mint, created.pairAddress)),
+      },
+    });
+    expect(listEpisodesByMint(database, created.mint)[0]?.state).toBe(
+      'REJECTED_SAFETY_UNKNOWN',
+    );
+    const legacyReport = loadRecoveryReportSnapshot(database);
+    expect(legacyReport.rejectedSafetyUnknownCount).toBe(1);
+    expect(legacyReport.safetyEvidenceCounts.token_rights.UNKNOWN).toBe(0);
+
+    const rejectedLegacyWrite = createScreeningObservation({
+      mint: mintAt(41),
+      screenedAt: T1,
+      discoverySources: 'dexscreener_profile',
+      disposition: 'NOT_DIP',
+      dipFilterResult: 'NOT_DIP',
+      reason: 'legacy write must be rejected',
+      pairAddress: pairAt(41),
+      priceUsd: 1,
+      liquidityUsd: 8_000,
+      volume5mUsd: 5_000,
+      priceChange5mPct: -10,
+    });
+    const legacyFingerprint = RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT;
+    expect(() =>
+      persistScreeningObservation(
+        database,
+        {
+          ...rejectedLegacyWrite,
+          screeningId: recoveryScreeningId({
+            mint: rejectedLegacyWrite.mint,
+            screenedAt: rejectedLegacyWrite.screenedAt,
+            signalFingerprint: rejectedLegacyWrite.signalFingerprint,
+            watcherSpecFingerprint: legacyFingerprint,
+          }),
+          watcherSpecVersion: RW0_LEGACY_SPEC_VERSION,
+          watcherSpecFingerprint: legacyFingerprint,
+        },
+        { now: new Date(T1) },
+      ),
+    ).toThrow(/must use the current frozen watcher identity/);
+
+    database
+      .prepare(
+        'UPDATE rw0_screening_observations SET watcher_spec_fingerprint = ? WHERE watcher_spec_version = ?',
+      )
+      .run('00'.repeat(32), RW0_LEGACY_SPEC_VERSION);
+    expect(() => listScreeningObservations(database)).toThrow(/frozen supported definition/);
+    database.close();
+  });
+
   it('polls 10 slow watches with bounded concurrency instead of serial 10x delay', async () => {
     const database = openInitializedRecoveryDatabase();
     for (let index = 1; index <= 10; index += 1) {

@@ -17,6 +17,7 @@ import {
 } from './constants.js';
 import { parseUtcInstant, watchExpiresAtMs } from './clock.js';
 import { RecoveryWatcherError } from './errors.js';
+import { isFrozenLegacyRw0WatcherIdentity } from './identity.js';
 import {
   countHighResolutionWatchSlots,
   emptyScreeningDispositionCounts,
@@ -141,8 +142,7 @@ function drainPendingSafety(
   metrics: RecoveryCycleMetrics,
 ): void {
   for (const episode of listEpisodesInState(database, 'SIGNAL_PENDING_SAFETY')) {
-    persistUnavailableSafetyEvidence(database, episode, now);
-    persistSafetyDecision(database, episode.episodeId, now.toISOString(), { now });
+    finalizePendingSafety(database, episode, now);
     metrics.rejectedSafetyUnknown += 1;
   }
 }
@@ -279,9 +279,20 @@ function persistWatchFetchResult(
     return;
   }
   metrics.marketFetchSuccesses += 1;
+  const fetchedObservation = snapshotToMarketObservation(
+    fetchResult.snapshot,
+    episode.episodeId,
+    RW0_WATCH_MARKET_SOURCE,
+  );
   persistMarketObservation(
     deps.database,
-    snapshotToMarketObservation(fetchResult.snapshot, episode.episodeId, RW0_WATCH_MARKET_SOURCE),
+    {
+      ...fetchedObservation,
+      signalVersion: episode.signalVersion,
+      signalFingerprint: episode.signalFingerprint,
+      watcherSpecVersion: episode.watcherSpecVersion,
+      watcherSpecFingerprint: episode.watcherSpecFingerprint,
+    },
     { now: persistAt },
   );
   const stored = requireStoredObservation(
@@ -371,11 +382,23 @@ function confirmFromStoredObservation(
       },
     );
   }
-  persistUnavailableSafetyEvidence(database, pending, now);
-  persistSafetyDecision(database, episode.episodeId, now.toISOString(), { now });
+  finalizePendingSafety(database, pending, now);
   metrics.confirmations += 1;
   metrics.rejectedSafetyUnknown += 1;
   return true;
+}
+
+function finalizePendingSafety(
+  database: DatabaseSync,
+  episode: RecoveryEpisode,
+  now: Date,
+): void {
+  // Frozen rw0_v1 episodes already defined all safety gates as UNKNOWN. Preserve
+  // that outcome without fabricating rw0_safety_v2 evidence under a legacy identity.
+  if (!isFrozenLegacyRw0WatcherIdentity(episode)) {
+    persistUnavailableSafetyEvidence(database, episode, now);
+  }
+  persistSafetyDecision(database, episode.episodeId, now.toISOString(), { now });
 }
 
 function persistUnavailableSafetyEvidence(

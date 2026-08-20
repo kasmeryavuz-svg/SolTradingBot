@@ -19,6 +19,7 @@ import { RecoveryWatcherError } from './errors.js';
 import {
   asRecoveryCostModel,
   asRecoveryExecutionModel,
+  assertCurrentScreeningIdentity,
   assertFrozenScreeningIdentity,
   assertPersistedRw0Identity,
   recoveryEpisodeId,
@@ -230,7 +231,7 @@ function persistScreeningObservationUnlocked(
   observation: ScreeningObservationRecord,
   now: Date,
 ): PersistObservationResult {
-  const normalized = normalizeScreeningObservation(observation);
+  const normalized = normalizeScreeningObservation(observation, 'current');
   assertNotFuture(normalized.screenedAt, now, 'screening screenedAt');
   const expectedId = recoveryScreeningId({
     mint: normalized.mint,
@@ -405,7 +406,7 @@ function persistAdmittedDipWatchUnlocked(
   context: { now: Date },
 ): PersistAdmittedDipWatchResult {
   const observation = normalizeMarketObservation(input.observation);
-  const screening = normalizeScreeningObservation(input.screening);
+  const screening = normalizeScreeningObservation(input.screening, 'current');
   assertAdmittedDipEvidenceBinding({
     mint: input.mint,
     observation,
@@ -1347,6 +1348,7 @@ function normalizeMarketObservation(observation: MarketObservationRecord): Marke
 
 function normalizeScreeningObservation(
   observation: ScreeningObservationRecord,
+  identityScope: 'current' | 'persisted',
 ): ScreeningObservationRecord {
   const discoverySources = requireNonEmptyProvenance(
     observation.discoverySources,
@@ -1361,7 +1363,11 @@ function normalizeScreeningObservation(
       code: 'evidence_invalid',
     });
   }
-  assertFrozenScreeningIdentity(observation);
+  if (identityScope === 'current') {
+    assertCurrentScreeningIdentity(observation);
+  } else {
+    assertFrozenScreeningIdentity(observation);
+  }
   assertOptionalPositivePrice(observation.priceUsd, 'screening priceUsd');
   assertOptionalFiniteNonNegative(observation.liquidityUsd, 'screening liquidityUsd');
   assertOptionalFiniteNonNegative(observation.volume5mUsd, 'screening volume5mUsd');
@@ -1462,7 +1468,7 @@ function hydrateScreeningObservation(
     reason: requireString(row['reason']),
     collectedAtIsLocalCollectionTime: true,
   };
-  return normalizeScreeningObservation(observation);
+  return normalizeScreeningObservation(observation, 'persisted');
 }
 
 function isScreeningDisposition(value: string): value is ScreeningDisposition {

@@ -3,6 +3,8 @@ import {
   RW0_COST_MODEL,
   RW0_EXECUTION_MODEL,
   RW0_EXIT_SPEC_VERSION,
+  RW0_LEGACY_SPEC_VERSION,
+  RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT,
   RW0_SHADOW_PAPER_SPEC_VERSION,
   RW0_SPEC_VERSION,
   RECOVERY_V0_SIGNAL_VERSION,
@@ -58,6 +60,26 @@ export const RECOVERY_V0_SIGNAL_FINGERPRINT = fingerprintRecoveryV0Signal();
 export const RW0_SHADOW_PAPER_FINGERPRINT = fingerprintRw0ShadowPaper();
 export const RW0_EXIT_FINGERPRINT = fingerprintRw0Exit();
 export const RW0_WATCHER_DEFINITION_FINGERPRINT = fingerprintRecoveryWatcherDefinition();
+
+export function isFrozenLegacyRw0WatcherIdentity(input: {
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): boolean {
+  return (
+    input.watcherSpecVersion === RW0_LEGACY_SPEC_VERSION &&
+    input.watcherSpecFingerprint === RW0_LEGACY_WATCHER_DEFINITION_FINGERPRINT
+  );
+}
+
+export function isCurrentRw0WatcherIdentity(input: {
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): boolean {
+  return (
+    input.watcherSpecVersion === RW0_SPEC_VERSION &&
+    input.watcherSpecFingerprint === RW0_WATCHER_DEFINITION_FINGERPRINT
+  );
+}
 
 export function recoveryEpisodeId(input: {
   mint: string;
@@ -269,13 +291,11 @@ export function assertPersistedRw0Identity(input: {
       },
     );
   }
-  if (
-    input.watcherSpecVersion !== RW0_SPEC_VERSION ||
-    input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
-  ) {
-    throw new RecoveryWatcherError('Persisted recovery watcher identity does not match rw0_v3.', {
-      code: 'definition_mismatch',
-    });
+  if (!isCurrentRw0WatcherIdentity(input) && !isFrozenLegacyRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'Persisted recovery watcher identity does not match a frozen supported definition.',
+      { code: 'definition_mismatch' },
+    );
   }
   if (
     input.shadowPaperSpecVersion !== RW0_SHADOW_PAPER_SPEC_VERSION ||
@@ -322,13 +342,33 @@ export function assertFrozenScreeningIdentity(input: {
       code: 'definition_mismatch',
     });
   }
+  if (!isCurrentRw0WatcherIdentity(input) && !isFrozenLegacyRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'Screening watcher identity does not match a frozen supported definition.',
+      { code: 'definition_mismatch' },
+    );
+  }
+}
+
+export function assertCurrentScreeningIdentity(input: {
+  signalVersion: string;
+  signalFingerprint: string;
+  watcherSpecVersion: string;
+  watcherSpecFingerprint: string;
+}): void {
   if (
-    input.watcherSpecVersion !== RW0_SPEC_VERSION ||
-    input.watcherSpecFingerprint !== RW0_WATCHER_DEFINITION_FINGERPRINT
+    input.signalVersion !== RECOVERY_V0_SIGNAL_VERSION ||
+    input.signalFingerprint !== RECOVERY_V0_SIGNAL_FINGERPRINT
   ) {
-    throw new RecoveryWatcherError('Screening watcher identity does not match frozen rw0_v3.', {
+    throw new RecoveryWatcherError('Screening signal identity does not match frozen recovery_v0.', {
       code: 'definition_mismatch',
     });
+  }
+  if (!isCurrentRw0WatcherIdentity(input)) {
+    throw new RecoveryWatcherError(
+      'New screening evidence must use the current frozen watcher identity.',
+      { code: 'definition_mismatch' },
+    );
   }
 }
 

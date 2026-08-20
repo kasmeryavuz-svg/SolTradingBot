@@ -175,7 +175,7 @@ Admission to a new `RECOVERY_WATCH` uses the persisted slot count inside `BEGIN 
 
 One **active** episode per mint (application check **and** a partial UNIQUE index). Cooldown does not permanently ban the mint. A later **new** dip (new `dip_observed_at`) may open a new episode after cooldown and within the 3/24h cap.
 
-Persisted episodes must match `rw0_v3` signal/watcher/shadow/exit fingerprints and `cost_model=none` / `execution_model=discrete_observed_price_no_quote`. The recovery migration SQL digest is stored and bound into the watcher fingerprint. Drift without a version bump fails closed.
+New episodes must match `rw0_v3` signal/watcher/shadow/exit fingerprints and `cost_model=none` / `execution_model=discrete_observed_price_no_quote`. Migration 2 also recognizes the exact published `rw0_v1` watcher version/fingerprint pair so existing Slice 1/2 episodes and screenings remain readable. Active legacy episodes retain their v1 identity and drain through the frozen fail-closed `REJECTED_SAFETY_UNKNOWN` outcome without fabricating `rw0_safety_v2` evidence. New screening and safety evidence cannot be written with the legacy identity; mismatched version/fingerprint pairs fail closed. The recovery migration SQL digest is stored and bound into the watcher fingerprint. Drift without a version bump fails closed.
 
 ## State machine
 
