@@ -18,4 +18,4 @@ export { formatBasisPoints } from './numbers.js';
 export type { RiskDataProvider } from './provider.js';
 export { scanTokenRisk } from './service.js';
 export { createSolanaRiskDataProvider } from './solana/provider.js';
-export { RiskScanError, type TokenRiskReport } from './types.js';
+export { RiskProviderUnavailableError, RiskScanError, type TokenRiskReport } from './types.js';

@@ -1,9 +1,7 @@
-import { isRecord } from '../risk/numbers.js';
-import { parseMintAccountResponse } from '../risk/solana/parser.js';
+import { parseMintAccountResponseAllowUnsupported } from '../risk/solana/parser.js';
 import type { RiskDataProvider } from '../risk/provider.js';
 import type { RiskCommitment } from '../risk/types.js';
-import { RiskScanError, type TokenExtensionObservation } from '../risk/types.js';
-import { SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '../risk/constants.js';
+import { RiskProviderUnavailableError, RiskScanError, type TokenExtensionObservation } from '../risk/types.js';
 import { isPlausibleSolanaMint } from '../utils/solana-mint.js';
 import type { TokenRightsSafetyPayload } from './types.js';
 
@@ -68,6 +66,7 @@ export async function collectTokenRights(
   try {
     response = await provider.getMintAccount(tokenMint);
   } catch (error) {
+    if (!(error instanceof RiskProviderUnavailableError)) throw error;
     return {
       kind: 'unavailable',
       tokenMint,
@@ -84,8 +83,8 @@ export async function collectTokenRights(
   }
 
   const collectedAt = now().toISOString();
-  const owner = readOwner(response.value);
-  if (owner !== SPL_TOKEN_PROGRAM_ID && owner !== TOKEN_2022_PROGRAM_ID) {
+  const parsed = parseMintAccountResponseAllowUnsupported(response);
+  if (parsed.tokenProgram === 'unsupported') {
     return {
       kind: 'success',
       tokenMint,
@@ -98,7 +97,7 @@ export async function collectTokenRights(
         factsComplete: false,
       },
       provenance: {
-        contextSlot: response.contextSlot,
+        contextSlot: parsed.mintContextSlot,
         commitment,
         source,
         observedAt,
@@ -107,7 +106,6 @@ export async function collectTokenRights(
     };
   }
 
-  const parsed = parseMintAccountResponse(response);
   const extensions: readonly TokenExtensionObservation[] = parsed.extensions;
   const factsComplete =
     parsed.tokenProgram === 'spl_token' ||
@@ -133,11 +131,3 @@ export async function collectTokenRights(
     },
   };
 }
-
-function readOwner(value: unknown): string {
-  if (!isRecord(value) || typeof value['owner'] !== 'string') {
-    throw new RiskScanError('Mint account payload is malformed.');
-  }
-  return value['owner'];
-}
-

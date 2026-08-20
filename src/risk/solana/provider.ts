@@ -8,7 +8,7 @@ import type {
   RiskMintAccountResponse,
   RiskTokenSupplyResponse,
 } from '../provider.js';
-import { RiskScanError } from '../types.js';
+import { RiskProviderUnavailableError, RiskScanError } from '../types.js';
 
 export function createSolanaRiskDataProvider(options: {
   rpcUrl: string;
@@ -19,9 +19,10 @@ export function createSolanaRiskDataProvider(options: {
 
   return {
     async getMintAccount(tokenMint: string): Promise<RiskMintAccountResponse> {
+      const tokenAddress = address(tokenMint);
       try {
         const response = await rpc
-          .getAccountInfo(address(tokenMint), {
+          .getAccountInfo(tokenAddress, {
             encoding: 'jsonParsed',
             commitment: options.commitment,
           })
@@ -79,7 +80,7 @@ function wrapRpcError(method: string, error: unknown): RiskScanError {
   }
 
   const message = error instanceof Error ? error.message : String(error);
-  return new RiskScanError(`Solana RPC ${method} failed. ${sanitizeErrorText(message)}`, {
+  return new RiskProviderUnavailableError(`Solana RPC ${method} failed. ${sanitizeErrorText(message)}`, {
     cause: error,
   });
 }
