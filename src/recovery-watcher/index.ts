@@ -22,3 +22,11 @@ export { formatRecoveryStatusLines, formatRecoveryCycleLines } from './format.js
 export { formatRecoveryReportLines } from './report.js';
 export { runRecoveryCycle } from './cycle.js';
 export { runRecoveryWatcher } from './runtime.js';
+export {
+  buildRecoveryDatasetManifest,
+  initializeRecoveryDatasetManifest,
+  inspectRecoveryDatasetManifest,
+  requireRecoveryDatasetManifest,
+  RW0_DATASET_MANIFEST_VERSION,
+  RW0_DATASET_MANIFEST_SCHEMA_DIGEST,
+} from './dataset-manifest.js';

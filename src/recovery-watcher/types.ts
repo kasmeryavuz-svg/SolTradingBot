@@ -11,6 +11,7 @@ import {
   RW0_SCREENING_DISPOSITIONS,
 } from './constants.js';
 import type { TokenExtensionObservation } from '../risk/types.js';
+import type { RecoveryDatasetMetadata } from './dataset-manifest.js';
 
 export type RecoveryEpisodeState = (typeof RECOVERY_EPISODE_STATES)[number];
 export type ActiveRecoveryEpisodeState = (typeof ACTIVE_RECOVERY_EPISODE_STATES)[number];
@@ -383,6 +384,7 @@ export type RecoveryCycleMetrics = {
 };
 
 export type RecoveryReportSnapshot = {
+  dataset: RecoveryDatasetMetadata;
   screeningCount: number;
   screeningByDisposition: Record<ScreeningDisposition, number>;
   dipFilterPassCount: number;

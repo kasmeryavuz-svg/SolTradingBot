@@ -68,6 +68,7 @@ import {
   discoveredEpisodeInput,
   createDiscoveredEpisode,
   FIXTURE_CONFIRM_AT,
+  initializeTestRecoveryDataset,
   FIXTURE_DIP_AT,
   FIXTURE_DIP_STEP_AT,
   FIXTURE_MINT,
@@ -296,9 +297,7 @@ function insertRawScreening(
     );
 }
 
-function insertLegacyEpisodeFixture(
-  database: ReturnType<typeof openRecoverySqlite>,
-): {
+function insertLegacyEpisodeFixture(database: ReturnType<typeof openRecoverySqlite>): {
   discovered: RecoveryEpisode;
   dipCandidate: RecoveryEpisode;
   watch: RecoveryEpisode;
@@ -575,9 +574,9 @@ CREATE TABLE rw0_schema_migrations (
       },
       FIXTURE_NOW,
     );
-    expect(() =>
-      persistSafetyEvidence(database, legacyBoundSafety, { now: FIXTURE_NOW }),
-    ).toThrow(/cannot bind to a legacy episode/);
+    expect(() => persistSafetyEvidence(database, legacyBoundSafety, { now: FIXTURE_NOW })).toThrow(
+      /cannot bind to a legacy episode/,
+    );
 
     await runRecoveryCycle({
       database,
@@ -725,6 +724,7 @@ CREATE TABLE rw0_schema_migrations (
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
     initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
     admitWatch(fileDb, FIXTURE_MINT, FIXTURE_PAIR);
     fileDb.close();
 
@@ -788,6 +788,7 @@ CREATE TABLE rw0_schema_migrations (
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
     initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
     fileDb.close();
     const sleeps: number[] = [];
     const abort = new AbortController();
@@ -902,6 +903,7 @@ CREATE TABLE rw0_schema_migrations (
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
     initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
     fileDb.close();
     await expect(
       runRecoveryWatcher({
@@ -1420,6 +1422,10 @@ CREATE TABLE rw0_schema_migrations (
 
   it('releases only the owned lock after a post-lock failure and does not import production runtime', async () => {
     const path = tempRecoveryDatabasePath();
+    const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
+    initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
+    fileDb.close();
     await expect(
       runRecoveryWatcher({
         config: testConfig({ databasePath: path }),

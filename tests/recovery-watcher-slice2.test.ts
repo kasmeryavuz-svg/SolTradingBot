@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_DATABASE_PATH } from '../src/config/defaults.js';
 import type { DiscoveryFeedProvider } from '../src/discovery/provider.js';
 import type { SourceRecord } from '../src/discovery/types.js';
-import type { ExactPairMarketDataProvider, MarketDataProvider } from '../src/market-data/provider.js';
+import type {
+  ExactPairMarketDataProvider,
+  MarketDataProvider,
+} from '../src/market-data/provider.js';
 import { MarketDataError, type MarketSnapshot } from '../src/market-data/types.js';
 import { RecoveryWatcherError } from '../src/recovery-watcher/errors.js';
 import { prepareRecoveryRunCommand } from '../src/recovery-watcher/command.js';
@@ -25,11 +28,17 @@ import {
   persistScreeningObservation,
   persistTransition,
 } from '../src/recovery-watcher/persistence.js';
-import { createScreeningObservation, snapshotToMarketObservation } from '../src/recovery-watcher/screening.js';
+import {
+  createScreeningObservation,
+  snapshotToMarketObservation,
+} from '../src/recovery-watcher/screening.js';
 import { RW0_WATCH_MARKET_SOURCE } from '../src/recovery-watcher/constants.js';
 import { createRecoveryCycleMutex, runRecoveryWatcher } from '../src/recovery-watcher/runtime.js';
 import { formatRecoveryReportLines } from '../src/recovery-watcher/report.js';
-import { RECOVERY_V0_SIGNAL_FINGERPRINT, RW0_WATCHER_DEFINITION_FINGERPRINT } from '../src/recovery-watcher/identity.js';
+import {
+  RECOVERY_V0_SIGNAL_FINGERPRINT,
+  RW0_WATCHER_DEFINITION_FINGERPRINT,
+} from '../src/recovery-watcher/identity.js';
 import { recoveryMigrationSqlDigest } from '../src/recovery-watcher/db/migrations.js';
 import type { RecoveryWatcherConfig } from '../src/recovery-watcher/types.js';
 import {
@@ -37,6 +46,7 @@ import {
   FIXTURE_MINT,
   FIXTURE_NOW,
   FIXTURE_PAIR,
+  initializeTestRecoveryDataset,
   openInitializedRecoveryDatabase,
   passingConfirmationFields,
   passingDipFields,
@@ -44,7 +54,10 @@ import {
   tempRecoveryDirectory,
 } from './recovery-watcher-fixtures.js';
 import { DEFAULT_RW0_DATABASE_PATH } from '../src/recovery-watcher/constants.js';
-import { initializeRecoveryDatabase, openRecoverySqlite } from '../src/recovery-watcher/db/database.js';
+import {
+  initializeRecoveryDatabase,
+  openRecoverySqlite,
+} from '../src/recovery-watcher/db/database.js';
 import { addMs } from '../src/recovery-watcher/clock.js';
 
 const T0 = '2026-08-19T12:00:00.000Z';
@@ -77,7 +90,9 @@ function sourceRecord(mint: string, source: SourceRecord['source']): SourceRecor
   };
 }
 
-function marketSnapshot(overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string }): MarketSnapshot {
+function marketSnapshot(
+  overrides: Partial<MarketSnapshot> & { tokenMint: string; pairAddress: string },
+): MarketSnapshot {
   return {
     chain: 'solana',
     tokenName: 'Test',
@@ -207,7 +222,12 @@ function createHarness(overrides: Partial<RecoveryWatcherConfig> = {}) {
       if (value.pairAddress !== pairAddress) {
         return Promise.reject(new Error('exact-pair provider must not fall back to another pair'));
       }
-      return Promise.resolve({ ...value, tokenMint, pairAddress, collectedAt: clock.now().toISOString() });
+      return Promise.resolve({
+        ...value,
+        tokenMint,
+        pairAddress,
+        collectedAt: clock.now().toISOString(),
+      });
     },
   };
   return {
@@ -273,7 +293,9 @@ describe('recovery watcher slice 2', () => {
     harness.setNow('2026-08-19T12:02:00.000Z');
     await harness.cycle();
     expect(listEpisodesByMint(harness.database, FIXTURE_MINT)).toEqual([]);
-    expect(listScreeningObservations(harness.database).every((row) => row.disposition === 'NOT_DIP')).toBe(true);
+    expect(
+      listScreeningObservations(harness.database).every((row) => row.disposition === 'NOT_DIP'),
+    ).toBe(true);
   });
 
   it('can admit a later real dip after prior NOT_DIP', async () => {
@@ -373,7 +395,11 @@ describe('recovery watcher slice 2', () => {
     expect(metrics.screeningByDisposition.DIP_PASS).toBe(10);
     expect(metrics.screeningByDisposition.WATCH_CAP_FULL).toBe(1);
     expect(metrics.dipFilterPassCount).toBe(11);
-    expect(listScreeningObservations(harness.database).some((row) => row.disposition === 'WATCH_CAP_FULL' && row.dipFilterResult === 'PASS')).toBe(true);
+    expect(
+      listScreeningObservations(harness.database).some(
+        (row) => row.disposition === 'WATCH_CAP_FULL' && row.dipFilterResult === 'PASS',
+      ),
+    ).toBe(true);
   });
 
   it('pins the admitted pair and never switches it', async () => {
@@ -387,9 +413,11 @@ describe('recovery watcher slice 2', () => {
     await harness.cycle();
     const episode = listEpisodesByMint(harness.database, FIXTURE_MINT)[0];
     expect(episode?.pairAddress).toBe(FIXTURE_PAIR);
-    expect(listMarketObservations(harness.database, episode?.episodeId ?? '').every((row) => row.pairAddress === FIXTURE_PAIR)).toBe(
-      true,
-    );
+    expect(
+      listMarketObservations(harness.database, episode?.episodeId ?? '').every(
+        (row) => row.pairAddress === FIXTURE_PAIR,
+      ),
+    ).toBe(true);
   });
 
   it('does not fall back when the exact pinned pair is missing', async () => {
@@ -398,7 +426,11 @@ describe('recovery watcher slice 2', () => {
     harness.setScreening(FIXTURE_MINT, dipSnapshot());
     await harness.cycle();
     harness.setNow(T1);
-    harness.setExact(FIXTURE_MINT, FIXTURE_PAIR, new MarketDataError('Opening pair is unavailable.'));
+    harness.setExact(
+      FIXTURE_MINT,
+      FIXTURE_PAIR,
+      new MarketDataError('Opening pair is unavailable.'),
+    );
     const metrics = await harness.cycle();
     const episode = listEpisodesByMint(harness.database, FIXTURE_MINT)[0];
     expect(episode?.state).toBe('RECOVERY_WATCH');
@@ -423,7 +455,11 @@ describe('recovery watcher slice 2', () => {
       { now: new Date(T1) },
     );
     harness.setNow(T1);
-    harness.setExact(FIXTURE_MINT, FIXTURE_PAIR, new MarketDataError('provider down after persist'));
+    harness.setExact(
+      FIXTURE_MINT,
+      FIXTURE_PAIR,
+      new MarketDataError('provider down after persist'),
+    );
     const metrics = await harness.cycle();
     const updated = loadEpisode(harness.database, episode?.episodeId ?? '');
     expect(updated?.state).toBe('REJECTED_SAFETY_UNKNOWN');
@@ -443,8 +479,12 @@ describe('recovery watcher slice 2', () => {
     before.setNow(TTL_MINUS_1MS);
     before.setExact(FIXTURE_MINT, FIXTURE_PAIR, confirmSnapshot());
     await before.cycle();
-    expect(listEpisodesByMint(before.database, FIXTURE_MINT)[0]?.state).toBe('REJECTED_SAFETY_UNKNOWN');
-    expect(listEpisodesByMint(before.database, FIXTURE_MINT)[0]?.recoveryConfirmedAt).toBe(TTL_MINUS_1MS);
+    expect(listEpisodesByMint(before.database, FIXTURE_MINT)[0]?.state).toBe(
+      'REJECTED_SAFETY_UNKNOWN',
+    );
+    expect(listEpisodesByMint(before.database, FIXTURE_MINT)[0]?.recoveryConfirmedAt).toBe(
+      TTL_MINUS_1MS,
+    );
 
     const expired = createHarness();
     expired.setProfile([FIXTURE_MINT]);
@@ -464,7 +504,11 @@ describe('recovery watcher slice 2', () => {
     harness.setScreening(FIXTURE_MINT, dipSnapshot());
     await harness.cycle();
     harness.setNow(T1);
-    harness.setExact(FIXTURE_MINT, FIXTURE_PAIR, new MarketDataError('DEX Screener rate-limited the request. Wait and try again.'));
+    harness.setExact(
+      FIXTURE_MINT,
+      FIXTURE_PAIR,
+      new MarketDataError('DEX Screener rate-limited the request. Wait and try again.'),
+    );
     await harness.cycle();
     const episode = listEpisodesByMint(harness.database, FIXTURE_MINT)[0];
     expect(episode?.state).toBe('RECOVERY_WATCH');
@@ -491,9 +535,12 @@ describe('recovery watcher slice 2', () => {
     live.setNow(T1);
     live.setExact(FIXTURE_MINT, FIXTURE_PAIR, confirmSnapshot());
     await live.cycle();
-    expect(listMarketObservations(live.database, listEpisodesByMint(live.database, FIXTURE_MINT)[0]?.episodeId ?? '').every((row) => row.pairAddress === FIXTURE_PAIR)).toBe(
-      true,
-    );
+    expect(
+      listMarketObservations(
+        live.database,
+        listEpisodesByMint(live.database, FIXTURE_MINT)[0]?.episodeId ?? '',
+      ).every((row) => row.pairAddress === FIXTURE_PAIR),
+    ).toBe(true);
   });
 
   it('re-evaluates a crash-persisted confirmation observation without substituting newer data', async () => {
@@ -522,10 +569,19 @@ describe('recovery watcher slice 2', () => {
 
   it('drains leftover SIGNAL_PENDING_SAFETY to REJECTED_SAFETY_UNKNOWN and frees the watch slot', () => {
     const database = openInitializedRecoveryDatabase();
-    const created = persistCreatedEpisode(database, discoveredEpisodeInput({ ...passingDipFields() }), {
-      now: FIXTURE_NOW,
-    });
-    persistTransition(database, created.episodeId, { to: 'DIP_CANDIDATE', at: '2026-08-19T11:00:01.000Z', reason: 'filters_pass' }, { now: FIXTURE_NOW });
+    const created = persistCreatedEpisode(
+      database,
+      discoveredEpisodeInput({ ...passingDipFields() }),
+      {
+        now: FIXTURE_NOW,
+      },
+    );
+    persistTransition(
+      database,
+      created.episodeId,
+      { to: 'DIP_CANDIDATE', at: '2026-08-19T11:00:01.000Z', reason: 'filters_pass' },
+      { now: FIXTURE_NOW },
+    );
     persistTransition(
       database,
       created.episodeId,
@@ -595,7 +651,9 @@ describe('recovery watcher slice 2', () => {
     harness.setNow(T1);
     harness.setExact(FIXTURE_MINT, FIXTURE_PAIR, confirmSnapshot());
     await harness.cycle();
-    expect(listEpisodesByMint(harness.database, FIXTURE_MINT)[0]?.state).toBe('REJECTED_SAFETY_UNKNOWN');
+    expect(listEpisodesByMint(harness.database, FIXTURE_MINT)[0]?.state).toBe(
+      'REJECTED_SAFETY_UNKNOWN',
+    );
     expect(countShadowPositions(harness.database)).toBe(0);
     expect(listEpisodesInState(harness.database, 'SHADOW_RESEARCH_OPEN')).toEqual([]);
     expect(listEpisodesInState(harness.database, 'PAPER_ELIGIBLE')).toEqual([]);
@@ -617,9 +675,9 @@ describe('recovery watcher slice 2', () => {
 
   it('fails live flags before any network call', async () => {
     let fetched = false;
-    expect(() => prepareRecoveryRunCommand({ TRADING_ENABLED: 'true', LIVE_BROADCAST_ENABLED: 'false' })).toThrow(
-      RecoveryWatcherError,
-    );
+    expect(() =>
+      prepareRecoveryRunCommand({ TRADING_ENABLED: 'true', LIVE_BROADCAST_ENABLED: 'false' }),
+    ).toThrow(RecoveryWatcherError);
     await expect(
       runRecoveryWatcher({
         config: testConfig({ tradingEnabled: true, databasePath: tempRecoveryDatabasePath() }),
@@ -644,7 +702,10 @@ describe('recovery watcher slice 2', () => {
     const productionPath = join(tempRecoveryDirectory(), 'soltradingbot.sqlite');
     const recoveryPath = join(tempRecoveryDirectory(), 'recovery-watcher.sqlite');
     const before = existsSync(productionPath) ? statSync(productionPath).mtimeMs : 0;
-    const harness = createHarness({ databasePath: recoveryPath, configuredProductionDatabasePath: productionPath });
+    const harness = createHarness({
+      databasePath: recoveryPath,
+      configuredProductionDatabasePath: productionPath,
+    });
     harness.setProfile([FIXTURE_MINT]);
     harness.setScreening(FIXTURE_MINT, notDipSnapshot());
     await harness.cycle();
@@ -741,6 +802,7 @@ describe('recovery watcher slice 2', () => {
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
     initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
     fileDb.close();
     let mono = 0;
     await runRecoveryWatcher({
@@ -776,6 +838,7 @@ describe('recovery watcher slice 2', () => {
     const path = tempRecoveryDatabasePath();
     const fileDb = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
     initializeRecoveryDatabase(fileDb);
+    initializeTestRecoveryDataset(fileDb, path);
     fileDb.close();
     await runRecoveryWatcher({
       config: testConfig({ databasePath: path }),
@@ -798,7 +861,9 @@ describe('recovery watcher slice 2', () => {
     });
     expect(cycles).toBe(1);
     expect(recoveryMigrationSqlDigest(1)).toMatch(/^[a-f0-9]{64}$/);
-    expect(RECOVERY_V0_SIGNAL_FINGERPRINT).toBe('4e91a7d77a4e1699c5263b99dc468d3b579816525a6232e17eb966d5d0f6c06b');
+    expect(RECOVERY_V0_SIGNAL_FINGERPRINT).toBe(
+      '4e91a7d77a4e1699c5263b99dc468d3b579816525a6232e17eb966d5d0f6c06b',
+    );
     expect(RW0_WATCHER_DEFINITION_FINGERPRINT).toMatch(/^[a-f0-9]{64}$/);
   });
 });

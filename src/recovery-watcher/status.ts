@@ -3,13 +3,33 @@ import { prepareRecoveryStatusCommand, assertNoExtraRecoveryArguments } from './
 import { RecoveryWatcherError } from './errors.js';
 import { formatRecoveryStatusLines } from './format.js';
 import { sanitizeRecoveryErrorMessage } from './sanitizer.js';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { openRecoverySqliteReadOnlyFromConfig } from './db/database.js';
+import {
+  inspectRecoveryDatasetManifest,
+  type RecoveryDatasetMetadata,
+} from './dataset-manifest.js';
 
 loadDotenv({ quiet: true });
 
 try {
   assertNoExtraRecoveryArguments(process.argv, 'recovery:status');
   const config = prepareRecoveryStatusCommand(process.env);
-  for (const line of formatRecoveryStatusLines(config)) {
+  let dataset: RecoveryDatasetMetadata = {
+    evidenceClass: 'unclassified',
+    populated: false,
+    manifest: null,
+  };
+  if (existsSync(resolve(config.databasePath))) {
+    const database = openRecoverySqliteReadOnlyFromConfig(config);
+    try {
+      dataset = inspectRecoveryDatasetManifest(database, config.databasePath);
+    } finally {
+      database.close();
+    }
+  }
+  for (const line of formatRecoveryStatusLines(config, dataset)) {
     console.log(line);
   }
 } catch (error: unknown) {

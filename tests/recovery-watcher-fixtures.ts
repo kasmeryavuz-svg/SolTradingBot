@@ -1,10 +1,23 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_DATABASE_PATH } from '../src/config/defaults.js';
-import { initializeRecoveryDatabase, openRecoveryMemoryDatabase, openRecoverySqlite } from '../src/recovery-watcher/db/database.js';
+import {
+  initializeRecoveryDatabase,
+  openRecoveryMemoryDatabase,
+  openRecoverySqlite,
+} from '../src/recovery-watcher/db/database.js';
+import {
+  buildRecoveryDatasetManifest,
+  initializeRecoveryDatasetManifest,
+} from '../src/recovery-watcher/dataset-manifest.js';
 import { applyTransition, createEpisode } from '../src/recovery-watcher/state.js';
-import type { CreateEpisodeInput, RecoveryEpisode, TransitionRequest } from '../src/recovery-watcher/types.js';
+import type {
+  CreateEpisodeInput,
+  RecoveryEpisode,
+  TransitionRequest,
+} from '../src/recovery-watcher/types.js';
 
 export const FIXTURE_MINT = 'So11111111111111111111111111111111111111112';
 export const FIXTURE_PAIR = '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2';
@@ -57,7 +70,9 @@ export function takeProfitCloseEvidence(): NonNullable<TransitionRequest['closeE
   };
 }
 
-export function discoveredEpisodeInput(overrides: Partial<CreateEpisodeInput> = {}): CreateEpisodeInput {
+export function discoveredEpisodeInput(
+  overrides: Partial<CreateEpisodeInput> = {},
+): CreateEpisodeInput {
   return {
     mint: FIXTURE_MINT,
     pairAddress: FIXTURE_PAIR,
@@ -68,7 +83,9 @@ export function discoveredEpisodeInput(overrides: Partial<CreateEpisodeInput> = 
   };
 }
 
-export function createDiscoveredEpisode(overrides: Partial<CreateEpisodeInput> = {}): RecoveryEpisode {
+export function createDiscoveredEpisode(
+  overrides: Partial<CreateEpisodeInput> = {},
+): RecoveryEpisode {
   return createEpisode(discoveredEpisodeInput(overrides), { now: FIXTURE_NOW });
 }
 
@@ -79,12 +96,20 @@ export function stepEpisode(
 ): RecoveryEpisode {
   return applyTransition(current, request, {
     now: context.now ?? FIXTURE_NOW,
-    ...(context.concurrentWatchCount === undefined ? {} : { concurrentWatchCount: context.concurrentWatchCount }),
+    ...(context.concurrentWatchCount === undefined
+      ? {}
+      : { concurrentWatchCount: context.concurrentWatchCount }),
   }).episode;
 }
 
-export function toDipCandidate(current: RecoveryEpisode = createDiscoveredEpisode()): RecoveryEpisode {
-  return stepEpisode(current, { to: 'DIP_CANDIDATE', at: FIXTURE_DIP_STEP_AT, reason: 'filters_pass' });
+export function toDipCandidate(
+  current: RecoveryEpisode = createDiscoveredEpisode(),
+): RecoveryEpisode {
+  return stepEpisode(current, {
+    to: 'DIP_CANDIDATE',
+    at: FIXTURE_DIP_STEP_AT,
+    reason: 'filters_pass',
+  });
 }
 
 export function toWatch(current: RecoveryEpisode = createDiscoveredEpisode()): RecoveryEpisode {
@@ -95,7 +120,9 @@ export function toWatch(current: RecoveryEpisode = createDiscoveredEpisode()): R
   );
 }
 
-export function toSignalPending(current: RecoveryEpisode = createDiscoveredEpisode()): RecoveryEpisode {
+export function toSignalPending(
+  current: RecoveryEpisode = createDiscoveredEpisode(),
+): RecoveryEpisode {
   return stepEpisode(toWatch(current), {
     to: 'SIGNAL_PENDING_SAFETY',
     at: FIXTURE_CONFIRM_AT,
@@ -122,6 +149,19 @@ export function openInitializedRecoveryFileDatabase(path: string) {
   const database = openRecoverySqlite(path, { configuredProductionPath: DEFAULT_DATABASE_PATH });
   initializeRecoveryDatabase(database);
   return database;
+}
+
+export function initializeTestRecoveryDataset(database: DatabaseSync, path: string): void {
+  initializeRecoveryDatasetManifest(
+    database,
+    buildRecoveryDatasetManifest({
+      datasetId: 'rw0-test-dataset',
+      createdAt: FIXTURE_NOW.toISOString(),
+      startAt: FIXTURE_NOW.toISOString(),
+      evidenceClass: 'test',
+      databasePath: path,
+    }),
+  );
 }
 
 export function tempRecoveryDatabasePath(): string {

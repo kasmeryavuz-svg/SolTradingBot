@@ -3,13 +3,27 @@ import { dirname, resolve } from 'node:path';
 import { RW0_SCREENING_WALL_BUDGET_MS, RW0_WATCH_CADENCE_MS } from './constants.js';
 import { createRecoveryClock } from './clock.js';
 import { emptyCycleMetrics, runRecoveryScreeningPass, runRecoveryWatchPass } from './cycle.js';
-import { ensureRecoveryRuntimeDirectory, initializeRecoveryDatabase, openRecoverySqliteFromConfig } from './db/database.js';
+import {
+  ensureRecoveryRuntimeDirectory,
+  initializeRecoveryDatabase,
+  openRecoverySqliteFromConfig,
+} from './db/database.js';
 import { RecoveryWatcherError } from './errors.js';
+import { requireRecoveryDatasetManifest } from './dataset-manifest.js';
 import { systemRecoveryProcessLiveness } from './liveness.js';
 import { acquireRecoveryLock, releaseRecoveryLock, type AcquiredRecoveryLock } from './lock.js';
 import { currentRecoveryProcessStartedAtMs } from './process-identity.js';
-import { createRecoveryProviderSet, type RecoveryProviderSet, type RecoveryFetchLike } from './providers.js';
-import type { RecoveryClock, RecoveryCycleMetrics, RecoveryProcessLiveness, RecoveryWatcherConfig } from './types.js';
+import {
+  createRecoveryProviderSet,
+  type RecoveryProviderSet,
+  type RecoveryFetchLike,
+} from './providers.js';
+import type {
+  RecoveryClock,
+  RecoveryCycleMetrics,
+  RecoveryProcessLiveness,
+  RecoveryWatcherConfig,
+} from './types.js';
 
 export type RecoveryCycleMutex = {
   run<T>(work: () => Promise<T>): Promise<T>;
@@ -36,9 +50,12 @@ export function createRecoveryCycleMutex(): RecoveryCycleMutex {
   return {
     async run<T>(work: () => Promise<T>): Promise<T> {
       if (running) {
-        throw new RecoveryWatcherError('Recovery Watcher cycle is already running. Overlapping cycles are rejected.', {
-          code: 'overlapping_cycle',
-        });
+        throw new RecoveryWatcherError(
+          'Recovery Watcher cycle is already running. Overlapping cycles are rejected.',
+          {
+            code: 'overlapping_cycle',
+          },
+        );
       }
       running = true;
       try {
@@ -68,7 +85,9 @@ export async function sleepForCadence(ms: number, signal: AbortSignal): Promise<
   });
 }
 
-export async function runRecoveryWatcher(options: RecoveryRuntimeOptions): Promise<RecoveryCycleMetrics | undefined> {
+export async function runRecoveryWatcher(
+  options: RecoveryRuntimeOptions,
+): Promise<RecoveryCycleMetrics | undefined> {
   assertRuntimeLiveGatesClosed(options.config);
   const clock = options.clock ?? createRecoveryClock();
   const now = clock.now();
@@ -83,6 +102,7 @@ export async function runRecoveryWatcher(options: RecoveryRuntimeOptions): Promi
   try {
     database = openRecoverySqliteFromConfig(options.config);
     initializeRecoveryDatabase(database);
+    requireRecoveryDatasetManifest(database, options.config.databasePath);
     const opened: DatabaseSync = database;
     const providers =
       options.providers ??
