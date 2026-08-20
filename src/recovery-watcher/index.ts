@@ -23,6 +23,15 @@ export { formatRecoveryReportLines } from './report.js';
 export { runRecoveryCycle } from './cycle.js';
 export { runRecoveryWatcher } from './runtime.js';
 export {
+  collectTokenRights,
+  type CollectTokenRightsOptions,
+  type TokenRightsCollectionProvenance,
+  type TokenRightsCollectionResult,
+  type TokenRightsCollectionSuccess,
+  type TokenRightsCollectionUnavailable,
+  type TokenRightsMintProvider,
+} from './token-rights-collector.js';
+export {
   buildRecoveryDatasetManifest,
   initializeRecoveryDatasetManifest,
   inspectRecoveryDatasetManifest,
