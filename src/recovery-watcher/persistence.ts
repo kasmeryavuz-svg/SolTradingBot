@@ -16,6 +16,7 @@ import {
   parseUtcInstant,
 } from './clock.js';
 import { RecoveryWatcherError } from './errors.js';
+import { inspectRecoveryDatasetManifest } from './dataset-manifest.js';
 import {
   asRecoveryCostModel,
   asRecoveryExecutionModel,
@@ -851,9 +852,10 @@ export function countShadowPositions(database: DatabaseSync): number {
 
 export function loadRecoveryReportSnapshot(
   database: DatabaseSync,
-  context: { now: Date } = { now: new Date() },
+  context: { now: Date; databasePath?: string } = { now: new Date() },
 ): RecoveryReportSnapshot {
   assertRecoverySchema(database);
+  const dataset = inspectRecoveryDatasetManifest(database, context.databasePath ?? ':memory:');
   const screeningRows = listScreeningObservations(database);
   const screeningByDisposition = emptyScreeningDispositionCounts();
   const dipFilterCounts = emptyDipFilterResultCounts();
@@ -900,6 +902,7 @@ export function loadRecoveryReportSnapshot(
     safetyDecisionReasons[decision.reason] = (safetyDecisionReasons[decision.reason] ?? 0) + 1;
   }
   return {
+    dataset,
     screeningCount: screeningRows.length,
     screeningByDisposition,
     dipFilterPassCount: dipFilterCounts.PASS,

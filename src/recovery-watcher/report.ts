@@ -26,7 +26,10 @@ export function loadRecoveryReport(config: RecoveryWatcherConfig): RecoveryRepor
   }
   const database = openRecoverySqliteReadOnlyFromConfig(config);
   try {
-    return loadRecoveryReportSnapshot(database);
+    return loadRecoveryReportSnapshot(database, {
+      now: new Date(),
+      databasePath: config.databasePath,
+    });
   } finally {
     database.close();
   }
@@ -36,7 +39,7 @@ export function formatRecoveryReportLines(config: RecoveryWatcherConfig): string
   const snapshot = loadRecoveryReport(config);
   const lines = [
     'RECOVERY WATCHER REPORT',
-    'Slice: 3A persisted safety evidence only',
+    'Slice: 3B retained forward-evidence manifest',
     `Database: ${sanitizeRecoveryDatabasePathDisplay(config.databasePath)}`,
     `Scheduling: ${RW0_SCHEDULING_POLICY}`,
     `Watch cadence ms: ${String(RW0_WATCH_CADENCE_MS)} (target from pass start; approximately one observation per minute; not exact 60.000s sampling)`,
@@ -50,14 +53,16 @@ export function formatRecoveryReportLines(config: RecoveryWatcherConfig): string
     'collectedAt: local collection time of this process, not token launch or exchange trade time',
     'DexScreener quote timestamp: untrustworthy / not used',
     'Discovery coverage: INCOMPLETE (latest profile/boost only; first seen here is not a new launch)',
-    'Positions, fills, paper eligibility, and live execution are out of scope for Slice 3A.',
+    'Positions, fills, paper eligibility, and live execution are out of scope for Slice 3B.',
     'Prior bounded public one-cycle DexScreener smoke is disposable engineering smoke only and is excluded from strategy forward-validation evidence. Do not merge that DB.',
-    'Do not run another public smoke until this Slice-2 repair is reviewed. The first retained forward run freezes watcher fingerprint and schema digest for that dataset.',
+    'No public smoke is part of Slice 3B. Collection requires a frozen dataset manifest before providers are constructed.',
   ];
   if (snapshot === null) {
+    lines.push('Dataset evidence class: unclassified');
     lines.push('Recovery DB: not initialized');
     return lines;
   }
+  lines.push(...formatDatasetMetadataLines(snapshot.dataset));
   lines.push(`Screening observations: ${String(snapshot.screeningCount)}`);
   for (const disposition of RW0_SCREENING_DISPOSITIONS) {
     lines.push(`  ${disposition}: ${String(snapshot.screeningByDisposition[disposition])}`);
@@ -91,9 +96,31 @@ export function formatRecoveryReportLines(config: RecoveryWatcherConfig): string
   lines.push(`First observation: ${snapshot.firstObservationAt ?? 'none'}`);
   lines.push(`Last observation: ${snapshot.lastObservationAt ?? 'none'}`);
   lines.push(
-    `Shadow positions: ${String(snapshot.shadowPositionCount)} (must remain 0 in Slice 3A)`,
+    `Shadow positions: ${String(snapshot.shadowPositionCount)} (must remain 0 in Slice 3B)`,
   );
-  lines.push(`PAPER states: ${String(snapshot.paperStateCount)} (must remain 0 in Slice 3A)`);
-  lines.push(`CLOSED states: ${String(snapshot.closedStateCount)} (must remain 0 in Slice 3A)`);
+  lines.push(`PAPER states: ${String(snapshot.paperStateCount)} (must remain 0 in Slice 3B)`);
+  lines.push(`CLOSED states: ${String(snapshot.closedStateCount)} (must remain 0 in Slice 3B)`);
+  return lines;
+}
+
+function formatDatasetMetadataLines(metadata: RecoveryReportSnapshot['dataset']): string[] {
+  const lines = [`Dataset evidence class: ${metadata.evidenceClass}`];
+  if (metadata.manifest === null) {
+    lines.push(`Dataset manifest: absent; populated=${metadata.populated ? 'true' : 'false'}`);
+    return lines;
+  }
+  const manifest = metadata.manifest;
+  lines.push(
+    `Dataset id: ${manifest.datasetId}`,
+    `Dataset created/start: ${manifest.createdAt} / ${manifest.startAt}`,
+    `Dataset manifest: ${manifest.manifestVersion} ${manifest.manifestFingerprint}`,
+    `Dataset database path fingerprint: ${manifest.databasePathFingerprint}`,
+    `Frozen watcher: ${manifest.watcherSpecVersion} ${manifest.watcherSpecFingerprint}`,
+    `Frozen safety: ${manifest.safetySpecVersion} ${manifest.safetySpecFingerprint}`,
+    `Frozen signal: ${manifest.signalVersion} ${manifest.signalFingerprint}`,
+    `Frozen recovery schema: ${String(manifest.recoverySchemaVersion)}`,
+    `Frozen recovery migrations: ${manifest.recoveryMigrations.map((item) => `${String(item.version)}:${item.name}:${item.sqlDigest}`).join(', ')}`,
+    `Frozen retained binding contract: ${manifest.bindingContractVersion} ${manifest.bindingContractDigest}`,
+  );
   return lines;
 }

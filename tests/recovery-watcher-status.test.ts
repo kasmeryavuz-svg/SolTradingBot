@@ -35,13 +35,16 @@ describe('recovery:status', () => {
     expect(text).toContain('Networked forward observation: IMPLEMENTED');
     expect(text).toContain('NOT_DIP does not create an episode');
     expect(text).toContain(
-      'Slice 3A does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
+      'Slice 3B does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
     );
     expect(text).toContain('collectedAt is this process local collection time');
     expect(text).toContain('Shadow exit/CLOSED: NOT IMPLEMENTED');
     expect(text).toContain('legal only when recoveryConfirmedAt < watchStartedAt + 2h TTL');
     expect(text).toContain('persisted PASS/FAIL/UNKNOWN');
     expect(text).toContain('Runtime RW0_DATABASE_PATH=:memory: REJECTED');
+    expect(text).toContain('Dataset evidence class: unclassified');
+    expect(text).toContain('Dataset manifest: absent; populated=false');
+    expect(text).not.toMatch(/PnL|profitability/i);
   });
 
   it('does not inherit production DATABASE_PATH as the recovery database', () => {

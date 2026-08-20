@@ -35,8 +35,17 @@ import {
 import { recoveryMigrationSqlDigest } from './db/migrations.js';
 import { sanitizeRecoveryDatabasePathDisplay } from './sanitizer.js';
 import type { RecoveryCycleMetrics, RecoveryWatcherConfig } from './types.js';
+import type { RecoveryDatasetMetadata } from './dataset-manifest.js';
 
-export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string[] {
+export function formatRecoveryStatusLines(
+  config: RecoveryWatcherConfig,
+  dataset: RecoveryDatasetMetadata = {
+    evidenceClass: 'unclassified',
+    populated: false,
+    manifest: null,
+  },
+): string[] {
+  const manifest = dataset.manifest;
   return [
     'RECOVERY WATCHER',
     `Checkpoint: ${RW0_CHECKPOINT}`,
@@ -63,6 +72,21 @@ export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string
     `Default recovery DB path: ${sanitizeRecoveryDatabasePathDisplay(DEFAULT_RW0_DATABASE_PATH)}`,
     `Configured production DB path: ${sanitizeRecoveryDatabasePathDisplay(config.configuredProductionDatabasePath)}`,
     `Recovery schema version: ${String(RW0_SCHEMA_VERSION)}`,
+    `Dataset evidence class: ${dataset.evidenceClass}`,
+    `Dataset manifest: ${manifest === null ? `absent; populated=${dataset.populated ? 'true' : 'false'}` : `${manifest.manifestVersion} ${manifest.manifestFingerprint}`}`,
+    ...(manifest === null
+      ? []
+      : [
+          `Dataset id: ${manifest.datasetId}`,
+          `Dataset created/start: ${manifest.createdAt} / ${manifest.startAt}`,
+          `Dataset database path fingerprint: ${manifest.databasePathFingerprint}`,
+          `Frozen watcher: ${manifest.watcherSpecVersion} ${manifest.watcherSpecFingerprint}`,
+          `Frozen safety: ${manifest.safetySpecVersion} ${manifest.safetySpecFingerprint}`,
+          `Frozen signal: ${manifest.signalVersion} ${manifest.signalFingerprint}`,
+          `Frozen recovery schema: ${String(manifest.recoverySchemaVersion)}`,
+          `Frozen recovery migrations: ${manifest.recoveryMigrations.map((item) => `${String(item.version)}:${item.name}:${item.sqlDigest}`).join(', ')}`,
+          `Frozen retained binding contract: ${manifest.bindingContractVersion} ${manifest.bindingContractDigest}`,
+        ]),
     'Production schema: untouched (must remain 9; migration 010 ABSENT)',
     `Watch cadence ms: ${String(RW0_WATCH_CADENCE_MS)}`,
     `Watch TTL ms: ${String(RW0_WATCH_TTL_MS)}`,
@@ -85,7 +109,7 @@ export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string
     'Creator gate: missing trustworthy identity is UNKNOWN; no identity guessing',
     'Discovery coverage: INCOMPLETE (DexScreener latest profile/boost research collection only)',
     'Historical recovery_v0 sample used sparse ~5-minute observations; 60s confirmation is a new forward regime and historical percentages are not proof of that regime',
-    'Slice 3A: persisted safety evidence and safety rejection only; no paper position',
+    'Slice 3B: retained forward-evidence manifest only; no paper position',
     'Networked forward observation: IMPLEMENTED (screening independent of episodes; NOT_DIP does not create an episode or start cooldown)',
     `Scheduling: ${RW0_SCHEDULING_POLICY} (watch due target from pass start; sleep max(0, next_due - monotonic_now); one overdue pass only, no catch-up storm, no overlapping cycles, no Math.random jitter)`,
     'Watch work has priority over optional leftover-budget screening',
@@ -100,12 +124,12 @@ export function formatRecoveryStatusLines(config: RecoveryWatcherConfig): string
     'dip_filter_result is separate from operational disposition: PASS can still be WATCH_CAP_FULL/EPISODE_LIMIT/COOLDOWN',
     'Pinned pair never switches after dip admission; exact-pair miss does not fall back to best pair',
     'Confirmation binds SIGNAL_PENDING_SAFETY to a persisted rw0_market_observations row; safety rejection reads persisted evidence',
-    'Slice 3A does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
+    'Slice 3B does not open SHADOW_RESEARCH_OPEN, PAPER_ELIGIBLE, PAPER_OPEN, or CLOSED',
     'collectedAt is this process local collection time, not token launch or exchange trade time',
     'DexScreener does not expose a trustworthy quote/trade timestamp through the existing adapter; none is invented',
     'Provider cap is not a claim of exact external DexScreener rate-limit safety',
     'Prior bounded public one-cycle DexScreener smoke is disposable engineering smoke only; excluded from strategy forward-validation; do not merge that DB',
-    'After this Slice-2 repair is approved, the first retained forward run freezes watcher fingerprint and schema digest for that dataset; do not run another public smoke until the repair is reviewed',
+    'Collection requires an immutable dataset manifest; unclassified or conflicting provenance fails before provider construction',
   ];
 }
 

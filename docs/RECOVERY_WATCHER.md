@@ -45,6 +45,45 @@ Slice 3A retains Slice 2 observation semantics and adds a frozen, persisted, fai
 
 Runtime config **rejects** `RW0_DATABASE_PATH=:memory:`. In-memory SQLite is allowed only through the explicit test helper `openRecoveryMemoryDatabase`. Opening a recovery file database requires `configuredProductionPath`; forgetting that isolation argument fails closed and cannot open production.
 
+## Slice 3B retained forward-evidence manifest
+
+Every new collection run must first initialize an immutable dataset manifest with
+`npm run recovery:dataset:init`. Set `RW0_DATASET_ID`, `RW0_DATASET_CREATED_AT`,
+`RW0_DATASET_START_AT`, and `RW0_DATASET_EVIDENCE_CLASS` (`retained_forward`,
+`disposable`, or `test`) together with the isolated `RW0_DATABASE_PATH`. An exact
+retry is idempotent; any conflicting identity fails closed.
+
+The `rw0_dataset_manifest_v2` singleton freezes the watcher, safety, and recovery signal versions
+and fingerprints; recovery schema version; every recovery migration name and SQL
+digest; manifest-table contract; evidence class; timestamps; and a SHA-256
+fingerprint of the normalized configured database path. It also freezes the
+`rw0_retained_binding_v1` contract. The raw path and secrets
+are never persisted. `recovery:status` and `recovery:report` show these identities
+without calculating PnL or profitability.
+
+A retained dataset owns a separate durable binding table and retained-only SQLite
+triggers for every Recovery Watcher evidence table. The legitimate runtime registers
+the required connection-local capability only after validating the exact manifest
+and `startAt`. Each insert then binds its table/row identity and canonical local event
+timestamp to the exact dataset id, retained evidence class, and manifest fingerprint.
+A different SQLite connection cannot create a retained row or binding. Status/report
+hydration verifies the complete one-to-one row/binding set, rejects stale or
+cross-dataset bindings, and fails on any pre-`startAt` timestamp rather than filtering
+bad rows.
+
+A populated database with no manifest remains read-only compatible and is shown as
+`unclassified`, but it cannot be promoted to `retained_forward` and runtime
+collection will not start. A disposable/test dataset cannot be relabeled or merged
+into retained evidence. Existing smoke rows are never rewritten. SQL tampering of
+the manifest, manifest/binding table and trigger contracts, migrations, row bindings,
+or any frozen identity is fatal
+during status/report hydration and before providers are constructed.
+
+This metadata contract is recovery-tooling-only. Recovery schema remains version 2
+with migrations 001 and 002 unchanged; production schema remains version 9 and no
+migration 010 is introduced. Slice 3B performs no public-network smoke and adds no
+SHADOW, PAPER, live, execution, wallet, signer, or broadcast path.
+
 File opens go through `openRecoverySqlite(path, { configuredProductionPath })` or `openRecoverySqliteFromConfig(config)`. There is no naked-path runtime open.
 
 Recovery never imports `src/live`, `src/wallet`, `src/production`, or `src/execution`.

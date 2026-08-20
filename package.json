@@ -2,7 +2,7 @@
   "name": "meme-trading-bot",
   "version": "0.1.0",
   "private": true,
-    "description": "A beginner-friendly Solana meme-coin trading bot. Phase 20 adds a paper-only production supervisor for data collection and explicit watchlist forward validation. Automatic live trading is not implemented.",
+  "description": "A beginner-friendly Solana meme-coin trading bot. Phase 20 adds a paper-only production supervisor for data collection and explicit watchlist forward validation. Automatic live trading is not implemented.",
   "type": "module",
   "engines": {
     "node": ">=24.15.0"
@@ -81,6 +81,7 @@
     "prod:preflight": "tsx src/production/run-preflight.ts",
     "prod:run": "tsx src/production/run.ts",
     "recovery:status": "tsx src/recovery-watcher/status.ts",
+    "recovery:dataset:init": "tsx src/recovery-watcher/dataset-init.ts",
     "recovery:run": "tsx src/recovery-watcher/run.ts",
     "recovery:report": "tsx src/recovery-watcher/report-cli.ts"
   },
