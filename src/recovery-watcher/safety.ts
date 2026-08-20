@@ -687,7 +687,7 @@ function requireEnum<const T extends readonly string[]>(
   if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
     throw evidenceError(`${label} is unsupported.`);
   }
-  return value as T[number];
+  return value;
 }
 
 function requireNonEmptyString(value: unknown, label: string): string {
